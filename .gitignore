@@ -1,0 +1,43 @@
+# Build outputs
+build/
+bin/
+obj/
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+*.dylib
+
+# IDE and editor files
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln.docstates
+*.swp
+*.swo
+*~
+
+# premake generated files
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+Makefile
+*.make
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# External libraries (user should fetch these)
+external/SDL3/
+
+# Compiler outputs
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
