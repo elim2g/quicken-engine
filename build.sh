@@ -26,6 +26,25 @@ if ! command -v premake5 &> /dev/null; then
     exit 1
 fi
 
+if ! command -v cmake &> /dev/null; then
+    echo "[ERROR] cmake not found!"
+    echo "Install: sudo apt-get install cmake"
+    exit 1
+fi
+
+# Ensure SDL3 submodule is initialized
+if [ ! -f "external/SDL3/CMakeLists.txt" ]; then
+    echo "SDL3 submodule not found. Initializing..."
+    git submodule update --init
+fi
+
+# Build SDL3 if not already built
+if [ ! -f "external/SDL3/build-linux/libSDL3.so" ]; then
+    echo "Building SDL3..."
+    cmake -S external/SDL3 -B external/SDL3/build-linux
+    cmake --build external/SDL3/build-linux -j$(nproc)
+fi
+
 # Always regenerate makefiles to ensure they target the current platform
 echo "Generating makefiles..."
 premake5 gmake

@@ -14,13 +14,36 @@ echo ========================================
 echo Configuration: %CONFIG%
 echo.
 
-REM Regenerate VS solution to ensure it targets the current platform
+REM Check for premake5
 where premake5.exe >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] premake5.exe not found in PATH!
     echo Install premake5 and add it to your PATH.
     exit /b 1
 )
+
+REM Check for cmake
+where cmake.exe >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] cmake.exe not found in PATH!
+    echo Install CMake and add it to your PATH.
+    exit /b 1
+)
+
+REM Ensure SDL3 submodule is initialized
+if not exist "external\SDL3\CMakeLists.txt" (
+    echo SDL3 submodule not found. Initializing...
+    git submodule update --init
+)
+
+REM Build SDL3 if not already built
+if not exist "external\SDL3\build\Release\SDL3.dll" (
+    echo Building SDL3...
+    cmake -S external\SDL3 -B external\SDL3\build -G "Visual Studio 17 2022" -A x64
+    cmake --build external\SDL3\build --config Release
+)
+
+REM Regenerate VS solution to ensure it targets the current platform
 echo Generating VS2022 solution...
 premake5.exe vs2022
 

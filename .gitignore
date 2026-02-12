@@ -32,8 +32,9 @@ Makefile
 Thumbs.db
 *.log
 
-# External libraries (user should fetch these)
-external/SDL3/
+# External library build outputs
+external/SDL3/build/
+external/SDL3/build-linux/
 
 # Compiler outputs
 *.o

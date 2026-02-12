@@ -21,56 +21,37 @@ This is not a general-purpose game engine. Every feature exists solely to serve 
 ### Prerequisites
 
 - **premake5**: [Download here](https://premake.github.io/download)
+- **CMake**: [Download here](https://cmake.org/download/)
 - **Compiler**:
-  - Windows: Visual Studio 2019+ or MinGW-w64
+  - Windows: Visual Studio 2019+ or Visual Studio Build Tools
   - Linux: GCC 9+ or Clang 10+
-- **SDL3**: See below
 
-### Getting SDL3
+### Clone
 
-1. Clone SDL3 into the `external/` directory:
-   ```bash
-   git clone https://github.com/libsdl-org/SDL --branch main --depth 1 external/SDL3
-   ```
+```bash
+git clone --recursive <repo-url>
+```
 
-2. Build SDL3:
+If you already cloned without `--recursive`:
+```bash
+git submodule update --init
+```
 
-   **Windows (Visual Studio):**
-   ```bash
-   cd external/SDL3
-   cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-   cmake --build build --config Release
-   ```
+### Build and Run
 
-   **Linux:**
-   ```bash
-   cd external/SDL3
-   cmake -S . -B build
-   cmake --build build
-   sudo cmake --install build
-   ```
+The build scripts automatically compile SDL3 on first run.
 
-### Building QUICKEN
+**Windows:**
+```bat
+build.bat
+run.bat
+```
 
-1. Generate project files:
-   ```bash
-   premake5 vs2022    # For Visual Studio 2022
-   premake5 gmake2    # For makefiles (Linux/MinGW)
-   ```
-
-2. Build:
-
-   **Visual Studio**: Open `QUICKEN.sln` and build
-
-   **Make**:
-   ```bash
-   make config=release
-   ```
-
-3. Run:
-   ```bash
-   ./build/bin/Release-[platform]-x86_64/quicken
-   ```
+**Linux:**
+```bash
+./build.sh
+./run.sh
+```
 
 ## Project Structure
 
