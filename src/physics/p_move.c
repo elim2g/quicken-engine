@@ -1,0 +1,108 @@
+/*
+ * QUICKEN Engine - Top-Level Movement
+ *
+ * PM_Move: categorize position, jump check, friction, acceleration,
+ * gravity, and slide/step-slide dispatch.
+ */
+
+#include "physics/p_internal.h"
+
+/* ---- Categorize position (ground check) ---- */
+
+void p_categorize_position(qk_player_state_t *ps,
+                           const qk_phys_world_t *world) {
+    /* Trace 0.25 units down from current position */
+    vec3_t point = ps->origin;
+    point.z -= 0.25f;
+
+    qk_trace_result_t trace = p_trace_world(world, ps->origin, point,
+                                             ps->mins, ps->maxs);
+
+    if (trace.fraction == 1.0f ||
+        trace.hit_normal.z < QK_PM_MIN_WALK_NORMAL) {
+        ps->on_ground = false;
+        ps->ground_normal = (vec3_t){0.0f, 0.0f, 0.0f};
+    } else {
+        ps->on_ground = true;
+        ps->ground_normal = trace.hit_normal;
+    }
+}
+
+/* ---- Jump check (edge-triggered) ---- */
+
+void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
+    if (cmd->buttons & QK_BUTTON_JUMP) {
+        if (ps->jump_held) return; /* still holding from last frame */
+        ps->jump_held = true;
+
+        if (!ps->on_ground) return; /* can't jump in air */
+
+        /* Q3 behavior: setting on_ground = false here means friction
+           is skipped on the jump frame, which is essential for consistent
+           strafejump speeds. */
+        ps->on_ground = false;
+        ps->velocity.z = QK_PM_JUMP_VELOCITY;
+    } else {
+        ps->jump_held = false;
+    }
+}
+
+/* ---- PM_Move: one physics tick ---- */
+
+void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
+            const qk_phys_world_t *world) {
+
+    f32 dt = QK_TICK_DT;
+
+    /* 1. Compute wish direction from input + view angles */
+    vec3_t forward, right, up;
+    p_angle_vectors(cmd->pitch, cmd->yaw, &forward, &right, &up);
+
+    vec3_t wish_dir;
+    wish_dir.x = forward.x * cmd->forward_move + right.x * cmd->side_move;
+    wish_dir.y = forward.y * cmd->forward_move + right.y * cmd->side_move;
+    wish_dir.z = 0.0f; /* no vertical component from input */
+
+    f32 wish_speed = vec3_length(wish_dir);
+    if (wish_speed > 0.0001f) {
+        wish_dir = vec3_scale(wish_dir, 1.0f / wish_speed);
+        wish_speed *= ps->max_speed;
+        if (wish_speed > ps->max_speed) wish_speed = ps->max_speed;
+    } else {
+        wish_dir = (vec3_t){0.0f, 0.0f, 0.0f};
+        wish_speed = 0.0f;
+    }
+
+    /* 2. Check ground */
+    p_categorize_position(ps, world);
+
+    /* 3. Jump check */
+    p_check_jump(ps, cmd);
+
+    /* 4. Apply friction (ground only) */
+    if (ps->on_ground) {
+        p_apply_friction(ps, dt);
+    }
+
+    /* 5. Accelerate */
+    if (ps->on_ground) {
+        p_accelerate(ps, wish_dir, wish_speed, QK_PM_GROUND_ACCEL, dt);
+    } else {
+        p_air_accelerate(ps, wish_dir, wish_speed, QK_PM_AIR_ACCEL, dt);
+    }
+
+    /* 6. Apply gravity (air only) */
+    if (!ps->on_ground) {
+        ps->velocity.z -= ps->gravity * dt;
+    }
+
+    /* 7. Move and collide */
+    if (ps->on_ground) {
+        p_step_slide_move(ps, world, dt);
+    } else {
+        p_slide_move(ps, world, dt, 4);
+    }
+
+    /* 8. Re-check ground after move */
+    p_categorize_position(ps, world);
+}
