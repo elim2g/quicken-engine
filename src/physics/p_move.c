@@ -5,7 +5,7 @@
  * gravity, and slide/step-slide dispatch.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Categorize position (ground check) ---- */
 

@@ -5,7 +5,7 @@
  * world trace (brute force with AABB broadphase), and ground check.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Trace against a single brush (Minkowski expansion) ---- */
 

@@ -311,7 +311,9 @@ qk_result_t r_vulkan_recreate_swapchain(void);
 /* r_memory.c */
 qk_result_t r_memory_init(void);
 void        r_memory_shutdown(void);
-u32         r_memory_find_type(u32 type_filter, VkMemoryPropertyFlags properties);
+bool        r_memory_find_type(u32 type_filter, VkMemoryPropertyFlags properties, u32 *out_type);
+qk_result_t r_memory_pool_alloc(u32 pool_index, VkDeviceSize size, VkDeviceSize alignment,
+                                VkDeviceSize *out_offset);
 qk_result_t r_memory_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                                    VkMemoryPropertyFlags properties,
                                    VkBuffer *out_buffer, VkDeviceMemory *out_memory);

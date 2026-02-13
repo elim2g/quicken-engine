@@ -62,54 +62,12 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
             if (pe->id == p->owner) continue;
             if (pe->data.player.alive_state != QK_PSTATE_ALIVE) continue;
 
-            /* ray-AABB intersection (slab method) */
             vec3_t pmin = vec3_add(pe->data.player.origin, pe->data.player.mins);
             vec3_t pmax = vec3_add(pe->data.player.origin, pe->data.player.maxs);
 
-            f32 tmin = 0.0f;
-            f32 tmax = 1.0f;
-
-            /* X slab */
-            if (ray.x != 0.0f) {
-                f32 inv = 1.0f / ray.x;
-                f32 t1 = (pmin.x - p->origin.x) * inv;
-                f32 t2 = (pmax.x - p->origin.x) * inv;
-                if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
-                if (t1 > tmin) tmin = t1;
-                if (t2 < tmax) tmax = t2;
-                if (tmin > tmax) continue;
-            } else {
-                if (p->origin.x < pmin.x || p->origin.x > pmax.x) continue;
-            }
-
-            /* Y slab */
-            if (ray.y != 0.0f) {
-                f32 inv = 1.0f / ray.y;
-                f32 t1 = (pmin.y - p->origin.y) * inv;
-                f32 t2 = (pmax.y - p->origin.y) * inv;
-                if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
-                if (t1 > tmin) tmin = t1;
-                if (t2 < tmax) tmax = t2;
-                if (tmin > tmax) continue;
-            } else {
-                if (p->origin.y < pmin.y || p->origin.y > pmax.y) continue;
-            }
-
-            /* Z slab */
-            if (ray.z != 0.0f) {
-                f32 inv = 1.0f / ray.z;
-                f32 t1 = (pmin.z - p->origin.z) * inv;
-                f32 t2 = (pmax.z - p->origin.z) * inv;
-                if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
-                if (t1 > tmin) tmin = t1;
-                if (t2 < tmax) tmax = t2;
-                if (tmin > tmax) continue;
-            } else {
-                if (p->origin.z < pmin.z || p->origin.z > pmax.z) continue;
-            }
-
-            if (tmin >= 0.0f && tmin < best_frac) {
-                best_frac = tmin;
+            f32 t;
+            if (ray_aabb_intersect(p->origin, ray, 1.0f, pmin, pmax, &t) && t < best_frac) {
+                best_frac = t;
                 hit_ent = pe;
                 hit_player = true;
             }
@@ -130,11 +88,11 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
             dmg.is_self = false;
             g_combat_apply_damage(gs, &dmg);
 
-            /* splash damage at hit point (this will also hit nearby players) */
+            /* splash damage at hit point (skip direct-hit target to avoid double damage) */
             if (p->splash_radius > 0.0f) {
                 g_combat_splash_damage(gs, hit_point, p->splash_radius,
                                         p->splash_damage, wdef->knockback,
-                                        p->owner, p->weapon);
+                                        p->owner, p->weapon, hit_ent->id);
             }
 
             g_entity_free(&gs->entities, e);

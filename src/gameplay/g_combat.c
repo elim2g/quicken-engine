@@ -42,12 +42,8 @@ void g_combat_apply_damage(qk_game_state_t *gs, const damage_event_t *dmg) {
     if (dmg->is_self) {
         const g_weapon_def_t *wdef = &g_weapon_defs[dmg->weapon];
         kb = wdef->self_knockback;
-        /* self-knockback: invert direction (push player away from explosion) */
-        vec3_t inv_dir = vec3_scale(dmg->dir, -1.0f);
-        vps->velocity = vec3_add(vps->velocity, vec3_scale(inv_dir, kb * (f32)actual_damage));
-    } else {
-        vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, kb * (f32)actual_damage));
     }
+    vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, kb * (f32)actual_damage));
 
     /* update stats */
     entity_t *attacker = g_entity_find(&gs->entities, dmg->attacker_id);
@@ -108,7 +104,7 @@ void g_combat_hitscan_trace(qk_game_state_t *gs, entity_t *attacker,
                              vec3_t start, vec3_t dir, f32 range,
                              qk_weapon_id_t weapon) {
     const g_weapon_def_t *wdef = &g_weapon_defs[weapon];
-    vec3_t end = vec3_add(start, vec3_scale(dir, range));
+    vec3_t ray_dir = vec3_scale(dir, range);
 
     /*
      * For now, trace against all enemy player entities using simple
@@ -123,59 +119,12 @@ void g_combat_hitscan_trace(qk_game_state_t *gs, entity_t *attacker,
         if (e == attacker) continue;
         if (e->data.player.alive_state != QK_PSTATE_ALIVE) continue;
 
-        /* simple AABB test: check if ray passes through player bbox */
         vec3_t pmin = vec3_add(e->data.player.origin, e->data.player.mins);
         vec3_t pmax = vec3_add(e->data.player.origin, e->data.player.maxs);
 
-        /* ray-AABB intersection (slab method) */
-        f32 tmin = 0.0f;
-        f32 tmax = 1.0f;
-
-        f32 ray_dx = end.x - start.x;
-        f32 ray_dy = end.y - start.y;
-        f32 ray_dz = end.z - start.z;
-
-        /* X slab */
-        if (ray_dx != 0.0f) {
-            f32 inv = 1.0f / ray_dx;
-            f32 t1 = (pmin.x - start.x) * inv;
-            f32 t2 = (pmax.x - start.x) * inv;
-            if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
-            if (t1 > tmin) tmin = t1;
-            if (t2 < tmax) tmax = t2;
-            if (tmin > tmax) continue;
-        } else {
-            if (start.x < pmin.x || start.x > pmax.x) continue;
-        }
-
-        /* Y slab */
-        if (ray_dy != 0.0f) {
-            f32 inv = 1.0f / ray_dy;
-            f32 t1 = (pmin.y - start.y) * inv;
-            f32 t2 = (pmax.y - start.y) * inv;
-            if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
-            if (t1 > tmin) tmin = t1;
-            if (t2 < tmax) tmax = t2;
-            if (tmin > tmax) continue;
-        } else {
-            if (start.y < pmin.y || start.y > pmax.y) continue;
-        }
-
-        /* Z slab */
-        if (ray_dz != 0.0f) {
-            f32 inv = 1.0f / ray_dz;
-            f32 t1 = (pmin.z - start.z) * inv;
-            f32 t2 = (pmax.z - start.z) * inv;
-            if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
-            if (t1 > tmin) tmin = t1;
-            if (t2 < tmax) tmax = t2;
-            if (tmin > tmax) continue;
-        } else {
-            if (start.z < pmin.z || start.z > pmax.z) continue;
-        }
-
-        if (tmin >= 0.0f && tmin < best_frac) {
-            best_frac = tmin;
+        f32 t;
+        if (ray_aabb_intersect(start, ray_dir, 1.0f, pmin, pmax, &t) && t < best_frac) {
+            best_frac = t;
             hit_ent = e;
         }
     }
@@ -206,9 +155,11 @@ void g_combat_beam_trace(qk_game_state_t *gs, entity_t *attacker,
 /* ---- Splash Damage (Rocket Explosion) ---- */
 void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
                              f32 radius, f32 max_damage, f32 knockback,
-                             u8 attacker_id, qk_weapon_id_t weapon) {
+                             u8 attacker_id, qk_weapon_id_t weapon,
+                             u8 skip_id) {
     for (entity_t *e = g_entity_first(&gs->entities, ENTITY_PLAYER);
          e; e = g_entity_next(&gs->entities, e, ENTITY_PLAYER)) {
+        if (e->id == skip_id) continue;
         if (e->data.player.alive_state != QK_PSTATE_ALIVE) continue;
 
         vec3_t diff = vec3_sub(e->data.player.origin, origin);

@@ -5,7 +5,7 @@
  * Provides init/shutdown and monotonic time.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 
 #ifdef QK_PLATFORM_WINDOWS
 
@@ -64,10 +64,31 @@ bool n_platform_init(void) {
 void n_platform_shutdown(void) {
 }
 
+static bool            s_linux_timer_initialized = false;
+static struct timespec s_linux_timer_start;
+
 f64 n_platform_time(void) {
+    if (!s_linux_timer_initialized) {
+        clock_gettime(CLOCK_MONOTONIC, &s_linux_timer_start);
+        s_linux_timer_initialized = true;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (f64)ts.tv_sec + (f64)ts.tv_nsec * 1e-9;
+    f64 sec  = (f64)(ts.tv_sec  - s_linux_timer_start.tv_sec);
+    f64 nsec = (f64)(ts.tv_nsec - s_linux_timer_start.tv_nsec);
+    return sec + nsec * 1e-9;
 }
 
 #endif
+
+/* ---- PRNG (shared state across all TUs) ---- */
+
+static u32 s_rng_state = 2166136261u;
+
+u32 n_random_u32(void) {
+    s_rng_state ^= s_rng_state << 13;
+    s_rng_state ^= s_rng_state >> 17;
+    s_rng_state ^= s_rng_state << 5;
+    s_rng_state *= 16777619u;
+    return s_rng_state;
+}

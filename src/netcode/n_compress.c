@@ -5,7 +5,7 @@
  * Little-endian bit order within each byte.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 
 /* ---- Writer ---- */
 
@@ -23,13 +23,24 @@ void n_write_bits(n_bitwriter_t *w, u32 value, u32 num_bits) {
         return;
     }
 
-    for (u32 i = 0; i < num_bits; i++) {
-        u32 bit = (value >> i) & 1;
-        u32 byte_index = w->bit_pos / 8;
-        u32 bit_index = w->bit_pos % 8;
-        w->buffer[byte_index] |= (u8)(bit << bit_index);
-        w->bit_pos++;
+    u32 byte_idx = w->bit_pos / 8;
+    u32 bit_off  = w->bit_pos % 8;
+
+    /* Merge value into the buffer starting at the current bit offset.
+     * We write up to one byte at a time, filling from bit_off upward. */
+    u32 bits_remaining = num_bits;
+    while (bits_remaining > 0) {
+        u32 space = 8 - bit_off;
+        u32 chunk = bits_remaining < space ? bits_remaining : space;
+        u8 mask = (u8)((1u << chunk) - 1);
+        w->buffer[byte_idx] |= (u8)((value & mask) << bit_off);
+        value >>= chunk;
+        bits_remaining -= chunk;
+        bit_off = 0;
+        byte_idx++;
     }
+
+    w->bit_pos += num_bits;
 }
 
 void n_write_bool(n_bitwriter_t *w, bool value) {
@@ -78,14 +89,23 @@ u32 n_read_bits(n_bitreader_t *r, u32 num_bits) {
         return 0;
     }
 
+    u32 byte_idx = r->bit_pos / 8;
+    u32 bit_off  = r->bit_pos % 8;
     u32 value = 0;
-    for (u32 i = 0; i < num_bits; i++) {
-        u32 byte_index = r->bit_pos / 8;
-        u32 bit_index = r->bit_pos % 8;
-        u32 bit = (r->buffer[byte_index] >> bit_index) & 1;
-        value |= (bit << i);
-        r->bit_pos++;
+    u32 bits_read = 0;
+
+    while (bits_read < num_bits) {
+        u32 avail = 8 - bit_off;
+        u32 chunk = (num_bits - bits_read) < avail ? (num_bits - bits_read) : avail;
+        u8 mask = (u8)((1u << chunk) - 1);
+        u32 extracted = (u32)((r->buffer[byte_idx] >> bit_off) & mask);
+        value |= extracted << bits_read;
+        bits_read += chunk;
+        bit_off = 0;
+        byte_idx++;
     }
+
+    r->bit_pos += num_bits;
     return value;
 }
 

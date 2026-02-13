@@ -5,15 +5,15 @@
  * processes client inputs, captures snapshots, delta-encodes and broadcasts.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 #include <stdlib.h>
 
 /* ---- Helpers ---- */
 
 static void slot_reset(n_client_slot_t *slot) {
-    n_conn_state_t saved_state = slot->state;
-    QK_UNUSED(saved_state);
+    u8 id = slot->client_id;
     memset(slot, 0, sizeof(*slot));
+    slot->client_id = id;
     slot->state = N_CONN_DISCONNECTED;
     n_reliable_init(&slot->reliable);
 }

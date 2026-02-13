@@ -2,12 +2,13 @@
  * QUICKEN Renderer - Command Pool/Buffer and Frame Sync
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <stdio.h>
 #include <string.h>
 
-/* Temp pool for one-shot commands */
+/* Temp pool and shared fence for one-shot commands */
 static VkCommandPool s_temp_pool = VK_NULL_HANDLE;
+static VkFence       s_temp_fence = VK_NULL_HANDLE;
 
 qk_result_t r_commands_init(void)
 {
@@ -22,6 +23,15 @@ qk_result_t r_commands_init(void)
                                 VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
         };
         VkResult vr = vkCreateCommandPool(dev, &pool_info, NULL, &s_temp_pool);
+        if (vr != VK_SUCCESS) return QK_ERROR_VULKAN_INIT;
+    }
+
+    /* Shared fence for single-use commands */
+    {
+        VkFenceCreateInfo fence_info = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+        };
+        VkResult vr = vkCreateFence(dev, &fence_info, NULL, &s_temp_fence);
         if (vr != VK_SUCCESS) return QK_ERROR_VULKAN_INIT;
     }
 
@@ -129,6 +139,11 @@ void r_commands_shutdown(void)
         if (frame->command_pool) vkDestroyCommandPool(dev, frame->command_pool, NULL);
     }
 
+    if (s_temp_fence) {
+        vkDestroyFence(dev, s_temp_fence, NULL);
+        s_temp_fence = VK_NULL_HANDLE;
+    }
+
     if (s_temp_pool) {
         vkDestroyCommandPool(dev, s_temp_pool, NULL);
         s_temp_pool = VK_NULL_HANDLE;
@@ -168,15 +183,9 @@ void r_commands_end_single(VkCommandBuffer cmd)
         .pCommandBuffers    = &cmd
     };
 
-    VkFenceCreateInfo fence_info = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-    };
-    VkFence fence;
-    vkCreateFence(g_r.device.handle, &fence_info, NULL, &fence);
+    vkResetFences(g_r.device.handle, 1, &s_temp_fence);
+    vkQueueSubmit(g_r.device.graphics_queue, 1, &submit, s_temp_fence);
+    vkWaitForFences(g_r.device.handle, 1, &s_temp_fence, VK_TRUE, UINT64_MAX);
 
-    vkQueueSubmit(g_r.device.graphics_queue, 1, &submit, fence);
-    vkWaitForFences(g_r.device.handle, 1, &fence, VK_TRUE, UINT64_MAX);
-
-    vkDestroyFence(g_r.device.handle, fence, NULL);
     vkFreeCommandBuffers(g_r.device.handle, s_temp_pool, 1, &cmd);
 }

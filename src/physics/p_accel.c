@@ -5,7 +5,7 @@
  * and ground friction.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Ground acceleration (standard Quake 3) ---- */
 

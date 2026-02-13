@@ -5,7 +5,7 @@
  * This is the only file that provides symbols matching qk_physics.h.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- World lifecycle ---- */
 

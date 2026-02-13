@@ -15,7 +15,7 @@
  *     If in both: 1-bit changed + 12-bit field bitmask + changed field values
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 
 void n_snapshot_init(n_snapshot_t *snap) {
     memset(snap, 0, sizeof(*snap));

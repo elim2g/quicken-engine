@@ -6,7 +6,7 @@
  * and clock offset, maintaining a rolling average with outlier rejection.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 #include <stdlib.h>
 
 void n_clock_init(n_clock_state_t *clk) {

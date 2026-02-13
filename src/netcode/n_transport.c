@@ -6,7 +6,7 @@
  * this layer is transport-agnostic.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 
 #ifdef QK_PLATFORM_WINDOWS
 

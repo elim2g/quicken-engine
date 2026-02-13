@@ -5,7 +5,7 @@
  * (no BVH spatial acceleration).
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 #include <stdlib.h>
 
 /* ---- Create physics world from collision model ---- */

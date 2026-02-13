@@ -54,6 +54,7 @@ project "quicken-physics"
 
     files {
         "src/physics/**.c",
+        "src/physics/**.h",
         "include/physics/**.h"
     }
 
@@ -92,11 +93,13 @@ project "quicken-renderer"
 
     files {
         "src/renderer/**.c",
+        "src/renderer/**.h",
         "include/renderer/**.h"
     }
 
     includedirs {
         "include",
+        "src/renderer",
         "external/SDL3/include"
     }
 
@@ -134,6 +137,7 @@ project "quicken-netcode"
 
     files {
         "src/netcode/**.c",
+        "src/netcode/**.h",
         "include/netcode/**.h"
     }
 
@@ -174,6 +178,7 @@ project "quicken"
         "src/*.c",
         "src/core/**.c",
         "src/gameplay/**.c",
+        "src/gameplay/**.h",
         "src/ui/**.c",
         "include/**.h"
     }
@@ -184,6 +189,7 @@ project "quicken"
 
     includedirs {
         "include",
+        "src/gameplay",
         "external/SDL3/include"
     }
 
@@ -245,6 +251,7 @@ project "quicken-server"
         "src/server_main.c",
         "src/core/**.c",
         "src/gameplay/**.c",
+        "src/gameplay/**.h",
         "include/**.h"
     }
 
@@ -254,7 +261,8 @@ project "quicken-server"
     }
 
     includedirs {
-        "include"
+        "include",
+        "src/gameplay"
     }
 
     links {

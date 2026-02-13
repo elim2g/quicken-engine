@@ -5,15 +5,14 @@
  * Never uses <math.h> sinf/cosf in gameplay paths.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Deterministic sinf ---- */
 
 f32 p_sinf(f32 x) {
-    /* Reduce x to [-PI, PI] */
-    x = x - P_2PI * (f32)((i32)(x / P_2PI));
-    if (x > P_PI)  x -= P_2PI;
-    if (x < -P_PI) x += P_2PI;
+    /* Reduce x to [-PI, PI] without integer cast (avoids i32 overflow) */
+    while (x >  P_PI) x -= P_2PI;
+    while (x < -P_PI) x += P_2PI;
 
     /* 7th-order minimax polynomial: sin(x) ~ x(1 - x^2/6 + x^4/120 - x^6/5040) */
     f32 x2 = x * x;

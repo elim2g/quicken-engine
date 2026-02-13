@@ -2,7 +2,7 @@
  * QUICKEN Renderer - Texture Upload, VkImage/VkImageView/VkSampler
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -165,14 +165,38 @@ u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels)
     VkMemoryRequirements mem_req;
     vkGetImageMemoryRequirements(g_r.device.handle, tex->image, &mem_req);
 
-    VkMemoryAllocateInfo alloc_info = {
-        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize  = mem_req.size,
-        .memoryTypeIndex = r_memory_find_type((u32)mem_req.memoryTypeBits,
-                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-    };
-    vkAllocateMemory(g_r.device.handle, &alloc_info, NULL, &tex->memory);
-    vkBindImageMemory(g_r.device.handle, tex->image, tex->memory, 0);
+    /* Try pool suballocation for device-local texture memory */
+    r_memory_pool_t *pool = &g_r.pools[R_MEMORY_POOL_DEVICE_LOCAL];
+    if (pool->memory && (mem_req.memoryTypeBits & (1u << pool->memory_type))) {
+        VkDeviceSize pool_offset;
+        if (r_memory_pool_alloc(R_MEMORY_POOL_DEVICE_LOCAL, mem_req.size,
+                                 mem_req.alignment, &pool_offset) == QK_SUCCESS) {
+            vkBindImageMemory(g_r.device.handle, tex->image, pool->memory, pool_offset);
+            tex->memory = VK_NULL_HANDLE; /* Pool-owned */
+            goto texture_create_view;
+        }
+    }
+
+    {
+        u32 tex_mem_type;
+        if (!r_memory_find_type((u32)mem_req.memoryTypeBits,
+                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &tex_mem_type)) {
+            vkDestroyImage(g_r.device.handle, tex->image, NULL);
+            tex->image = VK_NULL_HANDLE;
+            return 0;
+        }
+
+        VkMemoryAllocateInfo alloc_info = {
+            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize  = mem_req.size,
+            .memoryTypeIndex = tex_mem_type
+        };
+        vkAllocateMemory(g_r.device.handle, &alloc_info, NULL, &tex->memory);
+        vkBindImageMemory(g_r.device.handle, tex->image, tex->memory, 0);
+    }
+
+texture_create_view:
+    ;
 
     /* Create image view */
     VkImageViewCreateInfo view_info = {

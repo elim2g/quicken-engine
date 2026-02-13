@@ -404,13 +404,6 @@ void n_client_send_input(n_client_t *cl, const n_input_t *input, f64 now);
 void n_client_process_packet(n_client_t *cl, const u8 *data, u32 len, f64 now);
 
 /* ---- Simple PRNG for challenge generation ---- */
-static inline u32 n_random_u32(void) {
-    static u32 state = 2166136261u;
-    state ^= (u32)(size_t)&state;
-    state *= 16777619u;
-    state ^= state >> 13;
-    state *= 16777619u;
-    return state;
-}
+u32 n_random_u32(void);
 
 #endif /* N_INTERNAL_H */

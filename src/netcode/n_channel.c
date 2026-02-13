@@ -10,7 +10,7 @@
  * An empty ack-only message has payload_data length 0.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 
 void n_reliable_init(n_reliable_channel_t *ch) {
     memset(ch, 0, sizeof(*ch));

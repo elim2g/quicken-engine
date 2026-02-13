@@ -2,7 +2,7 @@
  * QUICKEN Renderer - Vulkan Instance, Device, Swapchain
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <SDL3/SDL_vulkan.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -543,17 +543,38 @@ static qk_result_t create_image(u32 width, u32 height, VkFormat format,
     VkMemoryRequirements mem_req;
     vkGetImageMemoryRequirements(g_r.device.handle, *out_image, &mem_req);
 
-    u32 mem_type = r_memory_find_type((u32)mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    /* Try pool suballocation for device-local images */
+    r_memory_pool_t *pool = &g_r.pools[R_MEMORY_POOL_DEVICE_LOCAL];
+    if (pool->memory && (mem_req.memoryTypeBits & (1u << pool->memory_type))) {
+        VkDeviceSize offset;
+        if (r_memory_pool_alloc(R_MEMORY_POOL_DEVICE_LOCAL, mem_req.size,
+                                 mem_req.alignment, &offset) == QK_SUCCESS) {
+            vkBindImageMemory(g_r.device.handle, *out_image, pool->memory, offset);
+            *out_memory = VK_NULL_HANDLE; /* Pool-owned */
+            goto create_view;
+        }
+    }
 
-    VkMemoryAllocateInfo alloc_info = {
-        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize  = mem_req.size,
-        .memoryTypeIndex = mem_type
-    };
-    vr = vkAllocateMemory(g_r.device.handle, &alloc_info, NULL, out_memory);
-    if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
+    {
+        u32 mem_type;
+        if (!r_memory_find_type((u32)mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &mem_type)) {
+            vkDestroyImage(g_r.device.handle, *out_image, NULL);
+            return QK_ERROR_OUT_OF_MEMORY;
+        }
 
-    vkBindImageMemory(g_r.device.handle, *out_image, *out_memory, 0);
+        VkMemoryAllocateInfo alloc_info = {
+            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize  = mem_req.size,
+            .memoryTypeIndex = mem_type
+        };
+        vr = vkAllocateMemory(g_r.device.handle, &alloc_info, NULL, out_memory);
+        if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
+
+        vkBindImageMemory(g_r.device.handle, *out_image, *out_memory, 0);
+    }
+
+create_view:
+    ;
 
     VkImageViewCreateInfo view_info = {
         .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,

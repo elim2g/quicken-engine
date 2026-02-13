@@ -2,7 +2,7 @@
  * QUICKEN Renderer - UI Quad Rendering (Immediate Mode)
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -72,6 +72,17 @@ void r_ui_shutdown(void)
 void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
 {
     if (!g_r.ui_pipeline.handle || g_r.ui_quad_count == 0) return;
+
+    /* Sort quads by texture_id for batching (insertion sort -- count is small) */
+    for (u32 i = 1; i < g_r.ui_quad_count; i++) {
+        r_ui_quad_t key = g_r.ui_quads[i];
+        u32 j = i;
+        while (j > 0 && g_r.ui_quads[j - 1].texture_id > key.texture_id) {
+            g_r.ui_quads[j] = g_r.ui_quads[j - 1];
+            j--;
+        }
+        g_r.ui_quads[j] = key;
+    }
 
     r_frame_data_t *frame = &g_r.frames[frame_index];
 

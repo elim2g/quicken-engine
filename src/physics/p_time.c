@@ -5,7 +5,7 @@
  * Provides interpolation alpha for rendering.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Fixed timestep update ---- */
 

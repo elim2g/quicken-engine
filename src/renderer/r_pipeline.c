@@ -2,22 +2,70 @@
  * QUICKEN Renderer - Pipeline Creation, Shader Loading, Pipeline Cache
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef QK_PLATFORM_LINUX
+    #include <sys/stat.h>
+#endif
+
 /* ---- Pipeline Cache ---- */
 
-#define PIPELINE_CACHE_FILE "quicken_pipeline_cache.bin"
+#define PIPELINE_CACHE_FILENAME "quicken_pipeline_cache.bin"
+
+static char s_cache_path[512];
+
+static void r_pipeline_cache_build_path(void)
+{
+    s_cache_path[0] = '\0';
+
+#ifdef QK_PLATFORM_WINDOWS
+    const char *appdata = getenv("LOCALAPPDATA");
+    if (appdata) {
+        snprintf(s_cache_path, sizeof(s_cache_path), "%s\\QUICKEN\\%s",
+                 appdata, PIPELINE_CACHE_FILENAME);
+        /* Ensure directory exists */
+        char dir[512];
+        snprintf(dir, sizeof(dir), "%s\\QUICKEN", appdata);
+        CreateDirectoryA(dir, NULL);
+    }
+#else
+    const char *cache_home = getenv("XDG_CACHE_HOME");
+    const char *home = getenv("HOME");
+    if (cache_home) {
+        snprintf(s_cache_path, sizeof(s_cache_path), "%s/quicken/%s",
+                 cache_home, PIPELINE_CACHE_FILENAME);
+    } else if (home) {
+        snprintf(s_cache_path, sizeof(s_cache_path), "%s/.cache/quicken/%s",
+                 home, PIPELINE_CACHE_FILENAME);
+    }
+    /* Ensure directory exists (best-effort) */
+    if (s_cache_path[0]) {
+        char dir[512];
+        if (cache_home)
+            snprintf(dir, sizeof(dir), "%s/quicken", cache_home);
+        else
+            snprintf(dir, sizeof(dir), "%s/.cache/quicken", home);
+        mkdir(dir, 0755);
+    }
+#endif
+
+    if (!s_cache_path[0]) {
+        snprintf(s_cache_path, sizeof(s_cache_path), "%s", PIPELINE_CACHE_FILENAME);
+    }
+}
 
 qk_result_t r_pipeline_cache_init(void)
 {
+    r_pipeline_cache_build_path();
+
     VkPipelineCacheCreateInfo cache_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO
     };
 
     /* Try to load existing cache */
-    FILE *f = fopen(PIPELINE_CACHE_FILE, "rb");
+    FILE *f = fopen(s_cache_path, "rb");
     void *cache_data = NULL;
     if (f) {
         fseek(f, 0, SEEK_END);
@@ -63,7 +111,7 @@ void r_pipeline_cache_save(void)
     if (!data) return;
 
     if (vkGetPipelineCacheData(g_r.device.handle, g_r.pipeline_cache_handle, &size, data) == VK_SUCCESS) {
-        FILE *f = fopen(PIPELINE_CACHE_FILE, "wb");
+        FILE *f = fopen(s_cache_path, "wb");
         if (f) {
             fwrite(data, 1, size, f);
             fclose(f);
@@ -176,16 +224,14 @@ qk_result_t r_pipeline_create_world(void)
         { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
           .offset = offsetof(r_world_vertex_t, normal) },
         { .location = 2, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,
-          .offset = offsetof(r_world_vertex_t, uv) },
-        { .location = 3, .binding = 0, .format = VK_FORMAT_R32_UINT,
-          .offset = offsetof(r_world_vertex_t, texture_id) }
+          .offset = offsetof(r_world_vertex_t, uv) }
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding,
-        .vertexAttributeDescriptionCount = 4,
+        .vertexAttributeDescriptionCount = 3,
         .pVertexAttributeDescriptions    = attrs
     };
 

@@ -5,7 +5,7 @@
  * Message framing: 4-bit type + 12-bit length prefix.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 
 /* ---- Packet header (8 bytes, little-endian) ---- */
 

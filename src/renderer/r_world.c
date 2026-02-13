@@ -2,7 +2,7 @@
  * QUICKEN Renderer - World Geometry Rendering
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -5,7 +5,7 @@
  * step up stairs/ledges.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Clip velocity off a collision plane ---- */
 

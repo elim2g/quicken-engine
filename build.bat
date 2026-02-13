@@ -41,18 +41,26 @@ if not exist "external\SDL3\build\Release\SDL3.dll" (
 )
 
 REM Try to regenerate VS solution with premake5
-where premake5.exe >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
+REM Check local copy first, then PATH
+set "PREMAKE="
+if exist "%~dp0premake5.exe" (
+    set "PREMAKE=%~dp0premake5.exe"
+) else (
+    where premake5.exe >nul 2>&1
+    if !ERRORLEVEL! EQU 0 set "PREMAKE=premake5.exe"
+)
+
+if not "%PREMAKE%"=="" (
     echo Generating VS2022 solution...
-    premake5.exe vs2022
+    "%PREMAKE%" vs2022
 ) else (
     if exist "QUICKEN.sln" (
-        echo [NOTE] premake5 not in PATH. Using existing QUICKEN.sln.
+        echo [NOTE] premake5 not found. Using existing QUICKEN.sln.
         echo        To regenerate: wsl bash -c "cd /mnt/h/quicken/quicken-engine && premake5 vs2022"
     ) else (
         echo [ERROR] premake5.exe not found and no QUICKEN.sln exists!
         echo.
-        echo Option 1: Install premake5 and add to PATH
+        echo Option 1: Place premake5.exe in the project root
         echo Option 2: Generate from WSL: wsl bash -c "cd /mnt/h/quicken/quicken-engine && premake5 vs2022"
         exit /b 1
     )

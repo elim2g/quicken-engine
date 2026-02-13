@@ -9,7 +9,8 @@
  */
 
 #include "renderer/qk_renderer.h"
-#include "renderer/r_types.h"
+#include "r_types.h"
+#include <SDL3/SDL_timer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -287,11 +288,15 @@ void qk_renderer_free_world(void)
 
 /* ---- Frame Rendering ---- */
 
-static f32 s_time = 0.0f;
+static u64 s_start_ticks = 0;
 
 void qk_renderer_begin_frame(const qk_camera_t *camera)
 {
     if (!g_r.initialized) return;
+
+    if (s_start_ticks == 0) {
+        s_start_ticks = SDL_GetPerformanceCounter();
+    }
 
     u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
     r_frame_data_t *frame = &g_r.frames[fi];
@@ -325,8 +330,8 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
         r_view_uniforms_t uniforms;
         memcpy(uniforms.view_projection, camera->view_projection, sizeof(f32) * 16);
         memcpy(uniforms.camera_pos, camera->position, sizeof(f32) * 3);
-        uniforms.time = s_time;
-        s_time += 1.0f / 1000.0f; /* approximate */
+        u64 now = SDL_GetPerformanceCounter();
+        uniforms.time = (f32)((f64)(now - s_start_ticks) / (f64)SDL_GetPerformanceFrequency());
         memcpy(frame->view_ubo_mapped, &uniforms, sizeof(uniforms));
     }
 

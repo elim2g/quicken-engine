@@ -5,7 +5,7 @@
  * outputs to swapchain via a fullscreen triangle.
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <string.h>
 
 static r_compose_push_constants_t compute_viewport(

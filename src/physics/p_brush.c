@@ -4,7 +4,7 @@
  * AABB computation, overlap tests, swept AABB for broadphase.
  */
 
-#include "physics/p_internal.h"
+#include "p_internal.h"
 
 /* ---- Compute tight AABB from brush planes ---- */
 
@@ -22,35 +22,10 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
     brush->mins = (vec3_t){ -big, -big, -big };
     brush->maxs = (vec3_t){  big,  big,  big };
 
-    for (u32 i = 0; i < brush->plane_count; i++) {
-        const qk_plane_t *p = &brush->planes[i];
-
-        /* For each axis-aligned plane (normal along a single axis),
-           we can directly clamp. For non-axis planes, we use the
-           plane distance divided by the normal component. */
-
-        if (p->normal.x > 0.99f) {
-            /* +X facing plane */
-            if (p->dist < brush->maxs.x) brush->maxs.x = p->dist;
-        } else if (p->normal.x < -0.99f) {
-            if (-p->dist > brush->mins.x) brush->mins.x = -p->dist;
-        }
-
-        if (p->normal.y > 0.99f) {
-            if (p->dist < brush->maxs.y) brush->maxs.y = p->dist;
-        } else if (p->normal.y < -0.99f) {
-            if (-p->dist > brush->mins.y) brush->mins.y = -p->dist;
-        }
-
-        if (p->normal.z > 0.99f) {
-            if (p->dist < brush->maxs.z) brush->maxs.z = p->dist;
-        } else if (p->normal.z < -0.99f) {
-            if (-p->dist > brush->mins.z) brush->mins.z = -p->dist;
-        }
-    }
-
-    /* For non-axis-aligned brushes, we fall back to a conservative bound.
-       For each plane, project the halfspace onto each axis. */
+    /* For each plane, project the halfspace onto each axis.
+       For axis-aligned planes (e.g. normal=(1,0,0)), d/nx == d,
+       which gives the exact bound. For angled planes, d/nx is
+       a conservative (loose) bound. */
     for (u32 i = 0; i < brush->plane_count; i++) {
         const qk_plane_t *p = &brush->planes[i];
         f32 nx = p->normal.x;

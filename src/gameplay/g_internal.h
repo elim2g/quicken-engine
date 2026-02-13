@@ -2,16 +2,15 @@
  * QUICKEN Engine - Gameplay Internal Definitions
  *
  * Types and function declarations used across gameplay .c files.
- * NOT a public header. Supplements include/gameplay/g_local.h.
+ * NOT a public header. Supplements g_local.h.
  */
 
 #ifndef G_INTERNAL_H
 #define G_INTERNAL_H
 
-#include "gameplay/g_local.h"
+#include "g_local.h"
 #include "gameplay/qk_gameplay.h"
 #include <string.h>
-#include <stdio.h>
 
 /* ---- Weapon fire mode ---- */
 typedef enum {
@@ -129,7 +128,8 @@ void g_combat_beam_trace(qk_game_state_t *gs, entity_t *attacker,
                           qk_weapon_id_t weapon);
 void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
                              f32 radius, f32 max_damage, f32 knockback,
-                             u8 attacker_id, qk_weapon_id_t weapon);
+                             u8 attacker_id, qk_weapon_id_t weapon,
+                             u8 skip_id);
 
 /* ---- Projectile functions (g_projectile.c) ---- */
 entity_t *g_projectile_spawn(qk_game_state_t *gs, entity_t *owner,
@@ -163,6 +163,63 @@ static inline vec3_t angles_to_forward(f32 pitch, f32 yaw) {
     f32 cy = cosf(yaw * 3.14159265f / 180.0f);
     f32 sy = sinf(yaw * 3.14159265f / 180.0f);
     return (vec3_t){ cp * cy, cp * sy, -sp };
+}
+
+/*
+ * Ray-AABB intersection (slab method).
+ * ray_origin + t * ray_dir, t in [0, max_t].
+ * Returns true if hit, writes nearest t to *out_t.
+ */
+static inline bool ray_aabb_intersect(vec3_t ray_origin, vec3_t ray_dir,
+                                       f32 max_t, vec3_t aabb_min,
+                                       vec3_t aabb_max, f32 *out_t) {
+    f32 tmin = 0.0f;
+    f32 tmax = max_t;
+
+    /* X slab */
+    if (ray_dir.x != 0.0f) {
+        f32 inv = 1.0f / ray_dir.x;
+        f32 t1 = (aabb_min.x - ray_origin.x) * inv;
+        f32 t2 = (aabb_max.x - ray_origin.x) * inv;
+        if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) return false;
+    } else {
+        if (ray_origin.x < aabb_min.x || ray_origin.x > aabb_max.x) return false;
+    }
+
+    /* Y slab */
+    if (ray_dir.y != 0.0f) {
+        f32 inv = 1.0f / ray_dir.y;
+        f32 t1 = (aabb_min.y - ray_origin.y) * inv;
+        f32 t2 = (aabb_max.y - ray_origin.y) * inv;
+        if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) return false;
+    } else {
+        if (ray_origin.y < aabb_min.y || ray_origin.y > aabb_max.y) return false;
+    }
+
+    /* Z slab */
+    if (ray_dir.z != 0.0f) {
+        f32 inv = 1.0f / ray_dir.z;
+        f32 t1 = (aabb_min.z - ray_origin.z) * inv;
+        f32 t2 = (aabb_max.z - ray_origin.z) * inv;
+        if (t1 > t2) { f32 tmp = t1; t1 = t2; t2 = tmp; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) return false;
+    } else {
+        if (ray_origin.z < aabb_min.z || ray_origin.z > aabb_max.z) return false;
+    }
+
+    if (tmin >= 0.0f) {
+        *out_t = tmin;
+        return true;
+    }
+    return false;
 }
 
 #endif /* G_INTERNAL_H */

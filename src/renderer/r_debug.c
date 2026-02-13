@@ -4,24 +4,36 @@
  * Validation layers, debug messenger, GPU timestamp queries.
  */
 
-#include "renderer/r_types.h"
+#include "r_types.h"
 #include <string.h>
 
 /* ---- Debug Labels ---- */
 
+#ifdef QUICKEN_DEBUG
+static PFN_vkCmdBeginDebugUtilsLabelEXT s_begin_label = NULL;
+static PFN_vkCmdEndDebugUtilsLabelEXT   s_end_label   = NULL;
+#endif
+
+static void r_debug_cache_procs(void)
+{
+#ifdef QUICKEN_DEBUG
+    s_begin_label = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+        g_r.device.handle, "vkCmdBeginDebugUtilsLabelEXT");
+    s_end_label = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+        g_r.device.handle, "vkCmdEndDebugUtilsLabelEXT");
+#endif
+}
+
 void r_debug_begin_label(VkCommandBuffer cmd, const char *name, float cr, float cg, float cb)
 {
 #ifdef QUICKEN_DEBUG
-    PFN_vkCmdBeginDebugUtilsLabelEXT func =
-        (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
-            g_r.device.handle, "vkCmdBeginDebugUtilsLabelEXT");
-    if (func) {
+    if (s_begin_label) {
         VkDebugUtilsLabelEXT label = {
             .sType      = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
             .pLabelName = name,
             .color      = { cr, cg, cb, 1.0f }
         };
-        func(cmd, &label);
+        s_begin_label(cmd, &label);
     }
 #else
     QK_UNUSED(cmd); QK_UNUSED(name);
@@ -32,11 +44,8 @@ void r_debug_begin_label(VkCommandBuffer cmd, const char *name, float cr, float 
 void r_debug_end_label(VkCommandBuffer cmd)
 {
 #ifdef QUICKEN_DEBUG
-    PFN_vkCmdEndDebugUtilsLabelEXT func =
-        (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
-            g_r.device.handle, "vkCmdEndDebugUtilsLabelEXT");
-    if (func) {
-        func(cmd);
+    if (s_end_label) {
+        s_end_label(cmd);
     }
 #else
     QK_UNUSED(cmd);
@@ -111,6 +120,7 @@ void r_debug_timers_read(void)
 
 qk_result_t r_debug_init(void)
 {
+    r_debug_cache_procs();
     r_debug_timers_init();
     return QK_SUCCESS;
 }

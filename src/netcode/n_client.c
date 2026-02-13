@@ -5,7 +5,7 @@
  * manages interpolation buffer, sends inputs, handles clock sync.
  */
 
-#include "netcode/n_internal.h"
+#include "n_internal.h"
 #include <math.h>
 
 #ifdef QK_PLATFORM_WINDOWS
