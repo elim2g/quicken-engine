@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /* Version information */
 #define QUICKEN_VERSION_MAJOR 0
@@ -55,5 +57,10 @@ typedef double   f64;
 /* Performance targets */
 #define QUICKEN_TARGET_FPS 1000
 #define QUICKEN_TARGET_FRAMETIME_MS (1000.0 / QUICKEN_TARGET_FPS)
+
+/* Simulation */
+#define QUICKEN_MAX_PLAYERS 16
+#define QUICKEN_TICK_RATE   128
+#define QUICKEN_TICK_MS     (1000.0f / QUICKEN_TICK_RATE)  /* 7.8125 ms */
 
 #endif /* QUICKEN_H */

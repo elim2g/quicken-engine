@@ -70,6 +70,45 @@ project "quicken-physics"
 
     filter {}
 
+-- Netcode module (precise floating-point for deterministic state sync)
+project "quicken-netcode"
+    kind "StaticLib"
+    language "C"
+    cdialect "C11"
+
+    targetdir ("build/lib/" .. outputdir)
+    objdir ("build/obj/" .. outputdir .. "/netcode")
+
+    files {
+        "src/netcode/**.c",
+        "include/netcode/**.h"
+    }
+
+    includedirs {
+        "include",
+        "external/SDL3/include"
+    }
+
+    -- Precise floating-point: all state that crosses the network must
+    -- produce identical results on all machines
+    filter "toolset:gcc or toolset:clang"
+        buildoptions {
+            "-Wall",
+            "-Wextra",
+            "-march=native",
+            "-std=c11"
+            -- NO -ffast-math — determinism required
+        }
+
+    filter "toolset:msc"
+        buildoptions {
+            "/W4",
+            "/arch:AVX2",
+            "/fp:precise"
+        }
+
+    filter {}
+
 -- Renderer module (aggressive optimizations for maximum FPS)
 project "quicken-renderer"
     kind "StaticLib"
@@ -128,9 +167,10 @@ project "quicken"
         "external/SDL3/include"
     }
 
-    -- Link against our physics and renderer modules
+    -- Link against our physics, netcode, and renderer modules
     links {
         "quicken-physics",
+        "quicken-netcode",
         "quicken-renderer"
     }
 
