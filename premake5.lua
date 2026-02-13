@@ -1,15 +1,20 @@
 -- QUICKEN Engine Build Configuration
--- Targets: Windows (MSVC, MinGW) and Linux (GCC, Clang)
 --
--- IMPORTANT: Physics and rendering use different floating-point settings
--- for cross-platform determinism while maintaining maximum performance
+-- Targets:
+--   quicken-physics    StaticLib   (precise float, determinism)
+--   quicken-renderer   StaticLib   (fast float, performance)
+--   quicken-netcode    StaticLib   (precise float, determinism)
+--   quicken            ConsoleApp  (client executable)
+--   quicken-server     ConsoleApp  (headless dedicated server)
+--
+-- IMPORTANT: Different modules use different floating-point settings.
+-- See docs/ARCHITECTURE.md and docs/plans/INTEGRATION.md Section 4.6.
 
 workspace "QUICKEN"
     architecture "x86_64"
     configurations { "Debug", "Release", "RelWithDebInfo" }
     startproject "quicken"
 
-    -- Output directories
     outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
     filter "configurations:Debug"
@@ -32,7 +37,10 @@ workspace "QUICKEN"
 
     filter {}
 
--- Physics module (precise floating-point for cross-platform determinism)
+--------------------------------------------------------------
+-- Physics (precise float, cross-platform determinism)
+-- Include path: include/ only (no SDL3, no Vulkan)
+--------------------------------------------------------------
 project "quicken-physics"
     kind "StaticLib"
     language "C"
@@ -47,57 +55,15 @@ project "quicken-physics"
     }
 
     includedirs {
-        "include",
-        "external/SDL3/include"
+        "include"
     }
 
-    -- Precise floating-point for determinism
     filter "toolset:gcc or toolset:clang"
         buildoptions {
-            "-Wall",
-            "-Wextra",
+            "-Wall", "-Wextra", "-Wpedantic",
             "-march=native",
-            "-std=c11"
-            -- NO -ffast-math here!
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"  -- Precise floating-point
-        }
-
-    filter {}
-
--- Netcode module (precise floating-point for deterministic state sync)
-project "quicken-netcode"
-    kind "StaticLib"
-    language "C"
-    cdialect "C11"
-
-    targetdir ("build/lib/" .. outputdir)
-    objdir ("build/obj/" .. outputdir .. "/netcode")
-
-    files {
-        "src/netcode/**.c",
-        "include/netcode/**.h"
-    }
-
-    includedirs {
-        "include",
-        "external/SDL3/include"
-    }
-
-    -- Precise floating-point: all state that crosses the network must
-    -- produce identical results on all machines
-    filter "toolset:gcc or toolset:clang"
-        buildoptions {
-            "-Wall",
-            "-Wextra",
-            "-march=native",
-            "-std=c11"
-            -- NO -ffast-math — determinism required
+            "-std=c11",
+            "-ffp-contract=off"     -- REQUIRED: prevent FMA for determinism
         }
 
     filter "toolset:msc"
@@ -109,7 +75,10 @@ project "quicken-netcode"
 
     filter {}
 
--- Renderer module (aggressive optimizations for maximum FPS)
+--------------------------------------------------------------
+-- Renderer (fast float, aggressive optimizations)
+-- Include path: include/, SDL3, Vulkan SDK
+--------------------------------------------------------------
 project "quicken-renderer"
     kind "StaticLib"
     language "C"
@@ -128,13 +97,14 @@ project "quicken-renderer"
         "external/SDL3/include"
     }
 
-    -- Aggressive optimizations for rendering performance
+    filter "system:windows"
+        includedirs { "$(VULKAN_SDK)/Include" }
+
     filter "toolset:gcc or toolset:clang"
         buildoptions {
-            "-Wall",
-            "-Wextra",
+            "-Wall", "-Wextra", "-Wpedantic",
             "-march=native",
-            "-ffast-math",     -- FAST math for rendering
+            "-ffast-math",
             "-std=c11"
         }
 
@@ -142,12 +112,53 @@ project "quicken-renderer"
         buildoptions {
             "/W4",
             "/arch:AVX2",
-            "/fp:fast"         -- FAST floating-point
+            "/fp:fast"
         }
 
     filter {}
 
--- Main QUICKEN executable
+--------------------------------------------------------------
+-- Netcode (precise float, platform sockets)
+-- Include path: include/ only (no SDL3, no Vulkan)
+--------------------------------------------------------------
+project "quicken-netcode"
+    kind "StaticLib"
+    language "C"
+    cdialect "C11"
+
+    targetdir ("build/lib/" .. outputdir)
+    objdir ("build/obj/" .. outputdir .. "/netcode")
+
+    files {
+        "src/netcode/**.c",
+        "include/netcode/**.h"
+    }
+
+    includedirs {
+        "include"
+    }
+
+    filter "toolset:gcc or toolset:clang"
+        buildoptions {
+            "-Wall", "-Wextra", "-Wpedantic",
+            "-march=native",
+            "-std=c11",
+            "-ffp-contract=off"
+        }
+
+    filter "toolset:msc"
+        buildoptions {
+            "/W4",
+            "/arch:AVX2",
+            "/fp:precise"
+        }
+
+    filter {}
+
+--------------------------------------------------------------
+-- Main executable (client: window + renderer + all modules)
+-- Include path: include/, SDL3
+--------------------------------------------------------------
 project "quicken"
     kind "ConsoleApp"
     language "C"
@@ -157,9 +168,15 @@ project "quicken"
     objdir ("build/obj/" .. outputdir .. "/main")
 
     files {
-        "src/*.c",           -- Only root-level source files
-        "src/core/**.c",     -- Core systems (input, platform, etc.)
+        "src/*.c",
+        "src/core/**.c",
+        "src/gameplay/**.c",
+        "src/ui/**.c",
         "include/**.h"
+    }
+
+    removefiles {
+        "src/server_main.c"
     }
 
     includedirs {
@@ -167,19 +184,19 @@ project "quicken"
         "external/SDL3/include"
     }
 
-    -- Link against our physics, netcode, and renderer modules
     links {
         "quicken-physics",
-        "quicken-netcode",
-        "quicken-renderer"
+        "quicken-renderer",
+        "quicken-netcode"
     }
 
-    -- Platform-specific settings
     filter "system:windows"
         system "windows"
-        libdirs { "external/SDL3/build/Release" }
-        links { "SDL3" }
-        -- Copy SDL3.dll to output directory
+        libdirs {
+            "external/SDL3/build/Release",
+            "$(VULKAN_SDK)/Lib"
+        }
+        links { "SDL3", "vulkan-1", "ws2_32" }
         postbuildcommands {
             "{MKDIR} %{cfg.targetdir}",
             "{COPY} external/SDL3/build/Release/SDL3.dll %{cfg.targetdir}"
@@ -187,25 +204,82 @@ project "quicken"
 
     filter "system:linux"
         system "linux"
-        links { "SDL3", "m", "pthread" }
+        links { "SDL3", "vulkan", "m", "pthread" }
         libdirs { "external/SDL3/build-linux" }
         runpathdirs { "external/SDL3/build-linux" }
 
-    -- Base compiler flags (precise floating-point for game logic)
     filter "toolset:gcc or toolset:clang"
         buildoptions {
-            "-Wall",
-            "-Wextra",
+            "-Wall", "-Wextra", "-Wpedantic",
             "-march=native",
-            "-std=c11"
-            -- NO -ffast-math for game logic
+            "-std=c11",
+            "-ffp-contract=off"
         }
 
     filter "toolset:msc"
         buildoptions {
             "/W4",
             "/arch:AVX2",
-            "/fp:precise"      -- Precise for game logic
+            "/fp:precise"
+        }
+
+    filter {}
+
+--------------------------------------------------------------
+-- Dedicated server (headless: no renderer, no SDL3, no Vulkan)
+--------------------------------------------------------------
+project "quicken-server"
+    kind "ConsoleApp"
+    language "C"
+    cdialect "C11"
+
+    targetdir ("build/bin/" .. outputdir)
+    objdir ("build/obj/" .. outputdir .. "/server")
+
+    defines { "QK_HEADLESS" }
+
+    files {
+        "src/server_main.c",
+        "src/core/**.c",
+        "src/gameplay/**.c",
+        "include/**.h"
+    }
+
+    removefiles {
+        "src/core/qk_window.c",
+        "src/core/qk_input.c"
+    }
+
+    includedirs {
+        "include"
+    }
+
+    links {
+        "quicken-physics",
+        "quicken-netcode"
+    }
+
+    filter "system:windows"
+        system "windows"
+        links { "ws2_32" }
+
+    filter "system:linux"
+        system "linux"
+        links { "m", "pthread" }
+
+    filter "toolset:gcc or toolset:clang"
+        buildoptions {
+            "-Wall", "-Wextra", "-Wpedantic",
+            "-march=native",
+            "-std=c11",
+            "-ffp-contract=off"
+        }
+
+    filter "toolset:msc"
+        buildoptions {
+            "/W4",
+            "/arch:AVX2",
+            "/fp:precise"
         }
 
     filter {}

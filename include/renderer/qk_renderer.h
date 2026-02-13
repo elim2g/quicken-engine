@@ -1,0 +1,102 @@
+/*
+ * QUICKEN Engine - Renderer Public API
+ *
+ * Vulkan-backed renderer with offscreen composition.
+ * Compiled with fast floating-point for maximum performance.
+ */
+
+#ifndef QK_RENDERER_H
+#define QK_RENDERER_H
+
+#include "quicken.h"
+#include "qk_math.h"
+
+/* Configuration */
+typedef struct {
+    void    *sdl_window;
+    u32      render_width;      /* 0 = default (1920) */
+    u32      render_height;     /* 0 = default (1080) */
+    u32      window_width;
+    u32      window_height;
+    bool     aspect_fit;
+    bool     vsync;
+} qk_renderer_config_t;
+
+/* Camera */
+typedef struct {
+    f32     view_projection[16];    /* column-major 4x4 */
+    f32     position[3];
+} qk_camera_t;
+
+/* World vertex (produced by map loader, consumed by renderer) */
+typedef struct {
+    f32     position[3];
+    f32     normal[3];
+    f32     uv[2];
+    u32     texture_id;
+} qk_world_vertex_t;
+
+/* Surface draw info */
+typedef struct {
+    u32     index_offset;
+    u32     index_count;
+    u32     vertex_offset;
+    u32     texture_index;
+} qk_draw_surface_t;
+
+/* UI quad (low-level, used by UI module internally) */
+typedef struct {
+    f32     x, y, w, h;
+    f32     u0, v0, u1, v1;
+    u32     color;
+    u32     texture_id;
+} qk_ui_quad_t;
+
+typedef u32 qk_texture_id_t;
+
+/* GPU stats */
+typedef struct {
+    f64     gpu_frame_ms;
+    f64     world_pass_ms;
+    f64     ui_pass_ms;
+    f64     compose_pass_ms;
+    u32     draw_calls;
+    u32     triangles;
+} qk_gpu_stats_t;
+
+/* Lifecycle */
+qk_result_t qk_renderer_init(const qk_renderer_config_t *config);
+void        qk_renderer_shutdown(void);
+
+/* Resolution */
+void qk_renderer_set_render_resolution(u32 width, u32 height);
+void qk_renderer_set_aspect_mode(bool aspect_fit);
+void qk_renderer_handle_window_resize(u32 new_width, u32 new_height);
+
+/* Resource upload (map load) */
+qk_result_t qk_renderer_upload_world(
+    const qk_world_vertex_t *vertices, u32 vertex_count,
+    const u32 *indices, u32 index_count,
+    const qk_draw_surface_t *surfaces, u32 surface_count);
+qk_texture_id_t qk_renderer_upload_texture(
+    const u8 *pixels, u32 width, u32 height, u32 channels);
+void qk_renderer_free_world(void);
+
+/* Frame rendering */
+void qk_renderer_begin_frame(const qk_camera_t *camera);
+void qk_renderer_draw_world(void);
+void qk_renderer_push_ui_quad(const qk_ui_quad_t *quad);
+void qk_renderer_end_frame(void);
+
+/* Debug */
+void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
+
+/* High-level UI drawing (convenience functions built on push_ui_quad).
+ * Declared here, implemented in src/ui/ui_draw.c */
+void qk_ui_draw_rect(f32 x, f32 y, f32 w, f32 h, u32 color_rgba);
+void qk_ui_draw_text(f32 x, f32 y, const char *text, f32 size,
+                      u32 color_rgba);
+void qk_ui_draw_number(f32 x, f32 y, i32 value, f32 size, u32 color_rgba);
+f32  qk_ui_text_width(const char *text, f32 size);
+
+#endif /* QK_RENDERER_H */

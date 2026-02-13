@@ -1,6 +1,11 @@
 @echo off
-REM QUICKEN Engine Build Script
-REM Automatically finds MSBuild and builds the project
+REM QUICKEN Engine Build Script (Windows)
+REM Automatically finds MSBuild and builds the project.
+REM
+REM Usage: build.bat [Release|Debug|RelWithDebInfo]
+REM
+REM premake5 is optional if the .sln already exists.
+REM To regenerate from WSL: wsl bash -c "cd /mnt/h/quicken/quicken-engine && premake5 vs2022"
 
 setlocal enabledelayedexpansion
 
@@ -13,14 +18,6 @@ echo QUICKEN Engine Build Script
 echo ========================================
 echo Configuration: %CONFIG%
 echo.
-
-REM Check for premake5
-where premake5.exe >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] premake5.exe not found in PATH!
-    echo Install premake5 and add it to your PATH.
-    exit /b 1
-)
 
 REM Check for cmake
 where cmake.exe >nul 2>&1
@@ -43,9 +40,23 @@ if not exist "external\SDL3\build\Release\SDL3.dll" (
     cmake --build external\SDL3\build --config Release
 )
 
-REM Regenerate VS solution to ensure it targets the current platform
-echo Generating VS2022 solution...
-premake5.exe vs2022
+REM Try to regenerate VS solution with premake5
+where premake5.exe >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo Generating VS2022 solution...
+    premake5.exe vs2022
+) else (
+    if exist "QUICKEN.sln" (
+        echo [NOTE] premake5 not in PATH. Using existing QUICKEN.sln.
+        echo        To regenerate: wsl bash -c "cd /mnt/h/quicken/quicken-engine && premake5 vs2022"
+    ) else (
+        echo [ERROR] premake5.exe not found and no QUICKEN.sln exists!
+        echo.
+        echo Option 1: Install premake5 and add to PATH
+        echo Option 2: Generate from WSL: wsl bash -c "cd /mnt/h/quicken/quicken-engine && premake5 vs2022"
+        exit /b 1
+    )
+)
 
 REM Try to find MSBuild in common locations (prioritize 2022 over 2019)
 set "MSBUILD="
@@ -99,7 +110,8 @@ if %ERRORLEVEL% EQU 0 (
     echo Build succeeded!
     echo ========================================
     echo.
-    echo Executable: build\bin\%CONFIG%-windows-x86_64\quicken.exe
+    echo Client:    build\bin\%CONFIG%-windows-x86_64\quicken.exe
+    echo Server:    build\bin\%CONFIG%-windows-x86_64\quicken-server.exe
     echo.
 ) else (
     echo.

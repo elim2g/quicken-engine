@@ -1,10 +1,13 @@
 #!/bin/bash
 # QUICKEN Engine Build Script (Linux)
-# Automatically builds the project using makefiles
+# Automatically builds the project using makefiles.
+#
+# Usage: ./build.sh [release|debug|relwithdebinfo]
+#
+# premake5 is optional if Makefile already exists.
 
-set -e  # Exit on error
+set -e
 
-# Default to Release build
 CONFIG="${1:-release}"
 
 echo "========================================"
@@ -17,12 +20,6 @@ echo ""
 if ! command -v make &> /dev/null; then
     echo "[ERROR] make not found!"
     echo "Install: sudo apt-get install build-essential"
-    exit 1
-fi
-
-if ! command -v premake5 &> /dev/null; then
-    echo "[ERROR] premake5 not found!"
-    echo "Install premake5 and add it to your PATH"
     exit 1
 fi
 
@@ -45,9 +42,17 @@ if [ ! -f "external/SDL3/build-linux/libSDL3.so" ]; then
     cmake --build external/SDL3/build-linux -j$(nproc)
 fi
 
-# Always regenerate makefiles to ensure they target the current platform
-echo "Generating makefiles..."
-premake5 gmake
+# Try to regenerate makefiles with premake5
+if command -v premake5 &> /dev/null; then
+    echo "Generating makefiles..."
+    premake5 gmake
+elif [ -f "Makefile" ]; then
+    echo "[NOTE] premake5 not found. Using existing Makefile."
+else
+    echo "[ERROR] premake5 not found and no Makefile exists!"
+    echo "Install premake5 and add it to your PATH."
+    exit 1
+fi
 
 # Build the project
 echo "Building..."
@@ -59,7 +64,8 @@ if [ $? -eq 0 ]; then
     echo "Build succeeded!"
     echo "========================================"
     echo ""
-    echo "Executable: build/bin/$CONFIG-linux-x86_64/quicken"
+    echo "Client: build/bin/$CONFIG-linux-x86_64/quicken"
+    echo "Server: build/bin/$CONFIG-linux-x86_64/quicken-server"
     echo ""
 else
     echo ""

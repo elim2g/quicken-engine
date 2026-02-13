@@ -1,7 +1,8 @@
 /*
  * QUICKEN Engine - Core Header
  *
- * Main engine header file. Include this in all engine source files.
+ * Platform detection, base types (u8..f64), unified result codes, assert macro.
+ * Include this in all engine source files.
  */
 
 #ifndef QUICKEN_H
@@ -9,33 +10,18 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 
-/* Version information */
+/* Version */
 #define QUICKEN_VERSION_MAJOR 0
 #define QUICKEN_VERSION_MINOR 1
 #define QUICKEN_VERSION_PATCH 0
 
-/* Build configuration */
-#ifdef QUICKEN_DEBUG
-    #define QUICKEN_ASSERT(expr) \
-        do { \
-            if (!(expr)) { \
-                fprintf(stderr, "Assertion failed: %s, file %s, line %d\n", \
-                        #expr, __FILE__, __LINE__); \
-                abort(); \
-            } \
-        } while (0)
-#else
-    #define QUICKEN_ASSERT(expr) ((void)0)
-#endif
-
 /* Platform detection */
 #if defined(_WIN32) || defined(_WIN64)
-    #define QUICKEN_PLATFORM_WINDOWS
+    #define QK_PLATFORM_WINDOWS
 #elif defined(__linux__)
-    #define QUICKEN_PLATFORM_LINUX
+    #define QK_PLATFORM_LINUX
 #else
     #error "Unsupported platform"
 #endif
@@ -54,13 +40,49 @@ typedef int64_t  i64;
 typedef float    f32;
 typedef double   f64;
 
-/* Performance targets */
-#define QUICKEN_TARGET_FPS 1000
-#define QUICKEN_TARGET_FRAMETIME_MS (1000.0 / QUICKEN_TARGET_FPS)
+/* Unified result codes (all modules return this) */
+typedef enum {
+    QK_SUCCESS = 0,
 
-/* Simulation */
-#define QUICKEN_MAX_PLAYERS 16
-#define QUICKEN_TICK_RATE   128
-#define QUICKEN_TICK_MS     (1000.0f / QUICKEN_TICK_RATE)  /* 7.8125 ms */
+    /* General errors */
+    QK_ERROR_INIT_FAILED,
+    QK_ERROR_OUT_OF_MEMORY,
+    QK_ERROR_INVALID_PARAM,
+    QK_ERROR_NOT_FOUND,
+    QK_ERROR_FULL,
+
+    /* Renderer errors */
+    QK_ERROR_VULKAN_INIT,
+    QK_ERROR_NO_SUITABLE_GPU,
+    QK_ERROR_SWAPCHAIN,
+    QK_ERROR_PIPELINE,
+
+    /* Netcode errors */
+    QK_ERROR_SOCKET,
+    QK_ERROR_TIMEOUT,
+    QK_ERROR_REJECTED,
+
+    QK_RESULT_COUNT
+} qk_result_t;
+
+/* Assert macro */
+#ifdef QUICKEN_DEBUG
+    #include <stdio.h>
+    #include <stdlib.h>
+    #define QK_ASSERT(expr) \
+        do { \
+            if (!(expr)) { \
+                fprintf(stderr, "QK_ASSERT failed: %s (%s:%d)\n", \
+                        #expr, __FILE__, __LINE__); \
+                abort(); \
+            } \
+        } while (0)
+#else
+    #define QK_ASSERT(expr) ((void)0)
+#endif
+
+/* Utility */
+#define QK_UNUSED(x) ((void)(x))
+#define QK_TARGET_FPS 1000
 
 #endif /* QUICKEN_H */
