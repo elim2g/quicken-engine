@@ -42,6 +42,10 @@ int main(int argc, char *argv[]) {
 
     printf("\nDedicated server stubs verified.\n");
 
+    /* Physics validation */
+    qk_physics_validate_strafejump();
+    qk_physics_validate_map("assets/maps/test_box.map");
+
     /* Shutdown */
     qk_net_server_shutdown();
     qk_game_shutdown();

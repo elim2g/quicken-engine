@@ -7,6 +7,7 @@
 
 #include "g_internal.h"
 #include "netcode/n_types.h"
+#include "physics/qk_physics.h"
 
 /* ---- Global Game State ---- */
 static qk_game_state_t s_gs;
@@ -43,8 +44,6 @@ qk_result_t qk_game_init(const qk_game_config_t *config) {
 }
 
 void qk_game_tick(qk_phys_world_t *world, f32 dt) {
-    QK_UNUSED(world);
-
     u32 dt_ms = (u32)(dt * 1000.0f + 0.5f);
     s_gs.server_time_ms += dt_ms;
 
@@ -57,8 +56,21 @@ void qk_game_tick(qk_phys_world_t *world, f32 dt) {
     /* 2. Process player commands (weapon tick, view angles) */
     g_process_commands(&s_gs, dt_ms);
 
-    /* 3. Projectile tick (movement + collision) */
-    g_projectile_tick(&s_gs, dt);
+    /* 3. Physics movement for all alive players */
+    for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
+        i32 ent_idx = s_gs.player_entity[i];
+        if (ent_idx < 0) continue;
+
+        entity_t *ent = &s_gs.entities.entities[ent_idx];
+        qk_player_state_t *ps = &ent->data.player;
+
+        if (ps->alive_state != QK_PSTATE_ALIVE) continue;
+
+        qk_physics_move(ps, &ps->last_cmd, world);
+    }
+
+    /* 4. Projectile tick (movement + collision against world and players) */
+    g_projectile_tick(&s_gs, dt, world);
 }
 
 void qk_game_shutdown(void) {

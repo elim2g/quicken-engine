@@ -294,3 +294,51 @@ project "quicken-server"
         }
 
     filter {}
+
+--------------------------------------------------------------
+-- Netcode loopback test (exercises full loopback path)
+--------------------------------------------------------------
+project "test-netcode"
+    kind "ConsoleApp"
+    language "C"
+    cdialect "C11"
+
+    targetdir ("build/bin/" .. outputdir)
+    objdir ("build/obj/" .. outputdir .. "/test-netcode")
+
+    files {
+        "tests/test_netcode_loopback.c"
+    }
+
+    includedirs {
+        "include"
+    }
+
+    links {
+        "quicken-netcode"
+    }
+
+    filter "system:windows"
+        system "windows"
+        links { "ws2_32" }
+
+    filter "system:linux"
+        system "linux"
+        links { "m", "pthread" }
+
+    filter "toolset:gcc or toolset:clang"
+        buildoptions {
+            "-Wall", "-Wextra", "-Wpedantic",
+            "-march=native",
+            "-std=c11",
+            "-ffp-contract=off"
+        }
+
+    filter "toolset:msc"
+        buildoptions {
+            "/W4",
+            "/arch:AVX2",
+            "/fp:precise"
+        }
+
+    filter {}

@@ -5,6 +5,11 @@
  */
 
 #include "g_internal.h"
+#include "physics/qk_physics.h"
+
+/* Projectile trace extents (small box, essentially a point trace) */
+static const vec3_t PROJ_MINS = {-1.0f, -1.0f, -1.0f};
+static const vec3_t PROJ_MAXS = { 1.0f,  1.0f,  1.0f};
 
 entity_t *g_projectile_spawn(qk_game_state_t *gs, entity_t *owner,
                               qk_weapon_id_t weapon, vec3_t origin,
@@ -30,7 +35,8 @@ entity_t *g_projectile_spawn(qk_game_state_t *gs, entity_t *owner,
     return proj;
 }
 
-void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
+void g_projectile_tick(qk_game_state_t *gs, f32 dt,
+                       const qk_phys_world_t *world) {
     entity_t *e = g_entity_first(&gs->entities, ENTITY_PROJECTILE);
     while (e) {
         entity_t *next = g_entity_next(&gs->entities, e, ENTITY_PROJECTILE);
@@ -45,16 +51,26 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
             continue;
         }
 
-        /* move */
+        /* desired new position */
         vec3_t new_origin = vec3_add(p->origin, vec3_scale(p->velocity, dt));
 
-        /*
-         * Trace from old to new position against player entities.
-         * World geometry tracing will be added when physics_trace_line is available.
-         */
+        /* trace against world geometry */
+        f32 world_frac = 1.0f;
+        bool hit_world = false;
+        if (world) {
+            qk_trace_result_t tr = qk_physics_trace(world, p->origin,
+                                                      new_origin,
+                                                      PROJ_MINS, PROJ_MAXS);
+            if (tr.fraction < 1.0f) {
+                world_frac = tr.fraction;
+                hit_world = true;
+            }
+        }
+
+        /* trace against player entities */
         bool hit_player = false;
         entity_t *hit_ent = NULL;
-        f32 best_frac = 1.0f;
+        f32 best_player_frac = 1.0f;
         vec3_t ray = vec3_sub(new_origin, p->origin);
 
         for (entity_t *pe = g_entity_first(&gs->entities, ENTITY_PLAYER);
@@ -66,17 +82,24 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
             vec3_t pmax = vec3_add(pe->data.player.origin, pe->data.player.maxs);
 
             f32 t;
-            if (ray_aabb_intersect(p->origin, ray, 1.0f, pmin, pmax, &t) && t < best_frac) {
-                best_frac = t;
+            if (ray_aabb_intersect(p->origin, ray, 1.0f, pmin, pmax, &t) &&
+                t < best_player_frac) {
+                best_player_frac = t;
                 hit_ent = pe;
                 hit_player = true;
             }
         }
 
-        if (hit_player && hit_ent) {
-            /* direct hit: apply direct damage + splash */
-            vec3_t hit_point = vec3_add(p->origin, vec3_scale(ray, best_frac));
-            vec3_t hit_dir = vec3_normalize(vec3_sub(hit_ent->data.player.origin, hit_point));
+        /* determine which hit is closer: world or player */
+        bool player_hit_first = hit_player && (!hit_world ||
+                                                best_player_frac <= world_frac);
+
+        if (player_hit_first && hit_ent) {
+            /* direct hit on player */
+            vec3_t hit_point = vec3_add(p->origin,
+                                         vec3_scale(ray, best_player_frac));
+            vec3_t hit_dir = vec3_normalize(
+                vec3_sub(hit_ent->data.player.origin, hit_point));
 
             damage_event_t dmg = {0};
             dmg.attacker_id = p->owner;
@@ -88,7 +111,7 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
             dmg.is_self = false;
             g_combat_apply_damage(gs, &dmg);
 
-            /* splash damage at hit point (skip direct-hit target to avoid double damage) */
+            /* splash at hit point (skip direct-hit target) */
             if (p->splash_radius > 0.0f) {
                 g_combat_splash_damage(gs, hit_point, p->splash_radius,
                                         p->splash_damage, wdef->knockback,
@@ -100,12 +123,24 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt) {
             continue;
         }
 
-        /*
-         * TODO: world geometry collision would go here.
-         * For now, just advance the projectile position.
-         * When physics is integrated, a world hit triggers explosion + splash.
-         */
+        if (hit_world) {
+            /* explode on world surface */
+            vec3_t hit_point = vec3_add(p->origin,
+                                         vec3_scale(ray, world_frac));
 
+            if (p->splash_radius > 0.0f) {
+                /* splash damage includes self-damage to owner */
+                g_combat_splash_damage(gs, hit_point, p->splash_radius,
+                                        p->splash_damage, wdef->knockback,
+                                        p->owner, p->weapon, 0xFF);
+            }
+
+            g_entity_free(&gs->entities, e);
+            e = next;
+            continue;
+        }
+
+        /* no collision, advance position */
         p->origin = new_origin;
         e = next;
     }

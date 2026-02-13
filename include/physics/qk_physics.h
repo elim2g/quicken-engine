@@ -43,6 +43,9 @@ typedef struct {
 qk_phys_world_t *qk_physics_world_create(qk_collision_model_t *cm);
 void              qk_physics_world_destroy(qk_phys_world_t *world);
 
+/* Create a hardcoded test room (512x512x256 box) for testing without a .map file */
+qk_phys_world_t *qk_physics_world_create_test_room(void);
+
 /* Player init */
 void qk_physics_player_init(qk_player_state_t *ps, vec3_t spawn_origin);
 
@@ -62,6 +65,14 @@ qk_trace_result_t qk_physics_trace(const qk_phys_world_t *world,
 
 /* Get interpolation alpha for rendering */
 f32 qk_physics_get_alpha(const qk_phys_time_t *ts);
+
+/* Debug: run strafejump validation test, prints speed log to stdout.
+   Returns true if speed gain matches expected Q3 behavior. */
+bool qk_physics_validate_strafejump(void);
+
+/* Debug: load a .map file and validate traces + movement against it.
+   Returns true if all trace/movement tests pass. */
+bool qk_physics_validate_map(const char *map_path);
 
 /* Constants */
 #define QK_PHYSICS_TICK_RATE    128

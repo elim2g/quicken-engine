@@ -10,6 +10,7 @@
 
 #include "g_local.h"
 #include "gameplay/qk_gameplay.h"
+#include "physics/qk_physics.h"
 #include <string.h>
 
 /* ---- Weapon fire mode ---- */
@@ -135,7 +136,8 @@ void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
 entity_t *g_projectile_spawn(qk_game_state_t *gs, entity_t *owner,
                               qk_weapon_id_t weapon, vec3_t origin,
                               vec3_t direction);
-void g_projectile_tick(qk_game_state_t *gs, f32 dt);
+void g_projectile_tick(qk_game_state_t *gs, f32 dt,
+                       const qk_phys_world_t *world);
 
 /* ---- Clan Arena functions (g_ca.c) ---- */
 void g_ca_init(qk_game_state_t *gs);

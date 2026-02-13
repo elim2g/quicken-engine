@@ -33,6 +33,7 @@ void    p_angle_vectors(f32 pitch, f32 yaw,
 /* ---- p_brush.c ---- */
 
 void    p_brush_compute_aabb(qk_brush_t *brush);
+void    p_brush_add_bevels(qk_brush_t *brush);
 bool    p_aabb_overlap(vec3_t a_mins, vec3_t a_maxs,
                        vec3_t b_mins, vec3_t b_maxs);
 void    p_compute_swept_aabb(vec3_t start, vec3_t end,

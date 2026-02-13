@@ -7,6 +7,13 @@
 
 #include "n_internal.h"
 #include <math.h>
+#include <stdio.h>
+
+#ifdef QUICKEN_DEBUG
+#define N_DBG(fmt, ...) fprintf(stderr, "[NET-CL] " fmt "\n", ##__VA_ARGS__)
+#else
+#define N_DBG(fmt, ...) ((void)0)
+#endif
 
 #ifdef QK_PLATFORM_WINDOWS
 #ifndef WIN32_LEAN_AND_MEAN
@@ -108,7 +115,10 @@ void n_client_connect_local(n_client_t *cl, n_server_t *srv) {
 
     /* Allocate a loopback slot on the server */
     i32 slot = n_server_allocate_slot(srv);
-    if (slot < 0) return;
+    if (slot < 0) {
+        N_DBG("connect_local: no free slot on server");
+        return;
+    }
 
     n_client_slot_t *server_slot = &srv->clients[slot];
     slot_reset_for_loopback(server_slot, (u8)slot);
@@ -118,21 +128,31 @@ void n_client_connect_local(n_client_t *cl, n_server_t *srv) {
                               &srv->loopback_queues[slot][0],
                               &srv->loopback_queues[slot][1]);
 
-    server_slot->state = N_CONN_CONNECTING;
+    /* Loopback skips the handshake entirely -- client and server are in
+     * the same process, so challenge/response is pointless. Go straight
+     * to CONNECTED on both sides. */
+    f64 now = n_platform_time();
+
+    server_slot->state = N_CONN_CONNECTED;
     server_slot->is_loopback = true;
-    server_slot->last_packet_recv_time = n_platform_time();
-    server_slot->connect_start_time = n_platform_time();
+    server_slot->last_packet_recv_time = now;
+    srv->client_count++;
 
-    cl->conn_state = N_CONN_CONNECTING;
-    cl->client_challenge = n_random_u32();
-    cl->connect_start_time = n_platform_time();
-    cl->last_connect_retry_time = 0.0;
+    cl->conn_state = N_CONN_CONNECTED;
+    cl->client_id = (u8)slot;
+    cl->input_tick = srv->tick;
 
-    /* The handshake will run through the normal tick path */
+    /* Zero clock offset for loopback (zero latency, same clock) */
+    cl->clock.smoothed_offset = (f64)srv->tick * N_TICK_INTERVAL - now;
+    cl->clock.converged = true;
+
+    N_DBG("connect_local: connected as client_id=%u, server_tick=%u", (u32)slot, srv->tick);
 }
 
 void n_client_disconnect(n_client_t *cl) {
     if (cl->conn_state == N_CONN_DISCONNECTED) return;
+
+    N_DBG("disconnect: state=%d loopback=%d", cl->conn_state, cl->is_loopback);
 
     /* Send disconnect message */
     if (cl->conn_state == N_CONN_CONNECTED) {
@@ -261,6 +281,9 @@ static void handle_snapshot_message(n_client_t *cl, const u8 *payload, u32 len) 
 
     if (n_bitreader_overflowed(&r)) return;
 
+    N_DBG("snapshot: tick=%u base=%u bytes=%u interp_count=%u",
+          current_tick, base_tick, len, cl->interp_count);
+
     /* Extract remaining delta data */
     u32 delta_bytes = len - 8;
     u8 delta_buf[N_TRANSPORT_MTU];
@@ -288,6 +311,7 @@ static void handle_snapshot_message(n_client_t *cl, const u8 *payload, u32 len) 
         if (!baseline) {
             /* Can't find baseline, skip this snapshot.
              * Server will eventually send a full snapshot. */
+            N_DBG("snapshot: missing baseline tick=%u, dropping", base_tick);
             return;
         }
     }
@@ -632,6 +656,8 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
     const n_snapshot_t *snap_b = NULL;
 
     if (!find_interp_pair(cl, render_tick, &snap_a, &snap_b)) {
+        N_DBG("interp: no pair for render_tick=%.2f, interp_count=%u (fallback to latest)",
+              render_tick, cl->interp_count);
         /* Not enough data to interpolate. If we have at least one snapshot,
          * use it directly. */
         if (cl->interp_count > 0) {

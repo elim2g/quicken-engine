@@ -6,6 +6,8 @@
  */
 
 #include "p_internal.h"
+#include <stdlib.h>
+#include <string.h>
 
 /* ---- World lifecycle ---- */
 
@@ -15,6 +17,96 @@ qk_phys_world_t *qk_physics_world_create(qk_collision_model_t *cm) {
 
 void qk_physics_world_destroy(qk_phys_world_t *world) {
     p_world_destroy(world);
+}
+
+/* ---- Create a hardcoded test room ---- */
+
+/*
+ * Helper: create a slab brush (axis-aligned box defined by 6 planes).
+ * lo/hi define the box extents on each axis.
+ */
+static qk_brush_t p_make_box_brush(f32 lo_x, f32 lo_y, f32 lo_z,
+                                    f32 hi_x, f32 hi_y, f32 hi_z) {
+    qk_brush_t brush = {0};
+    brush.plane_count = 6;
+    brush.planes = (qk_plane_t *)malloc(6 * sizeof(qk_plane_t));
+
+    /* +X face */
+    brush.planes[0].normal = (vec3_t){ 1.0f, 0.0f, 0.0f };
+    brush.planes[0].dist = hi_x;
+    /* -X face */
+    brush.planes[1].normal = (vec3_t){-1.0f, 0.0f, 0.0f };
+    brush.planes[1].dist = -lo_x;
+    /* +Y face */
+    brush.planes[2].normal = (vec3_t){ 0.0f, 1.0f, 0.0f };
+    brush.planes[2].dist = hi_y;
+    /* -Y face */
+    brush.planes[3].normal = (vec3_t){ 0.0f,-1.0f, 0.0f };
+    brush.planes[3].dist = -lo_y;
+    /* +Z face (up) */
+    brush.planes[4].normal = (vec3_t){ 0.0f, 0.0f, 1.0f };
+    brush.planes[4].dist = hi_z;
+    /* -Z face (down) */
+    brush.planes[5].normal = (vec3_t){ 0.0f, 0.0f,-1.0f };
+    brush.planes[5].dist = -lo_z;
+
+    return brush;
+}
+
+qk_phys_world_t *qk_physics_world_create_test_room(void) {
+    /*
+     * 512x512x256 hollow room centered at origin.
+     * Interior spans: X [-256, 256], Y [-256, 256], Z [0, 256].
+     * Wall thickness: 16 units.
+     *
+     * 6 slab brushes: floor, ceiling, +X wall, -X wall, +Y wall, -Y wall.
+     */
+    #define ROOM_HALF   1024.0f
+    #define ROOM_TOP    256.0f
+    #define WALL        16.0f
+
+    qk_collision_model_t *cm = (qk_collision_model_t *)malloc(sizeof(qk_collision_model_t));
+    if (!cm) return NULL;
+
+    cm->brush_count = 6;
+    cm->brushes = (qk_brush_t *)malloc(6 * sizeof(qk_brush_t));
+    if (!cm->brushes) { free(cm); return NULL; }
+
+    /* Floor: z from -WALL to 0 */
+    cm->brushes[0] = p_make_box_brush(
+        -ROOM_HALF - WALL, -ROOM_HALF - WALL, -WALL,
+         ROOM_HALF + WALL,  ROOM_HALF + WALL,  0.0f);
+
+    /* Ceiling: z from ROOM_TOP to ROOM_TOP + WALL */
+    cm->brushes[1] = p_make_box_brush(
+        -ROOM_HALF - WALL, -ROOM_HALF - WALL, ROOM_TOP,
+         ROOM_HALF + WALL,  ROOM_HALF + WALL, ROOM_TOP + WALL);
+
+    /* +X wall */
+    cm->brushes[2] = p_make_box_brush(
+         ROOM_HALF, -ROOM_HALF - WALL, -WALL,
+         ROOM_HALF + WALL,  ROOM_HALF + WALL, ROOM_TOP + WALL);
+
+    /* -X wall */
+    cm->brushes[3] = p_make_box_brush(
+        -ROOM_HALF - WALL, -ROOM_HALF - WALL, -WALL,
+        -ROOM_HALF,         ROOM_HALF + WALL, ROOM_TOP + WALL);
+
+    /* +Y wall */
+    cm->brushes[4] = p_make_box_brush(
+        -ROOM_HALF - WALL,  ROOM_HALF, -WALL,
+         ROOM_HALF + WALL,  ROOM_HALF + WALL, ROOM_TOP + WALL);
+
+    /* -Y wall */
+    cm->brushes[5] = p_make_box_brush(
+        -ROOM_HALF - WALL, -ROOM_HALF - WALL, -WALL,
+         ROOM_HALF + WALL, -ROOM_HALF,        ROOM_TOP + WALL);
+
+    #undef ROOM_HALF
+    #undef ROOM_TOP
+    #undef WALL
+
+    return qk_physics_world_create(cm);
 }
 
 /* ---- Player init ---- */

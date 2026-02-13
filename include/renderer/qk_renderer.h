@@ -88,6 +88,13 @@ void qk_renderer_draw_world(void);
 void qk_renderer_push_ui_quad(const qk_ui_quad_t *quad);
 void qk_renderer_end_frame(void);
 
+/* Entity rendering (debug visuals for vertical slice) */
+void qk_renderer_draw_capsule(f32 pos_x, f32 pos_y, f32 pos_z,
+                               f32 radius, f32 half_height,
+                               f32 yaw, u32 color_rgba);
+void qk_renderer_draw_sphere(f32 pos_x, f32 pos_y, f32 pos_z,
+                              f32 radius, u32 color_rgba);
+
 /* Debug */
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 

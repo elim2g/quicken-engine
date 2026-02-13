@@ -18,9 +18,11 @@ qk_phys_world_t *p_world_create(qk_collision_model_t *cm) {
 
     world->cm = cm;
 
-    /* Precompute AABBs for all brushes (broadphase) */
+    /* For each brush: compute AABB, then add bevel planes for correct
+       box tracing against raw .map geometry (no BSP compiler bevels). */
     for (u32 i = 0; i < cm->brush_count; i++) {
         p_brush_compute_aabb(&cm->brushes[i]);
+        p_brush_add_bevels(&cm->brushes[i]);
     }
 
     return world;

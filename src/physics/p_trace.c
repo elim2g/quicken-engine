@@ -28,12 +28,14 @@ qk_trace_result_t p_trace_brush(const qk_brush_t *brush,
         const qk_plane_t *plane = &brush->planes[i];
 
         /* Expand plane by AABB extents (Minkowski sum).
-           For each axis: if normal component is positive, use mins; else maxs.
-           This gives the support point of the box along -normal. */
-        f32 expand = 0.0f;
-        expand += (plane->normal.x >= 0.0f) ? mins.x : maxs.x;
-        expand += (plane->normal.y >= 0.0f) ? mins.y : maxs.y;
-        expand += (plane->normal.z >= 0.0f) ? mins.z : maxs.z;
+           Compute the support point of the box in direction -normal,
+           then dot it with normal to get the plane offset. */
+        f32 sx = (plane->normal.x >= 0.0f) ? mins.x : maxs.x;
+        f32 sy = (plane->normal.y >= 0.0f) ? mins.y : maxs.y;
+        f32 sz = (plane->normal.z >= 0.0f) ? mins.z : maxs.z;
+        f32 expand = sx * plane->normal.x
+                   + sy * plane->normal.y
+                   + sz * plane->normal.z;
         f32 dist = plane->dist - expand;
 
         f32 d_start = vec3_dot(start, plane->normal) - dist;

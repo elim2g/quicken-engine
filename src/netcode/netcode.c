@@ -8,6 +8,13 @@
 
 #include "n_internal.h"
 #include <stdlib.h>
+#include <stdio.h>
+
+#ifdef QUICKEN_DEBUG
+#define N_DBG(fmt, ...) fprintf(stderr, "[NET] " fmt "\n", ##__VA_ARGS__)
+#else
+#define N_DBG(fmt, ...) ((void)0)
+#endif
 
 /* ---- Global instances (heap-allocated to avoid MB-scale BSS) ---- */
 
@@ -147,9 +154,11 @@ qk_result_t qk_net_client_connect_local(void) {
     n_client_connect_local(s_client, s_server);
 
     if (s_client->conn_state == N_CONN_DISCONNECTED) {
+        N_DBG("connect_local: FAILED (server full or no slot)");
         return QK_ERROR_FULL;
     }
 
+    N_DBG("connect_local: OK client_id=%u", (u32)s_client->client_id);
     return QK_SUCCESS;
 }
 

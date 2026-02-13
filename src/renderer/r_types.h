@@ -28,6 +28,7 @@
 #define R_MAX_TEXTURES          256
 #define R_UI_MAX_QUADS          4096
 #define R_TIMESTAMP_COUNT       8
+#define R_ENTITY_MAX_DRAWS      512
 
 #define R_MEMORY_POOL_DEVICE_LOCAL  0
 #define R_MEMORY_POOL_HOST_VISIBLE  1
@@ -220,6 +221,44 @@ typedef struct r_view_uniforms {
     f32     time;
 } r_view_uniforms_t;
 
+/* ---- Entity Types ---- */
+
+typedef struct r_entity_vertex {
+    f32     position[3];
+    f32     normal[3];
+} r_entity_vertex_t;
+
+typedef struct r_entity_push_constants {
+    f32     model[16];      /* column-major 4x4 */
+    f32     color[4];       /* RGBA */
+} r_entity_push_constants_t;
+
+typedef enum {
+    R_ENTITY_MESH_CAPSULE = 0,
+    R_ENTITY_MESH_SPHERE,
+    R_ENTITY_MESH_COUNT
+} r_entity_mesh_type_t;
+
+typedef struct r_entity_mesh {
+    VkBuffer        vertex_buffer;
+    VkDeviceMemory  vertex_memory;
+    VkBuffer        index_buffer;
+    VkDeviceMemory  index_memory;
+    u32             index_count;
+} r_entity_mesh_t;
+
+typedef struct r_entity_draw {
+    r_entity_push_constants_t push;
+    r_entity_mesh_type_t      mesh_type;
+} r_entity_draw_t;
+
+typedef struct r_entity_state {
+    r_entity_mesh_t     meshes[R_ENTITY_MESH_COUNT];
+    r_entity_draw_t     draws[R_ENTITY_MAX_DRAWS];
+    u32                 draw_count;
+    bool                initialized;
+} r_entity_state_t;
+
 /* ---- Composition Push Constants ---- */
 
 typedef struct r_compose_push_constants {
@@ -255,6 +294,7 @@ typedef struct r_state {
 
     VkPipelineCache         pipeline_cache_handle;
     r_pipeline_t            world_pipeline;
+    r_pipeline_t            entity_pipeline;
     r_pipeline_t            ui_pipeline;
     r_pipeline_t            compose_pipeline;
 
@@ -271,6 +311,8 @@ typedef struct r_state {
     VkFramebuffer           compose_framebuffers[R_MAX_SWAPCHAIN_IMAGES];
 
     r_world_geometry_t      world;
+
+    r_entity_state_t        entities;
 
     r_texture_manager_t     textures;
 
@@ -335,6 +377,7 @@ void        r_pipeline_cache_save(void);
 void        r_pipeline_cache_shutdown(void);
 VkShaderModule r_pipeline_load_shader(const char *path);
 qk_result_t r_pipeline_create_world(void);
+qk_result_t r_pipeline_create_entity(void);
 qk_result_t r_pipeline_create_ui(void);
 qk_result_t r_pipeline_create_compose(void);
 void        r_pipeline_destroy_all(void);
@@ -343,6 +386,11 @@ void        r_pipeline_destroy_all(void);
 void r_world_init(void);
 void r_world_shutdown(void);
 void r_world_record_commands(VkCommandBuffer cmd, u32 frame_index);
+
+/* r_entity.c */
+qk_result_t r_entity_init(void);
+void        r_entity_shutdown(void);
+void        r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index);
 
 /* r_ui.c */
 qk_result_t r_ui_init(void);

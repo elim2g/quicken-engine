@@ -11,20 +11,26 @@
 
 void p_categorize_position(qk_player_state_t *ps,
                            const qk_phys_world_t *world) {
-    /* Trace 0.25 units down from current position */
-    vec3_t point = ps->origin;
-    point.z -= 0.25f;
+    /* Trace from slightly above current position to below it.
+       The small upward offset ensures the trace starts clearly
+       outside the floor brush even when origin sits exactly on
+       the Minkowski-expanded surface boundary. */
+    vec3_t start = ps->origin;
+    start.z += 0.125f;
 
-    qk_trace_result_t trace = p_trace_world(world, ps->origin, point,
+    vec3_t end = ps->origin;
+    end.z -= 0.25f;
+
+    qk_trace_result_t trace = p_trace_world(world, start, end,
                                              ps->mins, ps->maxs);
 
-    if (trace.fraction == 1.0f ||
-        trace.hit_normal.z < QK_PM_MIN_WALK_NORMAL) {
-        ps->on_ground = false;
-        ps->ground_normal = (vec3_t){0.0f, 0.0f, 0.0f};
-    } else {
+    if (trace.fraction < 1.0f &&
+        trace.hit_normal.z >= QK_PM_MIN_WALK_NORMAL) {
         ps->on_ground = true;
         ps->ground_normal = trace.hit_normal;
+    } else {
+        ps->on_ground = false;
+        ps->ground_normal = (vec3_t){0.0f, 0.0f, 0.0f};
     }
 }
 

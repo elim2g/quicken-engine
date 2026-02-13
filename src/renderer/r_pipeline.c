@@ -331,6 +331,158 @@ qk_result_t r_pipeline_create_world(void)
     return QK_SUCCESS;
 }
 
+/* ---- Entity Pipeline ---- */
+
+qk_result_t r_pipeline_create_entity(void)
+{
+    VkShaderModule vert = r_pipeline_load_shader("src/renderer/shaders/compiled/entity.vert.spv");
+    VkShaderModule frag = r_pipeline_load_shader("src/renderer/shaders/compiled/entity.frag.spv");
+
+    if (!vert || !frag) {
+        fprintf(stderr, "[Renderer] Entity shader compilation required. Using stub pipeline.\n");
+        if (vert) vkDestroyShaderModule(g_r.device.handle, vert, NULL);
+        if (frag) vkDestroyShaderModule(g_r.device.handle, frag, NULL);
+        return QK_SUCCESS;
+    }
+
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        {
+            .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage  = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vert,
+            .pName  = "main"
+        },
+        {
+            .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = frag,
+            .pName  = "main"
+        }
+    };
+
+    VkVertexInputBindingDescription binding = {
+        .binding   = 0,
+        .stride    = sizeof(r_entity_vertex_t),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+    };
+
+    VkVertexInputAttributeDescription attrs[] = {
+        { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
+          .offset = offsetof(r_entity_vertex_t, position) },
+        { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
+          .offset = offsetof(r_entity_vertex_t, normal) }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount   = 1,
+        .pVertexBindingDescriptions      = &binding,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions    = attrs
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    };
+
+    VkPipelineViewportStateCreateInfo viewport_state = {
+        .sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .scissorCount  = 1
+    };
+
+    VkPipelineRasterizationStateCreateInfo rasterizer = {
+        .sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode    = VK_CULL_MODE_BACK_BIT,
+        .frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .lineWidth   = 1.0f
+    };
+
+    VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+    };
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+        .sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable  = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp   = VK_COMPARE_OP_LESS
+    };
+
+    VkPipelineColorBlendAttachmentState blend_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+
+    VkPipelineColorBlendStateCreateInfo color_blend = {
+        .sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments    = &blend_attachment
+    };
+
+    VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamic_state = {
+        .sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates    = dynamic_states
+    };
+
+    /* Push constants: mat4 model (64 bytes) + vec4 color (16 bytes) = 80 bytes */
+    VkPushConstantRange push_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset     = 0,
+        .size       = sizeof(r_entity_push_constants_t)
+    };
+
+    VkPipelineLayoutCreateInfo layout_info = {
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &g_r.view_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &push_range
+    };
+
+    vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL, &g_r.entity_pipeline.layout);
+
+    VkGraphicsPipelineCreateInfo pipeline_info = {
+        .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount          = 2,
+        .pStages             = stages,
+        .pVertexInputState   = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState      = &viewport_state,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState   = &multisample,
+        .pDepthStencilState  = &depth_stencil,
+        .pColorBlendState    = &color_blend,
+        .pDynamicState       = &dynamic_state,
+        .layout              = g_r.entity_pipeline.layout,
+        .renderPass          = g_r.world_target.render_pass,
+        .subpass             = 0
+    };
+
+    VkResult vr = vkCreateGraphicsPipelines(g_r.device.handle, g_r.pipeline_cache_handle,
+                                             1, &pipeline_info, NULL,
+                                             &g_r.entity_pipeline.handle);
+
+    vkDestroyShaderModule(g_r.device.handle, vert, NULL);
+    vkDestroyShaderModule(g_r.device.handle, frag, NULL);
+
+    if (vr != VK_SUCCESS) {
+        fprintf(stderr, "[Renderer] Failed to create entity pipeline\n");
+        return QK_ERROR_PIPELINE;
+    }
+
+    return QK_SUCCESS;
+}
+
 /* ---- UI Pipeline ---- */
 
 qk_result_t r_pipeline_create_ui(void)
@@ -630,6 +782,10 @@ void r_pipeline_destroy_all(void)
     if (g_r.world_pipeline.handle) vkDestroyPipeline(dev, g_r.world_pipeline.handle, NULL);
     if (g_r.world_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.world_pipeline.layout, NULL);
     memset(&g_r.world_pipeline, 0, sizeof(g_r.world_pipeline));
+
+    if (g_r.entity_pipeline.handle) vkDestroyPipeline(dev, g_r.entity_pipeline.handle, NULL);
+    if (g_r.entity_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.entity_pipeline.layout, NULL);
+    memset(&g_r.entity_pipeline, 0, sizeof(g_r.entity_pipeline));
 
     if (g_r.ui_pipeline.handle) vkDestroyPipeline(dev, g_r.ui_pipeline.handle, NULL);
     if (g_r.ui_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.ui_pipeline.layout, NULL);

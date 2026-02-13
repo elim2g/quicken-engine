@@ -7,6 +7,13 @@
 
 #include "n_internal.h"
 #include <stdlib.h>
+#include <stdio.h>
+
+#ifdef QUICKEN_DEBUG
+#define N_DBG(fmt, ...) fprintf(stderr, "[NET-SV] " fmt "\n", ##__VA_ARGS__)
+#else
+#define N_DBG(fmt, ...) ((void)0)
+#endif
 
 /* ---- Helpers ---- */
 
@@ -62,12 +69,16 @@ void n_server_init(n_server_t *srv, u16 port, u32 max_clients, f64 tick_rate) {
         n_platform_init();
         if (n_transport_open_udp(&srv->transport, port)) {
             srv->initialized = true;
+            N_DBG("init: UDP port=%u max_clients=%u", (u32)port, max_clients);
+        } else {
+            N_DBG("init: FAILED to bind UDP port=%u", (u32)port);
         }
     } else {
         /* Loopback-only server (no UDP socket needed) */
         memset(&srv->transport, 0, sizeof(srv->transport));
         srv->transport.socket_fd = -1;
         srv->initialized = true;
+        N_DBG("init: loopback-only max_clients=%u", max_clients);
     }
 }
 
@@ -113,6 +124,8 @@ void n_server_disconnect_client(n_server_t *srv, u32 slot) {
     if (slot >= srv->max_clients) return;
     n_client_slot_t *cl = &srv->clients[slot];
     if (cl->state == N_CONN_DISCONNECTED) return;
+
+    N_DBG("disconnect_client: slot=%u loopback=%d", slot, cl->is_loopback);
 
     if (cl->is_loopback) {
         n_transport_close(&cl->transport);
@@ -186,6 +199,8 @@ void n_server_broadcast_snapshots(n_server_t *srv) {
     srv->current_snapshot.tick = srv->tick;
     srv->snapshot_buffer.snapshots[hist_idx] = srv->current_snapshot;
     srv->snapshot_buffer.current_index = hist_idx;
+
+    N_DBG("broadcast: tick=%u entities=%u", srv->tick, srv->current_snapshot.entity_count);
 
     for (u32 i = 0; i < srv->max_clients; i++) {
         n_client_slot_t *cl = &srv->clients[i];
@@ -393,6 +408,9 @@ static void handle_input_message(n_server_t *srv, u32 slot,
 
     u32 input_count = n_read_bits(&r, 2) + 1; /* 1..3 stored as 0..2 */
     u32 start_tick = n_read_u32(&r);
+
+    N_DBG("input: slot=%u count=%u start_tick=%u srv_tick=%u",
+          slot, input_count, start_tick, srv->tick);
 
     for (u32 i = 0; i < input_count; i++) {
         n_input_t input;
