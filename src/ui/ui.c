@@ -1,32 +1,34 @@
 /*
- * QUICKEN UI Module - Stub Implementation
+ * QUICKEN Engine - UI Module Main
  *
- * All functions are no-ops.
- * The gameplay agent replaces this with real code on feat/gameplay.
+ * Wires UI subsystems: killfeed push, hitmarker trigger, tick timers.
+ * qk_ui_draw_hud and qk_ui_draw_scoreboard are in ui_hud.c / ui_scoreboard.c.
+ * This file implements the event/tick functions declared in include/ui/qk_ui.h.
  */
 
 #include "ui/qk_ui.h"
 
-void qk_ui_draw_hud(const qk_player_state_t *ps,
-                     const qk_ca_state_t *ca,
-                     f32 screen_w, f32 screen_h) {
-    QK_UNUSED(ps); QK_UNUSED(ca); QK_UNUSED(screen_w); QK_UNUSED(screen_h);
-}
+/* Functions defined in ui_hud.c */
+extern void ui_hitmarker_trigger(i16 damage);
+extern void ui_hitmarker_tick(u32 dt_ms);
+extern void ui_killfeed_push(const char *attacker, const char *victim,
+                              qk_weapon_id_t weapon);
+extern void ui_killfeed_tick(u32 dt_ms);
 
-void qk_ui_draw_scoreboard(const qk_ca_state_t *ca,
-                             f32 screen_w, f32 screen_h) {
-    QK_UNUSED(ca); QK_UNUSED(screen_w); QK_UNUSED(screen_h);
-}
+/* ---- Event Push ---- */
 
 void qk_ui_event_kill(const char *attacker, const char *victim,
                        qk_weapon_id_t weapon) {
-    QK_UNUSED(attacker); QK_UNUSED(victim); QK_UNUSED(weapon);
+    ui_killfeed_push(attacker, victim, weapon);
 }
 
 void qk_ui_event_hit(i16 damage) {
-    QK_UNUSED(damage);
+    ui_hitmarker_trigger(damage);
 }
 
+/* ---- Tick ---- */
+
 void qk_ui_tick(u32 dt_ms) {
-    QK_UNUSED(dt_ms);
+    ui_hitmarker_tick(dt_ms);
+    ui_killfeed_tick(dt_ms);
 }
