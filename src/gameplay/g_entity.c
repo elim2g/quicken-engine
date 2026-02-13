@@ -38,7 +38,6 @@ void g_entity_free(entity_pool_t *pool, entity_t *ent) {
 }
 
 entity_t *g_entity_find(entity_pool_t *pool, u8 id) {
-    if (id >= QK_MAX_ENTITIES) return NULL;
     entity_t *ent = &pool->entities[id];
     if (ent->type != ENTITY_NONE && ent->active) return ent;
     return NULL;

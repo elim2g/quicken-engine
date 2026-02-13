@@ -74,7 +74,7 @@ void n_reliable_write_to_packet(n_reliable_channel_t *ch, n_bitwriter_t *w, f64 
 }
 
 bool n_reliable_read_from_packet(n_reliable_channel_t *ch, n_bitreader_t *r,
-                                  u8 *out_data, u16 *out_len) {
+                                  u16 *out_len) {
     u16 remote_seq = n_read_u16(r);
     u16 remote_ack = n_read_u16(r);
 

@@ -143,7 +143,6 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
     if (!out) return;
     memset(out, 0, sizeof(*out));
 
-    if (entity_id >= QK_MAX_ENTITIES) return;
     entity_t *ent = &s_gs.entities.entities[entity_id];
     if (!ent->active || ent->type == ENTITY_NONE) return;
 

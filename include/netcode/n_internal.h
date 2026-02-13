@@ -2,7 +2,7 @@
  * QUICKEN Engine - Netcode Internal Header
  *
  * All internal types, constants, and function declarations for the netcode module.
- * NOT part of the public API. Only included by src/netcode/*.c files.
+ * NOT part of the public API. Only included by netcode .c files.
  */
 
 #ifndef N_INTERNAL_H
@@ -202,7 +202,7 @@ bool n_reliable_needs_retransmit(const n_reliable_channel_t *ch, f64 now);
 void n_reliable_on_ack(n_reliable_channel_t *ch, u16 ack_seq);
 void n_reliable_write_to_packet(n_reliable_channel_t *ch, n_bitwriter_t *w, f64 now);
 bool n_reliable_read_from_packet(n_reliable_channel_t *ch, n_bitreader_t *r,
-                                  u8 *out_data, u16 *out_len);
+                                  u16 *out_len);
 
 /* ---- Snapshot ---- */
 

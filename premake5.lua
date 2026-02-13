@@ -35,6 +35,9 @@ workspace "QUICKEN"
         symbols "On"
         optimize "Speed"
 
+    filter "system:linux"
+        defines { "_POSIX_C_SOURCE=200809L" }
+
     filter {}
 
 --------------------------------------------------------------

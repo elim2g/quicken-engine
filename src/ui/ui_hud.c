@@ -190,7 +190,7 @@ void qk_ui_draw_hud(const qk_player_state_t *ps,
 
     /* Round timer: top-center */
     u32 time_sec = ca->state_timer_ms / 1000;
-    char timer_buf[8];
+    char timer_buf[12];
     snprintf(timer_buf, sizeof(timer_buf), "%u:%02u", time_sec / 60, time_sec % 60);
     f32 tw = qk_ui_text_width(timer_buf, 32.0f);
     qk_ui_draw_text(screen_w * 0.5f - tw * 0.5f, 16.0f, timer_buf, 32.0f, COLOR_WHITE);
