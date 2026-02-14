@@ -3,6 +3,7 @@
  */
 
 #include "r_types.h"
+#include "core/qk_perf.h"
 #include <SDL3/SDL_vulkan.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -393,7 +394,7 @@ static qk_result_t r_vulkan_create_swapchain_internal(VkSwapchainKHR old_swapcha
         if (extent.height > caps.maxImageExtent.height) extent.height = caps.maxImageExtent.height;
     }
 
-    u32 image_count = caps.minImageCount + 1;
+    u32 image_count = caps.minImageCount + 2;
     if (caps.maxImageCount > 0 && image_count > caps.maxImageCount) {
         image_count = caps.maxImageCount;
     }
@@ -426,6 +427,9 @@ static qk_result_t r_vulkan_create_swapchain_internal(VkSwapchainKHR old_swapcha
 
     g_r.swapchain.format = surface_format.format;
     g_r.swapchain.extent = extent;
+
+    qk_perf_log_event("swapchain created: %ux%u images=%u present_mode=%d",
+                       extent.width, extent.height, image_count, (int)present_mode);
 
     /* Get swapchain images */
     vkGetSwapchainImagesKHR(g_r.device.handle, g_r.swapchain.handle, &g_r.swapchain.image_count, NULL);

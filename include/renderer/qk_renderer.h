@@ -62,6 +62,8 @@ typedef struct {
     f64     compose_pass_ms;
     u32     draw_calls;
     u32     triangles;
+    f32     fence_wait_ms;
+    f32     acquire_ms;
 } qk_gpu_stats_t;
 
 /* Lifecycle */

@@ -25,6 +25,7 @@
 #include "gameplay/qk_gameplay.h"
 #include "ui/qk_ui.h"
 #include "core/qk_cvar.h"
+#include "core/qk_perf.h"
 #include "ui/qk_console.h"
 
 /* ---- Cached cvar pointers (set during init, read each frame) ---- */
@@ -36,9 +37,16 @@ static qk_cvar_t *s_cvar_r_vsync;
 static qk_cvar_t *s_cvar_r_windowwidth;
 static qk_cvar_t *s_cvar_r_windowheight;
 static qk_cvar_t *s_cvar_r_fullscreen;
+static qk_cvar_t *s_cvar_r_perflog;
 
 /* Window pointer for cvar callbacks */
 static qk_window_t *s_window;
+
+/* ---- perflog callback ---- */
+
+static void cb_perflog_changed(qk_cvar_t *cvar) {
+    qk_perf_set_enabled(cvar->value.b);
+}
 
 /* ---- vid_restart callback ---- */
 
@@ -452,6 +460,10 @@ int main(int argc, char *argv[]) {
     s_cvar_r_fullscreen = qk_cvar_register_bool("r_fullscreen", false,
                                                   QK_CVAR_ARCHIVE,
                                                   cb_fullscreen_changed);
+    s_cvar_r_perflog = qk_cvar_register_bool("r_perflog", false, 0,
+                                               cb_perflog_changed);
+
+    qk_perf_init();
 
     qk_console_register_cmd("vid_restart", cmd_vid_restart,
                              "Apply render setting changes");
@@ -580,6 +592,8 @@ int main(int argc, char *argv[]) {
     u32 fps_display = 0;
 
     while (running) {
+        qk_perf_begin_frame();
+
         f64 now = qk_platform_time_now();
         f32 real_dt = (f32)(now - prev_time);
         prev_time = now;
@@ -743,12 +757,29 @@ int main(int argc, char *argv[]) {
 
         /* ---- 13. Present ---- */
         qk_renderer_end_frame();
+
+        /* ---- 14. Profiler data ---- */
+        {
+            qk_gpu_stats_t stats;
+            qk_renderer_get_stats(&stats);
+            qk_perf_end_frame(
+                real_dt * 1000.0f,
+                (f32)stats.gpu_frame_ms,
+                (f32)stats.world_pass_ms,
+                (f32)stats.compose_pass_ms,
+                stats.draw_calls,
+                stats.triangles,
+                (u32)win_w, (u32)win_h,
+                stats.fence_wait_ms,
+                stats.acquire_ms);
+        }
     }
 
     printf("Exiting main loop.\n");
 
     /* ---- Shutdown ---- */
 shutdown:
+    qk_perf_shutdown();
     qk_console_shutdown();
     qk_cvar_shutdown();
     qk_net_client_disconnect();

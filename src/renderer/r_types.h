@@ -24,10 +24,11 @@
 /* ---- Constants ---- */
 
 #define R_MAX_SWAPCHAIN_IMAGES  4
-/* 3 frames in flight reduces pipeline bubbles from fence waits.
-   With 2, the CPU often stalls waiting for the GPU; 3 keeps the
-   GPU fed while the CPU prepares the next frame. */
-#define R_FRAMES_IN_FLIGHT      3
+/* 2 frames in flight. With only minImageCount+2 swapchain images,
+   3-in-flight causes every image to be busy, blocking
+   vkAcquireNextImageKHR until a present completes. 2-in-flight
+   keeps a free image available for immediate acquire. */
+#define R_FRAMES_IN_FLIGHT      2
 #define R_MAX_TEXTURES          256
 #define R_UI_MAX_QUADS          8192
 #define R_TIMESTAMP_COUNT       8
@@ -334,6 +335,8 @@ typedef struct r_state {
     /* Stats for current frame */
     u32                     stats_draw_calls;
     u32                     stats_triangles;
+    f32                     stats_fence_wait_ms;
+    f32                     stats_acquire_ms;
 
     bool                    initialized;
     bool                    swapchain_needs_recreate;

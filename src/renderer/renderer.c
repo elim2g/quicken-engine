@@ -208,6 +208,7 @@ void qk_renderer_set_vsync(bool vsync)
 void qk_renderer_handle_window_resize(u32 new_width, u32 new_height)
 {
     if (!g_r.initialized) return;
+    if (new_width == g_r.config.window_width && new_height == g_r.config.window_height) return;
     g_r.config.window_width = new_width;
     g_r.config.window_height = new_height;
     g_r.swapchain_needs_recreate = true;
@@ -321,8 +322,11 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
     u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
     r_frame_data_t *frame = &g_r.frames[fi];
 
-    /* Wait for this frame's previous GPU work */
+    /* Wait for this frame's previous GPU work (timed) */
+    u64 fence_t0 = SDL_GetPerformanceCounter();
     vkWaitForFences(g_r.device.handle, 1, &frame->in_flight, VK_TRUE, UINT64_MAX);
+    u64 fence_t1 = SDL_GetPerformanceCounter();
+    g_r.stats_fence_wait_ms = (f32)((f64)(fence_t1 - fence_t0) / (f64)SDL_GetPerformanceFrequency() * 1000.0);
 
     /* Read GPU timers from previous frame */
     r_debug_timers_read();
@@ -334,10 +338,13 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
         r_vulkan_recreate_swapchain();
     }
 
-    /* Acquire swapchain image */
+    /* Acquire swapchain image (timed) */
+    u64 acq_t0 = SDL_GetPerformanceCounter();
     VkResult result = vkAcquireNextImageKHR(
         g_r.device.handle, g_r.swapchain.handle, UINT64_MAX,
         frame->image_available, VK_NULL_HANDLE, &g_r.current_image_index);
+    u64 acq_t1 = SDL_GetPerformanceCounter();
+    g_r.stats_acquire_ms = (f32)((f64)(acq_t1 - acq_t0) / (f64)SDL_GetPerformanceFrequency() * 1000.0);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         r_vulkan_recreate_swapchain();
@@ -504,4 +511,6 @@ void qk_renderer_get_stats(qk_gpu_stats_t *out_stats)
     out_stats->compose_pass_ms = g_r.gpu_timers.compose_pass_ms;
     out_stats->draw_calls     = g_r.stats_draw_calls;
     out_stats->triangles      = g_r.stats_triangles;
+    out_stats->fence_wait_ms  = g_r.stats_fence_wait_ms;
+    out_stats->acquire_ms     = g_r.stats_acquire_ms;
 }
