@@ -2,7 +2,7 @@
  * QUICKEN Renderer - Public API Implementation
  *
  * Orchestrates the Vulkan renderer lifecycle and per-frame rendering.
- * Three-pass architecture: world (offscreen) -> UI (offscreen) -> compose (swapchain).
+ * Two-pass architecture: world+UI (offscreen) -> compose (swapchain).
  *
  * Note: qk_ui_draw_* functions are NOT here -- they are in src/ui/ui_draw.c
  * because they compile as part of the main exe, not the renderer static lib.
@@ -398,7 +398,7 @@ void qk_renderer_end_frame(void)
     /* Timestamp: frame start */
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0);
 
-    /* ---- Pass 1: World ---- */
+    /* ---- Pass 1: World + UI ---- */
     r_debug_begin_label(cmd, "World Pass", 0.2f, 0.8f, 0.2f);
     {
         VkClearValue clears[2] = {
@@ -418,37 +418,18 @@ void qk_renderer_end_frame(void)
         vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
         r_world_record_commands(cmd, fi);
         r_entity_record_commands(cmd, fi);
-        vkCmdEndRenderPass(cmd);
-    }
-    r_debug_end_label(cmd);
-
-    /* Timestamp: after world */
-    r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 1);
-
-    /* ---- Pass 2: UI ---- */
-    r_debug_begin_label(cmd, "UI Pass", 0.8f, 0.8f, 0.2f);
-    {
-        VkClearValue clear = { .color = { .float32 = { 0.0f, 0.0f, 0.0f, 0.0f } } };
-
-        VkRenderPassBeginInfo rp_info = {
-            .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass      = g_r.ui_target.render_pass,
-            .framebuffer     = g_r.ui_target.framebuffer,
-            .renderArea      = { .offset = { 0, 0 }, .extent = g_r.ui_target.extent },
-            .clearValueCount = 1,
-            .pClearValues    = &clear
-        };
-
-        vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
         r_ui_record_commands(cmd, fi);
         vkCmdEndRenderPass(cmd);
     }
     r_debug_end_label(cmd);
 
-    /* Timestamp: after UI */
+    /* Timestamp: after world + UI */
+    r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 1);
+
+    /* Timestamp slot 2: unused (kept for GPU timer array compatibility) */
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 2);
 
-    /* ---- Pass 3: Composition ---- */
+    /* ---- Pass 2: Composition ---- */
     r_debug_begin_label(cmd, "Compose Pass", 0.2f, 0.2f, 0.8f);
     r_compose_record_commands(cmd, g_r.current_image_index);
     r_debug_end_label(cmd);

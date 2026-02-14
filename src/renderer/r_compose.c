@@ -1,8 +1,8 @@
 /*
  * QUICKEN Renderer - Composition Pass
  *
- * Samples world and UI offscreen render targets, blends UI over world,
- * outputs to swapchain via a fullscreen triangle.
+ * Scales the world render target (which includes UI) to the swapchain
+ * via a fullscreen triangle, with aspect-fit letterboxing.
  */
 
 #include "r_types.h"
@@ -56,6 +56,8 @@ void r_compose_shutdown(void)
 
 void r_compose_update_descriptors(void)
 {
+    /* UI is now drawn in the world pass, so both bindings point to world target.
+       Binding 1 is unused by the shader but must be a valid descriptor. */
     VkDescriptorImageInfo images[2] = {
         {
             .sampler     = g_r.compose_sampler,
@@ -64,7 +66,7 @@ void r_compose_update_descriptors(void)
         },
         {
             .sampler     = g_r.compose_sampler,
-            .imageView   = g_r.ui_target.color_view,
+            .imageView   = g_r.world_target.color_view,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         }
     };

@@ -38,7 +38,7 @@ void p_angle_vectors(f32 pitch, f32 yaw,
     if (forward) {
         forward->x = cp * cy;
         forward->y = cp * sy;
-        forward->z = -sp;
+        forward->z = sp;
     }
     if (right) {
         right->x = sy;
@@ -46,8 +46,8 @@ void p_angle_vectors(f32 pitch, f32 yaw,
         right->z = 0.0f;
     }
     if (up) {
-        up->x = sp * cy;
-        up->y = sp * sy;
+        up->x = -sp * cy;
+        up->y = -sp * sy;
         up->z = cp;
     }
 }

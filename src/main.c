@@ -105,6 +105,83 @@ static qk_camera_t build_camera(f32 pos_x, f32 pos_y, f32 pos_z,
     return cam;
 }
 
+/* ---- Test Room Render Geometry ---- */
+
+static void upload_test_room_geometry(void) {
+    /*
+     * Match the physics test room: interior [-1024,1024] x [-1024,1024] x [0,256].
+     * 6 faces (floor, ceiling, 4 walls), 24 verts, 36 indices, 6 surfaces.
+     * Uses default white texture (id 0) with proper normals for lighting.
+     */
+    #define TR_HALF  1024.0f
+    #define TR_TOP   256.0f
+
+    static const struct { f32 p[3]; f32 n[3]; } face_data[6][4] = {
+        /* Floor (Z=0, normal up) */
+        { {{-TR_HALF,-TR_HALF,0}, {0,0,1}},  {{ TR_HALF,-TR_HALF,0}, {0,0,1}},
+          {{ TR_HALF, TR_HALF,0}, {0,0,1}},  {{-TR_HALF, TR_HALF,0}, {0,0,1}} },
+        /* Ceiling (Z=256, normal down) */
+        { {{-TR_HALF,-TR_HALF,TR_TOP}, {0,0,-1}},  {{-TR_HALF, TR_HALF,TR_TOP}, {0,0,-1}},
+          {{ TR_HALF, TR_HALF,TR_TOP}, {0,0,-1}},  {{ TR_HALF,-TR_HALF,TR_TOP}, {0,0,-1}} },
+        /* +X wall (normal inward -X) */
+        { {{ TR_HALF, TR_HALF,0}, {-1,0,0}},  {{ TR_HALF,-TR_HALF,0}, {-1,0,0}},
+          {{ TR_HALF,-TR_HALF,TR_TOP}, {-1,0,0}},  {{ TR_HALF, TR_HALF,TR_TOP}, {-1,0,0}} },
+        /* -X wall (normal inward +X) */
+        { {{-TR_HALF,-TR_HALF,0}, {1,0,0}},  {{-TR_HALF, TR_HALF,0}, {1,0,0}},
+          {{-TR_HALF, TR_HALF,TR_TOP}, {1,0,0}},  {{-TR_HALF,-TR_HALF,TR_TOP}, {1,0,0}} },
+        /* +Y wall (normal inward -Y) */
+        { {{-TR_HALF, TR_HALF,0}, {0,-1,0}},  {{ TR_HALF, TR_HALF,0}, {0,-1,0}},
+          {{ TR_HALF, TR_HALF,TR_TOP}, {0,-1,0}},  {{-TR_HALF, TR_HALF,TR_TOP}, {0,-1,0}} },
+        /* -Y wall (normal inward +Y) */
+        { {{ TR_HALF,-TR_HALF,0}, {0,1,0}},  {{-TR_HALF,-TR_HALF,0}, {0,1,0}},
+          {{-TR_HALF,-TR_HALF,TR_TOP}, {0,1,0}},  {{ TR_HALF,-TR_HALF,TR_TOP}, {0,1,0}} },
+    };
+
+    qk_world_vertex_t verts[24];
+    u32 indices[36];
+    qk_draw_surface_t surfaces[6];
+
+    for (u32 f = 0; f < 6; f++) {
+        u32 base = f * 4;
+        for (u32 v = 0; v < 4; v++) {
+            qk_world_vertex_t *wv = &verts[base + v];
+            wv->position[0] = face_data[f][v].p[0];
+            wv->position[1] = face_data[f][v].p[1];
+            wv->position[2] = face_data[f][v].p[2];
+            wv->normal[0]   = face_data[f][v].n[0];
+            wv->normal[1]   = face_data[f][v].n[1];
+            wv->normal[2]   = face_data[f][v].n[2];
+            /* Simple planar UV for tiling reference */
+            wv->uv[0] = wv->position[0] / 128.0f;
+            wv->uv[1] = wv->position[1] / 128.0f;
+            wv->texture_id = 0;
+        }
+
+        u32 bi = f * 6;
+        indices[bi + 0] = base + 0;
+        indices[bi + 1] = base + 1;
+        indices[bi + 2] = base + 2;
+        indices[bi + 3] = base + 0;
+        indices[bi + 4] = base + 2;
+        indices[bi + 5] = base + 3;
+
+        surfaces[f].index_offset  = bi;
+        surfaces[f].index_count   = 6;
+        surfaces[f].vertex_offset = base;
+        surfaces[f].texture_index = 0;
+    }
+
+    qk_result_t res = qk_renderer_upload_world(verts, 24, indices, 36, surfaces, 6);
+    if (res != QK_SUCCESS) {
+        fprintf(stderr, "Warning: Failed to upload test room geometry (%d)\n", res);
+    } else {
+        printf("Test room geometry uploaded (6 faces).\n");
+    }
+
+    #undef TR_HALF
+    #undef TR_TOP
+}
+
 /* ---- Server Tick ---- */
 
 static void server_tick(qk_phys_world_t *phys_world) {
@@ -219,6 +296,8 @@ int main(int argc, char *argv[]) {
         if (res != QK_SUCCESS) {
             fprintf(stderr, "Warning: Failed to upload world geometry (%d)\n", res);
         }
+    } else {
+        upload_test_room_geometry();
     }
 
     /* ---- Init gameplay ---- */
@@ -242,7 +321,7 @@ int main(int argc, char *argv[]) {
     }
 
     qk_net_client_config_t ncc = {0};
-    ncc.interp_delay = 0.020;
+    ncc.interp_delay = 0.0;     /* loopback: zero interpolation delay */
 
     res = qk_net_client_init(&ncc);
     if (res != QK_SUCCESS) {
@@ -314,6 +393,20 @@ int main(int argc, char *argv[]) {
             fps_timer -= 1.0;
         }
 
+        /* ---- Poll input FIRST for minimum latency ---- */
+        qk_input_poll(&input_state);
+        if (input_state.quit_requested) {
+            running = false;
+            break;
+        }
+
+        /* Build usercmd from raw input */
+        u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
+        qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
+
+        /* Send input to server (via loopback) */
+        qk_net_client_send_input(&cmd);
+
         /* ---- Server-side (loopback, runs in same process) ---- */
         server_accumulator += real_dt;
         while (server_accumulator >= QK_TICK_DT) {
@@ -323,25 +416,11 @@ int main(int argc, char *argv[]) {
 
         /* ---- Client-side ---- */
 
-        /* 1. Poll OS input */
-        qk_input_poll(&input_state);
-        if (input_state.quit_requested) {
-            running = false;
-            break;
-        }
-
-        /* 2. Build usercmd from raw input */
-        u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
-        qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
-
-        /* 3. Send input to server (via loopback) */
-        qk_net_client_send_input(&cmd);
-
         /* 4. Client tick (processes received snapshots) */
         qk_net_client_tick();
 
-        /* 5. Interpolate for rendering */
-        f64 render_time = now - 0.020;
+        /* 5. Interpolate for rendering (minimal delay for loopback) */
+        f64 render_time = now - QK_TICK_DT_F64;
         qk_net_client_interpolate(render_time);
 
         /* 6. Build camera from local player state */

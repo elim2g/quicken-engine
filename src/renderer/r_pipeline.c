@@ -622,7 +622,7 @@ qk_result_t r_pipeline_create_ui(void)
         .pColorBlendState    = &color_blend,
         .pDynamicState       = &dynamic_state,
         .layout              = g_r.ui_pipeline.layout,
-        .renderPass          = g_r.ui_target.render_pass,
+        .renderPass          = g_r.world_target.render_pass,
         .subpass             = 0
     };
 

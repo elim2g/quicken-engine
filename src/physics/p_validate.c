@@ -100,11 +100,13 @@ bool qk_physics_validate_strafejump(void) {
             cmd.forward_move = 1.0f;
             cmd.side_move = 0.0f;
         } else {
-            /* In air: hold forward + right, gentle yaw turn.
-             * At 128 tick, ~0.7 deg/tick gives good strafejump gains. */
+            /* In air: hold forward + right, turn yaw 0.5 deg/tick.
+             * This rate matches the velocity's natural turn rate from
+             * air accel (~0.45 deg/tick at 320 ups), keeping the wish
+             * direction near the optimal angle for speed gain. */
             cmd.forward_move = 1.0f;
             cmd.side_move = 1.0f;
-            yaw -= 0.15f;
+            yaw -= 0.5f;
         }
         cmd.yaw = yaw;
 
@@ -414,7 +416,7 @@ bool qk_physics_validate_map(const char *map_path) {
             } else {
                 cmd.forward_move = 1.0f;
                 cmd.side_move = 1.0f;
-                yaw -= 0.15f;
+                yaw -= 0.5f;
             }
             cmd.yaw = yaw;
             cmd.pitch = 0.0f;

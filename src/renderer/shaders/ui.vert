@@ -18,11 +18,11 @@ void main() {
 
     frag_uv = in_uv;
 
-    // Unpack RGBA8 color
+    // Unpack RGBA8 color (packed as 0xRRGGBBAA)
     frag_color = vec4(
-        float((in_color >>  0) & 0xFFu) / 255.0,
-        float((in_color >>  8) & 0xFFu) / 255.0,
+        float((in_color >> 24) & 0xFFu) / 255.0,
         float((in_color >> 16) & 0xFFu) / 255.0,
-        float((in_color >> 24) & 0xFFu) / 255.0
+        float((in_color >>  8) & 0xFFu) / 255.0,
+        float((in_color >>  0) & 0xFFu) / 255.0
     );
 }

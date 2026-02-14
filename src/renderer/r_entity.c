@@ -133,7 +133,7 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
 
     u32 vi = 0;
 
-    /* Top hemisphere: from north pole (y = +2) down to equator (y = +1)
+    /* Top hemisphere: from north pole (z = +2) down to equator (z = +1)
      * phi goes from 0 to PI/2 */
     for (u32 st = 0; st <= hemi_stacks; st++) {
         f32 phi = (3.14159265358979f * 0.5f) * (f32)st / (f32)hemi_stacks;
@@ -146,12 +146,12 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
             f32 ct = cosf(theta);
 
             f32 nx = sp * ct;
-            f32 ny = cp;
-            f32 nz = sp * st_val;
+            f32 nz = cp;
+            f32 ny = sp * st_val;
 
             verts[vi].position[0] = nx;         /* radius = 1 */
-            verts[vi].position[1] = 1.0f + cp;  /* hemisphere center at y=+1 */
-            verts[vi].position[2] = nz;
+            verts[vi].position[1] = ny;
+            verts[vi].position[2] = 1.0f + cp;  /* hemisphere center at z=+1 */
             verts[vi].normal[0] = nx;
             verts[vi].normal[1] = ny;
             verts[vi].normal[2] = nz;
@@ -159,7 +159,7 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
         }
     }
 
-    /* Bottom hemisphere: from equator (y = -1) down to south pole (y = -2)
+    /* Bottom hemisphere: from equator (z = -1) down to south pole (z = -2)
      * phi goes from PI/2 to PI */
     for (u32 st = 1; st <= hemi_stacks; st++) {
         f32 phi = (3.14159265358979f * 0.5f) + (3.14159265358979f * 0.5f) * (f32)st / (f32)hemi_stacks;
@@ -172,12 +172,12 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
             f32 ct = cosf(theta);
 
             f32 nx = sp * ct;
-            f32 ny = cp;
-            f32 nz = sp * st_val;
+            f32 nz = cp;
+            f32 ny = sp * st_val;
 
             verts[vi].position[0] = nx;
-            verts[vi].position[1] = -1.0f + cp;  /* hemisphere center at y=-1 */
-            verts[vi].position[2] = nz;
+            verts[vi].position[1] = ny;
+            verts[vi].position[2] = -1.0f + cp;  /* hemisphere center at z=-1 */
             verts[vi].normal[0] = nx;
             verts[vi].normal[1] = ny;
             verts[vi].normal[2] = nz;
@@ -405,7 +405,7 @@ void qk_renderer_draw_capsule(f32 pos_x, f32 pos_y, f32 pos_z,
      * get distorted if radius != half_height, but it looks fine for debug. */
     build_model_matrix(draw->push.model,
                        pos_x, pos_y, pos_z,
-                       radius, half_height, radius,
+                       radius, radius, half_height,
                        yaw);
     color_u32_to_f32(color_rgba, draw->push.color);
 }

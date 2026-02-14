@@ -336,11 +336,24 @@ static VkPresentModeKHR choose_present_mode(VkPresentModeKHR *modes, u32 count, 
 {
     if (vsync) return VK_PRESENT_MODE_FIFO_KHR;
 
+    /* For competitive FPS: IMMEDIATE has lowest latency (allows tearing),
+       MAILBOX is next best (no tearing, no vsync lock). FIFO is last resort. */
+    bool has_immediate = false;
+    bool has_mailbox = false;
     for (u32 i = 0; i < count; i++) {
-        if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
-            return VK_PRESENT_MODE_MAILBOX_KHR;
-        }
+        if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) has_immediate = true;
+        if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)   has_mailbox = true;
     }
+
+    if (has_immediate) {
+        fprintf(stderr, "[Renderer] Present mode: IMMEDIATE (lowest latency)\n");
+        return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    }
+    if (has_mailbox) {
+        fprintf(stderr, "[Renderer] Present mode: MAILBOX\n");
+        return VK_PRESENT_MODE_MAILBOX_KHR;
+    }
+    fprintf(stderr, "[Renderer] Present mode: FIFO (vsync fallback)\n");
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -801,35 +814,7 @@ qk_result_t r_create_render_targets(void)
     VkResult vr = vkCreateFramebuffer(g_r.device.handle, &fb_info, NULL, &g_r.world_target.framebuffer);
     if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
 
-    /* UI render pass */
-    res = create_render_pass_ui(&g_r.ui_target.render_pass);
-    if (res != QK_SUCCESS) return res;
-
-    /* UI color */
-    res = create_image(rw, rh, VK_FORMAT_R8G8B8A8_SRGB,
-                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                       VK_IMAGE_ASPECT_COLOR_BIT,
-                       &g_r.ui_target.color_image, &g_r.ui_target.color_memory,
-                       &g_r.ui_target.color_view);
-    if (res != QK_SUCCESS) return res;
-
-    g_r.ui_target.extent = (VkExtent2D){ rw, rh };
-    g_r.ui_target.depth_image = VK_NULL_HANDLE;
-    g_r.ui_target.depth_memory = VK_NULL_HANDLE;
-    g_r.ui_target.depth_view = VK_NULL_HANDLE;
-
-    /* UI framebuffer */
-    VkFramebufferCreateInfo ui_fb_info = {
-        .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .renderPass      = g_r.ui_target.render_pass,
-        .attachmentCount = 1,
-        .pAttachments    = &g_r.ui_target.color_view,
-        .width           = rw,
-        .height          = rh,
-        .layers          = 1
-    };
-    vr = vkCreateFramebuffer(g_r.device.handle, &ui_fb_info, NULL, &g_r.ui_target.framebuffer);
-    if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
+    /* UI is drawn directly in the world render pass (no separate target needed) */
 
     /* Compose render pass */
     res = create_render_pass_compose(&g_r.compose_render_pass);
