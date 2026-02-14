@@ -17,6 +17,7 @@ qk_phys_world_t *p_world_create(qk_collision_model_t *cm) {
     if (!world) return NULL;
 
     world->cm = cm;
+    world->owns_cm = false; /* caller manages collision model lifetime */
 
     /* For each brush: compute AABB, then add bevel planes for correct
        box tracing against raw .map geometry (no BSP compiler bevels). */
@@ -32,8 +33,7 @@ qk_phys_world_t *p_world_create(qk_collision_model_t *cm) {
 
 void p_world_destroy(qk_phys_world_t *world) {
     if (!world) return;
-    /* We own the collision model memory */
-    if (world->cm) {
+    if (world->owns_cm && world->cm) {
         for (u32 i = 0; i < world->cm->brush_count; i++) {
             free(world->cm->brushes[i].planes);
         }

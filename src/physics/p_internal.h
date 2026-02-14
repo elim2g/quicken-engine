@@ -13,6 +13,7 @@
 
 struct qk_phys_world {
     qk_collision_model_t *cm;
+    bool owns_cm; /* true = world frees cm on destroy (test room), false = caller manages cm */
 };
 
 /* ---- Internal constants ---- */

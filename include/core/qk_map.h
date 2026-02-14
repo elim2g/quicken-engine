@@ -50,6 +50,9 @@ qk_result_t qk_map_load(const char *filepath, qk_map_data_t *out);
 /* Load from a string buffer (for embedded maps) */
 qk_result_t qk_map_load_from_memory(const char *data, u64 data_len, qk_map_data_t *out);
 
+/* Load from a Q3 BSP binary blob (IBSP v46/v47) */
+qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out);
+
 /* Free all memory allocated by qk_map_load */
 void qk_map_free(qk_map_data_t *map);
 

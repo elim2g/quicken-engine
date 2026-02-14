@@ -34,6 +34,10 @@ static u8 s_local_client_id;
 static const char *s_map_path;
 static f64 s_demo_play_start_time;
 
+/* ---- Deferred map change ---- */
+static char s_pending_map[256];
+static char s_loaded_map_path[512];
+
 /* ---- Cached cvar pointers (set during init, read each frame) ---- */
 
 static qk_cvar_t *s_cvar_fov;
@@ -381,6 +385,16 @@ static void server_tick(qk_phys_world_t *phys_world) {
     qk_net_server_tick();
 }
 
+/* ---- Map Console Command ---- */
+
+static void cmd_map(i32 argc, const char **argv) {
+    if (argc < 2) {
+        qk_console_print("Usage: map <name>");
+        return;
+    }
+    snprintf(s_pending_map, sizeof(s_pending_map), "%s", argv[1]);
+}
+
 /* ---- Demo Console Commands ---- */
 
 static void cmd_demo_record(i32 argc, const char **argv) {
@@ -516,6 +530,8 @@ int main(int argc, char *argv[]) {
     qk_perf_init();
     qk_demo_init();
 
+    qk_console_register_cmd("map", cmd_map,
+                             "Load a map by name (e.g. map asylum)");
     qk_console_register_cmd("vid_restart", cmd_vid_restart,
                              "Apply render setting changes");
     qk_console_register_cmd("demo_record", cmd_demo_record,
@@ -525,44 +541,14 @@ int main(int argc, char *argv[]) {
     qk_console_register_cmd("demo_play", cmd_demo_play,
                              "Play back a recorded demo");
 
-    /* ---- Load map ---- */
+    /* ---- Initial world (test room as baseline) ---- */
     qk_map_data_t map_data;
     memset(&map_data, 0, sizeof(map_data));
     bool map_loaded = false;
 
-    if (map_path) {
-        res = qk_map_load(map_path, &map_data);
-        if (res == QK_SUCCESS) {
-            map_loaded = true;
-            printf("Map loaded: %s\n", map_path);
-        } else {
-            fprintf(stderr, "Warning: Failed to load map '%s' (%d), using test room\n",
-                    map_path, res);
-        }
-    }
-
-    /* ---- Create physics world ---- */
-    qk_phys_world_t *phys_world = NULL;
-    if (map_loaded && map_data.collision.brush_count > 0) {
-        phys_world = qk_physics_world_create(&map_data.collision);
-    }
-    if (!phys_world) {
-        printf("Using hardcoded test room for physics.\n");
-        phys_world = qk_physics_world_create_test_room();
-    }
-
-    /* ---- Upload world geometry to renderer ---- */
-    if (map_loaded && map_data.vertex_count > 0) {
-        res = qk_renderer_upload_world(map_data.vertices, map_data.vertex_count,
-                                        map_data.indices, map_data.index_count,
-                                        map_data.surfaces, map_data.surface_count);
-        if (res != QK_SUCCESS) {
-            fprintf(stderr, "Warning: Failed to upload world geometry (%d)\n", res);
-        }
-    } else {
-        qk_texture_id_t grid_tex = create_grid_texture();
-        upload_test_room_geometry(grid_tex);
-    }
+    qk_phys_world_t *phys_world = qk_physics_world_create_test_room();
+    qk_texture_id_t grid_tex = create_grid_texture();
+    upload_test_room_geometry(grid_tex);
 
     /* ---- Init gameplay ---- */
     qk_game_config_t gc = {0};
@@ -610,7 +596,7 @@ int main(int argc, char *argv[]) {
         goto shutdown;
     }
 
-    /* Spawn the player */
+    /* Spawn the player at default position (map load will respawn) */
     qk_player_state_t *ps = qk_game_get_player_state_mut(local_client_id);
     if (ps) {
         ps->alive_state = QK_PSTATE_ALIVE;
@@ -620,13 +606,7 @@ int main(int argc, char *argv[]) {
         ps->ammo[QK_WEAPON_ROCKET] = 50;
         ps->ammo[QK_WEAPON_RAIL] = 25;
         ps->ammo[QK_WEAPON_LG] = 150;
-
-        vec3_t spawn_pos = {0.0f, 0.0f, 24.0f};
-        if (map_loaded && map_data.spawn_count > 0) {
-            spawn_pos = map_data.spawn_points[0].origin;
-            ps->yaw = map_data.spawn_points[0].yaw;
-        }
-        qk_physics_player_init(ps, spawn_pos);
+        qk_physics_player_init(ps, (vec3_t){0.0f, 0.0f, 24.0f});
     }
 
     /* ---- Init prediction state ---- */
@@ -637,6 +617,11 @@ int main(int argc, char *argv[]) {
     cl_has_prediction = false;
     cl_pred_accumulator = 0.0f;
     cl_last_reconciled_ack = 0;
+
+    /* ---- Queue command-line map for deferred loading (same path as console) ---- */
+    if (map_path) {
+        snprintf(s_pending_map, sizeof(s_pending_map), "%s", map_path);
+    }
 
     /* ---- Main loop ---- */
     printf("Entering main loop...\n");
@@ -674,6 +659,129 @@ int main(int argc, char *argv[]) {
         if (input_state.quit_requested) {
             running = false;
             break;
+        }
+
+        /* ---- Handle deferred map change ---- */
+        if (s_pending_map[0] != '\0') {
+            char path[512];
+            bool found = false;
+
+            /* Try exact name in assets/maps/ first (handles "asylum.bsp") */
+            snprintf(path, sizeof(path), "assets/maps/%s", s_pending_map);
+            { FILE *mf = fopen(path, "rb"); if (mf) { fclose(mf); found = true; } }
+
+            /* Then try appending extensions (handles bare "asylum") */
+            if (!found) {
+                const char *exts[] = { ".bsp", ".map" };
+                for (int e = 0; e < 2 && !found; e++) {
+                    snprintf(path, sizeof(path), "assets/maps/%s%s", s_pending_map, exts[e]);
+                    FILE *mf = fopen(path, "rb");
+                    if (mf) { fclose(mf); found = true; }
+                }
+            }
+
+            /* Try as raw path (absolute or relative) */
+            if (!found) {
+                snprintf(path, sizeof(path), "%s", s_pending_map);
+                FILE *mf = fopen(path, "rb");
+                if (mf) { fclose(mf); found = true; }
+            }
+
+            if (!found) {
+                qk_console_printf("Map not found: %s", s_pending_map);
+            } else {
+                /* Load new map data first (before tearing anything down) */
+                qk_map_data_t new_map;
+                memset(&new_map, 0, sizeof(new_map));
+                res = qk_map_load(path, &new_map);
+                if (res != QK_SUCCESS) {
+                    qk_console_printf("Failed to load map '%s' (%d)", s_pending_map, res);
+                } else {
+                    /* === CLEAN SLATE: tear down everything === */
+                    qk_net_client_disconnect();
+                    qk_net_client_shutdown();
+                    qk_net_server_shutdown();
+                    qk_game_shutdown();
+                    qk_renderer_free_world();
+                    qk_physics_world_destroy(phys_world);
+                    phys_world = NULL;
+                    qk_map_free(&map_data);
+
+                    /* === REBUILD: fresh state from scratch === */
+                    map_data = new_map;
+                    map_loaded = true;
+                    strncpy(s_loaded_map_path, path, sizeof(s_loaded_map_path) - 1);
+                    s_loaded_map_path[sizeof(s_loaded_map_path) - 1] = '\0';
+                    s_map_path = s_loaded_map_path;
+
+                    /* Physics world */
+                    if (map_data.collision.brush_count > 0)
+                        phys_world = qk_physics_world_create(&map_data.collision);
+                    if (!phys_world)
+                        phys_world = qk_physics_world_create_test_room();
+
+                    /* Render geometry */
+                    if (map_data.vertex_count > 0) {
+                        for (u32 si = 0; si < map_data.surface_count; si++)
+                            map_data.surfaces[si].texture_index = grid_tex;
+                        qk_renderer_upload_world(map_data.vertices, map_data.vertex_count,
+                                                  map_data.indices, map_data.index_count,
+                                                  map_data.surfaces, map_data.surface_count);
+                    }
+
+                    /* Game state (clean init) */
+                    qk_game_config_t gc = {0};
+                    qk_game_init(&gc);
+
+                    /* Netcode (full reinit) */
+                    qk_net_server_config_t nsc = {0};
+                    nsc.server_port = 0;
+                    nsc.max_clients = QK_MAX_PLAYERS;
+                    nsc.tick_rate = (f64)QK_TICK_RATE;
+                    qk_net_server_init(&nsc);
+
+                    qk_net_client_config_t ncc = {0};
+                    ncc.interp_delay = 0.0;
+                    qk_net_client_init(&ncc);
+                    qk_net_client_connect_local();
+
+                    local_client_id = qk_net_client_get_id();
+                    s_local_client_id = local_client_id;
+
+                    /* Player (connect + spawn) */
+                    qk_game_player_connect(local_client_id, "Player", QK_TEAM_ALPHA);
+                    qk_player_state_t *mps = qk_game_get_player_state_mut(local_client_id);
+                    if (mps) {
+                        mps->alive_state = QK_PSTATE_ALIVE;
+                        mps->health = QK_CA_SPAWN_HEALTH;
+                        mps->armor = QK_CA_SPAWN_ARMOR;
+                        mps->weapon = QK_WEAPON_ROCKET;
+                        mps->ammo[QK_WEAPON_ROCKET] = 50;
+                        mps->ammo[QK_WEAPON_RAIL] = 25;
+                        mps->ammo[QK_WEAPON_LG] = 150;
+
+                        vec3_t spawn = {0.0f, 0.0f, 24.0f};
+                        if (map_data.spawn_count > 0) {
+                            spawn = map_data.spawn_points[0].origin;
+                            mps->yaw = map_data.spawn_points[0].yaw;
+                        }
+                        qk_physics_player_init(mps, spawn);
+                    }
+
+                    /* Prediction (clean slate) */
+                    memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
+                    memset(cl_pred_history, 0, sizeof(cl_pred_history));
+                    memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
+                    cl_cmd_sequence = 0;
+                    cl_has_prediction = false;
+                    cl_pred_accumulator = 0.0f;
+                    cl_last_reconciled_ack = 0;
+                    server_accumulator = 0.0f;
+
+                    qk_console_printf("Loaded: %s", path);
+                }
+            }
+            s_pending_map[0] = '\0';
         }
 
         /* ---- Game/Demo branch ---- */

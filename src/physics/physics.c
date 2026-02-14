@@ -106,7 +106,9 @@ qk_phys_world_t *qk_physics_world_create_test_room(void) {
     #undef ROOM_TOP
     #undef WALL
 
-    return qk_physics_world_create(cm);
+    qk_phys_world_t *world = qk_physics_world_create(cm);
+    if (world) world->owns_cm = true; /* test room owns its collision model */
+    return world;
 }
 
 /* ---- Player init ---- */

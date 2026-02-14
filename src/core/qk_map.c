@@ -835,6 +835,13 @@ qk_result_t qk_map_load(const char *filepath, qk_map_data_t *out) {
 
     fprintf(stderr, "[MapLoader] Loading: %s (%ld bytes)\n", filepath, size);
 
+    /* Detect BSP format by magic bytes */
+    if (read >= 4 && memcmp(data, "IBSP", 4) == 0) {
+        qk_result_t res = qk_bsp_load((const u8 *)data, (u64)read, out);
+        free(data);
+        return res;
+    }
+
     qk_result_t res = qk_map_load_from_memory(data, (u64)read, out);
     free(data);
     return res;
