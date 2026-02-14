@@ -16,17 +16,22 @@ void g_combat_apply_damage(qk_game_state_t *gs, const damage_event_t *dmg) {
     /* only damage alive players */
     if (vps->alive_state != QK_PSTATE_ALIVE) return;
 
-    /* only deal damage during PLAYING state */
-    if (gs->ca.state != CA_STATE_PLAYING) return;
-
     i16 raw_damage = dmg->damage;
 
-    /* self damage scaling */
+    /* self damage: apply knockback in ALL game states (rocket jumping) */
     if (dmg->is_self) {
         const g_weapon_def_t *wdef = &g_weapon_defs[dmg->weapon];
         raw_damage = (i16)((f32)raw_damage * wdef->self_damage_mult);
         if (raw_damage <= 0) return;
+
+        f32 kb = wdef->self_knockback;
+        vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, kb * (f32)raw_damage));
+        vps->splash_slick_ticks = 8; /* ~62ms at 128Hz */
+        return;
     }
+
+    /* only deal damage to other players during PLAYING state */
+    if (gs->ca.state != CA_STATE_PLAYING) return;
 
     /* armor absorption */
     i16 health_dmg, armor_dmg;
@@ -37,13 +42,8 @@ void g_combat_apply_damage(qk_game_state_t *gs, const damage_event_t *dmg) {
 
     i16 actual_damage = health_dmg + armor_dmg;
 
-    /* knockback */
-    f32 kb = dmg->knockback;
-    if (dmg->is_self) {
-        const g_weapon_def_t *wdef = &g_weapon_defs[dmg->weapon];
-        kb = wdef->self_knockback;
-    }
-    vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, kb * (f32)actual_damage));
+    /* knockback (non-self only; self-knockback handled above) */
+    vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, dmg->knockback * (f32)actual_damage));
 
     /* update stats */
     entity_t *attacker = g_entity_find(&gs->entities, dmg->attacker_id);

@@ -337,7 +337,11 @@ static VkPresentModeKHR choose_present_mode(VkPresentModeKHR *modes, u32 count, 
     if (vsync) return VK_PRESENT_MODE_FIFO_KHR;
 
     /* For competitive FPS: IMMEDIATE has lowest latency (allows tearing),
-       MAILBOX is next best (no tearing, no vsync lock). FIFO is last resort. */
+       MAILBOX is next best (no tearing, no vsync lock). FIFO is last resort.
+       NOTE: On Windows 11 with DWM (Desktop Window Manager), even IMMEDIATE
+       mode gets composited in windowed mode, which can cap FPS around the
+       display refresh rate * N (often ~380 fps on 144Hz or similar). The only
+       way to fully bypass DWM is exclusive fullscreen (r_fullscreen 1). */
     bool has_immediate = false;
     bool has_mailbox = false;
     for (u32 i = 0; i < count; i++) {
@@ -345,9 +349,12 @@ static VkPresentModeKHR choose_present_mode(VkPresentModeKHR *modes, u32 count, 
         if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)   has_mailbox = true;
     }
 
-    if (has_immediate) return VK_PRESENT_MODE_IMMEDIATE_KHR;
-    if (has_mailbox)   return VK_PRESENT_MODE_MAILBOX_KHR;
-    return VK_PRESENT_MODE_FIFO_KHR;
+    VkPresentModeKHR selected;
+    if (has_immediate) selected = VK_PRESENT_MODE_IMMEDIATE_KHR;
+    else if (has_mailbox) selected = VK_PRESENT_MODE_MAILBOX_KHR;
+    else selected = VK_PRESENT_MODE_FIFO_KHR;
+
+    return selected;
 }
 
 static qk_result_t r_vulkan_create_swapchain_internal(VkSwapchainKHR old_swapchain)

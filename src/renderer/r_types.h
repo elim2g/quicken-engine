@@ -24,7 +24,10 @@
 /* ---- Constants ---- */
 
 #define R_MAX_SWAPCHAIN_IMAGES  4
-#define R_FRAMES_IN_FLIGHT      2
+/* 3 frames in flight reduces pipeline bubbles from fence waits.
+   With 2, the CPU often stalls waiting for the GPU; 3 keeps the
+   GPU fed while the CPU prepares the next frame. */
+#define R_FRAMES_IN_FLIGHT      3
 #define R_MAX_TEXTURES          256
 #define R_UI_MAX_QUADS          8192
 #define R_TIMESTAMP_COUNT       8

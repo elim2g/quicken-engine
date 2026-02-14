@@ -34,7 +34,7 @@ void p_categorize_position(qk_player_state_t *ps,
     }
 }
 
-/* ---- Jump check (edge-triggered with input buffer) ---- */
+/* ---- Jump check (hold-to-jump with input buffer) ---- */
 
 void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
     bool want_jump = (cmd->buttons & QK_BUTTON_JUMP) != 0;
@@ -45,17 +45,18 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
         return;
     }
 
-    /* Fresh press: set held flag and start/refresh buffer */
+    /* Fresh press while airborne: start the buffer countdown */
     bool fresh_press = !ps->jump_held;
     ps->jump_held = true;
 
     if (fresh_press && !ps->on_ground) {
-        /* Pressed jump in air — start the buffer countdown */
         ps->jump_buffer_ticks = QK_PM_JUMP_BUFFER_TICKS;
     }
 
-    /* Fire jump if on ground AND (fresh press OR buffered) */
-    if (ps->on_ground && (fresh_press || ps->jump_buffer_ticks > 0)) {
+    /* Fire jump every frame the player is on ground and holding jump.
+       The buffer handles the air-press-then-land case automatically
+       since want_jump is still true when we land. */
+    if (ps->on_ground && want_jump) {
         ps->jump_buffer_ticks = 0;
         /* Q3 behavior: setting on_ground = false here means friction
            is skipped on the jump frame, which is essential for consistent
@@ -102,8 +103,8 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
         ps->jump_buffer_ticks--;
     }
 
-    /* 4. Apply friction (ground only) */
-    if (ps->on_ground) {
+    /* 4. Apply friction (ground only, skip during rocket-jump slick) */
+    if (ps->on_ground && ps->splash_slick_ticks == 0) {
         p_apply_friction(ps, dt);
     }
 
@@ -128,4 +129,14 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
 
     /* 8. Re-check ground after move */
     p_categorize_position(ps, world);
+
+    /* Slick period: don't snap to ground while moving upward (rocket jump) */
+    if (ps->splash_slick_ticks > 0 && ps->velocity.z > 0.0f) {
+        ps->on_ground = false;
+    }
+
+    /* 9. Decrement splash slick counter */
+    if (ps->splash_slick_ticks > 0) {
+        ps->splash_slick_ticks--;
+    }
 }

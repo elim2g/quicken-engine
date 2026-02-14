@@ -108,6 +108,7 @@ typedef struct {
     vec3_t      ground_normal;
     bool        jump_held;
     u8          jump_buffer_ticks;
+    u8          splash_slick_ticks;
     f32         max_speed;
     f32         gravity;
     u32         command_time;

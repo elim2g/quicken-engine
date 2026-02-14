@@ -33,12 +33,44 @@ static qk_cvar_t *s_cvar_fov;
 static qk_cvar_t *s_cvar_r_width;
 static qk_cvar_t *s_cvar_r_height;
 static qk_cvar_t *s_cvar_r_vsync;
+static qk_cvar_t *s_cvar_r_windowwidth;
+static qk_cvar_t *s_cvar_r_windowheight;
+static qk_cvar_t *s_cvar_r_fullscreen;
+
+/* Window pointer for cvar callbacks */
+static qk_window_t *s_window;
 
 /* ---- vid_restart callback ---- */
 
 static void cb_render_cvar_changed(qk_cvar_t *cvar) {
     QK_UNUSED(cvar);
     qk_console_printf("Run 'vid_restart' to apply.");
+}
+
+/* ---- Window size callback (immediate, windowed mode only) ---- */
+
+static void cb_window_size_changed(qk_cvar_t *cvar) {
+    QK_UNUSED(cvar);
+    if (!s_window || !s_cvar_r_windowwidth || !s_cvar_r_windowheight) return;
+    if (qk_window_is_fullscreen(s_window)) return;
+
+    u32 w = (u32)s_cvar_r_windowwidth->value.i;
+    u32 h = (u32)s_cvar_r_windowheight->value.i;
+    qk_window_set_size(s_window, w, h);
+    qk_renderer_handle_window_resize(w, h);
+}
+
+/* ---- Fullscreen callback ---- */
+
+static void cb_fullscreen_changed(qk_cvar_t *cvar) {
+    if (!s_window) return;
+    qk_window_set_fullscreen(s_window, cvar->value.b);
+
+    u32 w, h;
+    qk_window_get_size(s_window, &w, &h);
+    if (w > 0 && h > 0) {
+        qk_renderer_handle_window_resize(w, h);
+    }
 }
 
 static void cmd_vid_restart(i32 argc, const char **argv) {
@@ -369,6 +401,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "FATAL: Failed to create window (%d)\n", res);
         return 1;
     }
+    s_window = window;
 
     u32 win_w, win_h;
     qk_window_get_size(window, &win_w, &win_h);
@@ -409,6 +442,16 @@ int main(int argc, char *argv[]) {
                                              QK_CVAR_ARCHIVE,
                                              cb_render_cvar_changed);
     qk_cvar_register_string("name", "Player", QK_CVAR_ARCHIVE, NULL);
+
+    s_cvar_r_windowwidth = qk_cvar_register_int("r_windowwidth", 1280, 320, 7680,
+                                                  QK_CVAR_ARCHIVE,
+                                                  cb_window_size_changed);
+    s_cvar_r_windowheight = qk_cvar_register_int("r_windowheight", 720, 240, 4320,
+                                                   QK_CVAR_ARCHIVE,
+                                                   cb_window_size_changed);
+    s_cvar_r_fullscreen = qk_cvar_register_bool("r_fullscreen", false,
+                                                  QK_CVAR_ARCHIVE,
+                                                  cb_fullscreen_changed);
 
     qk_console_register_cmd("vid_restart", cmd_vid_restart,
                              "Apply render setting changes");

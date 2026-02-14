@@ -88,6 +88,23 @@ void qk_window_get_size(qk_window_t *window, u32 *width, u32 *height) {
     if (height) *height = window->height;
 }
 
+void qk_window_set_size(qk_window_t *window, u32 width, u32 height) {
+    if (!window) return;
+    SDL_SetWindowSize(window->sdl_window, (int)width, (int)height);
+    window->width = width;
+    window->height = height;
+}
+
+void qk_window_set_fullscreen(qk_window_t *window, bool fullscreen) {
+    if (!window) return;
+    SDL_SetWindowFullscreen(window->sdl_window, fullscreen);
+}
+
+bool qk_window_is_fullscreen(qk_window_t *window) {
+    if (!window) return false;
+    return (SDL_GetWindowFlags(window->sdl_window) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
 #else /* QK_HEADLESS */
 
 /* Headless: no window support */
@@ -104,6 +121,15 @@ void qk_window_get_size(qk_window_t *window, u32 *width, u32 *height) {
     QK_UNUSED(window);
     if (width)  *width = 0;
     if (height) *height = 0;
+}
+void qk_window_set_size(qk_window_t *window, u32 width, u32 height) {
+    QK_UNUSED(window); QK_UNUSED(width); QK_UNUSED(height);
+}
+void qk_window_set_fullscreen(qk_window_t *window, bool fullscreen) {
+    QK_UNUSED(window); QK_UNUSED(fullscreen);
+}
+bool qk_window_is_fullscreen(qk_window_t *window) {
+    QK_UNUSED(window); return false;
 }
 
 #endif /* QK_HEADLESS */
