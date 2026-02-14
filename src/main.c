@@ -24,6 +24,37 @@
 #include "netcode/qk_netcode.h"
 #include "gameplay/qk_gameplay.h"
 #include "ui/qk_ui.h"
+#include "core/qk_cvar.h"
+#include "ui/qk_console.h"
+
+/* ---- Cached cvar pointers (set during init, read each frame) ---- */
+
+static qk_cvar_t *s_cvar_fov;
+static qk_cvar_t *s_cvar_r_width;
+static qk_cvar_t *s_cvar_r_height;
+static qk_cvar_t *s_cvar_r_vsync;
+
+/* ---- vid_restart callback ---- */
+
+static void cb_render_cvar_changed(qk_cvar_t *cvar) {
+    QK_UNUSED(cvar);
+    qk_console_printf("Run 'vid_restart' to apply.");
+}
+
+static void cmd_vid_restart(i32 argc, const char **argv) {
+    QK_UNUSED(argc);
+    QK_UNUSED(argv);
+
+    if (s_cvar_r_width && s_cvar_r_height) {
+        qk_renderer_set_render_resolution(
+            (u32)s_cvar_r_width->value.i,
+            (u32)s_cvar_r_height->value.i);
+    }
+    if (s_cvar_r_vsync) {
+        qk_renderer_set_vsync(s_cvar_r_vsync->value.b);
+    }
+    qk_console_print("Video restarted.");
+}
 
 /* ---- Camera Construction ---- */
 
@@ -91,7 +122,8 @@ static qk_camera_t build_camera(f32 pos_x, f32 pos_y, f32 pos_z,
     qk_camera_t cam;
     f32 proj[16], view[16];
 
-    build_perspective(proj, 90.0f, aspect, 0.1f, 4096.0f);
+    f32 fov = (s_cvar_fov ? s_cvar_fov->value.f : 90.0f);
+    build_perspective(proj, fov, aspect, 0.1f, 4096.0f);
 
     /* Eye position is at player origin + eye height */
     f32 eye_z = pos_z + 26.0f;
@@ -357,6 +389,29 @@ int main(int argc, char *argv[]) {
         qk_window_destroy(window);
         return 1;
     }
+
+    /* ---- Init cvar + console ---- */
+    qk_cvar_init();
+    qk_console_init();
+
+    /* Register game cvars */
+    qk_cvar_register_float("sensitivity", 0.022f, 0.001f, 10.0f,
+                            QK_CVAR_ARCHIVE, NULL);
+    s_cvar_fov = qk_cvar_register_float("fov", 90.0f, 60.0f, 140.0f,
+                                          QK_CVAR_ARCHIVE, NULL);
+    s_cvar_r_vsync = qk_cvar_register_bool("r_vsync", false,
+                                             QK_CVAR_ARCHIVE,
+                                             cb_render_cvar_changed);
+    s_cvar_r_width = qk_cvar_register_int("r_width", 1920, 640, 7680,
+                                            QK_CVAR_ARCHIVE,
+                                            cb_render_cvar_changed);
+    s_cvar_r_height = qk_cvar_register_int("r_height", 1080, 480, 4320,
+                                             QK_CVAR_ARCHIVE,
+                                             cb_render_cvar_changed);
+    qk_cvar_register_string("name", "Player", QK_CVAR_ARCHIVE, NULL);
+
+    qk_console_register_cmd("vid_restart", cmd_vid_restart,
+                             "Apply render setting changes");
 
     /* ---- Load map ---- */
     qk_map_data_t map_data;
@@ -637,10 +692,13 @@ int main(int argc, char *argv[]) {
             qk_ui_draw_text(10.0f, 30.0f, speed_buf, 16.0f, 0xFFFF00FF);
         }
 
-        /* ---- 11. UI tick (fade timers) ---- */
+        /* ---- 11. Console overlay ---- */
+        qk_console_draw((f32)rc.render_width, (f32)rc.render_height, real_dt);
+
+        /* ---- 12. UI tick (fade timers) ---- */
         qk_ui_tick((u32)(real_dt * 1000.0f));
 
-        /* ---- 12. Present ---- */
+        /* ---- 13. Present ---- */
         qk_renderer_end_frame();
     }
 
@@ -648,6 +706,8 @@ int main(int argc, char *argv[]) {
 
     /* ---- Shutdown ---- */
 shutdown:
+    qk_console_shutdown();
+    qk_cvar_shutdown();
     qk_net_client_disconnect();
     qk_net_client_shutdown();
     qk_net_server_shutdown();

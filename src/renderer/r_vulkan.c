@@ -350,7 +350,7 @@ static VkPresentModeKHR choose_present_mode(VkPresentModeKHR *modes, u32 count, 
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-qk_result_t r_vulkan_create_swapchain(void)
+static qk_result_t r_vulkan_create_swapchain_internal(VkSwapchainKHR old_swapchain)
 {
     VkSurfaceCapabilitiesKHR caps;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_r.device.physical, g_r.swapchain.surface, &caps);
@@ -408,7 +408,7 @@ qk_result_t r_vulkan_create_swapchain(void)
         .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode      = present_mode,
         .clipped          = VK_TRUE,
-        .oldSwapchain     = VK_NULL_HANDLE
+        .oldSwapchain     = old_swapchain
     };
 
     VkResult result = vkCreateSwapchainKHR(g_r.device.handle, &create_info, NULL, &g_r.swapchain.handle);
@@ -459,6 +459,11 @@ qk_result_t r_vulkan_create_swapchain(void)
     return QK_SUCCESS;
 }
 
+qk_result_t r_vulkan_create_swapchain(void)
+{
+    return r_vulkan_create_swapchain_internal(VK_NULL_HANDLE);
+}
+
 void r_vulkan_destroy_swapchain(void)
 {
     for (u32 i = 0; i < g_r.swapchain.image_count; i++) {
@@ -485,9 +490,25 @@ qk_result_t r_vulkan_recreate_swapchain(void)
         }
     }
 
-    r_vulkan_destroy_swapchain();
+    /* Destroy old image views (they reference old swapchain images) */
+    for (u32 i = 0; i < g_r.swapchain.image_count; i++) {
+        if (g_r.swapchain.views[i]) {
+            vkDestroyImageView(g_r.device.handle, g_r.swapchain.views[i], NULL);
+            g_r.swapchain.views[i] = VK_NULL_HANDLE;
+        }
+    }
 
-    qk_result_t res = r_vulkan_create_swapchain();
+    /* Pass old handle so the driver can reuse presentation resources,
+       then destroy it after the new swapchain is created. */
+    VkSwapchainKHR old_swapchain = g_r.swapchain.handle;
+    g_r.swapchain.handle = VK_NULL_HANDLE;
+
+    qk_result_t res = r_vulkan_create_swapchain_internal(old_swapchain);
+
+    if (old_swapchain) {
+        vkDestroySwapchainKHR(g_r.device.handle, old_swapchain, NULL);
+    }
+
     if (res != QK_SUCCESS) return res;
 
     /* Recreate compose framebuffers */

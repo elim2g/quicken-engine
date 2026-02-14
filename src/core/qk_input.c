@@ -9,6 +9,8 @@
 
 #ifndef QK_HEADLESS
 
+#include "ui/qk_console.h"
+#include "core/qk_cvar.h"
 #include <SDL3/SDL.h>
 #include <string.h>
 #include <math.h>
@@ -23,14 +25,17 @@ static bool    s_mouse_captured;
 static f32     s_yaw;
 static f32     s_pitch;
 
-/* Sensitivity (degrees per pixel) */
-#define QK_MOUSE_SENSITIVITY    0.022f
+/* Cached cvar pointer for zero-overhead reads */
+static qk_cvar_t *s_cvar_sensitivity;
+
 #define QK_PITCH_MIN           -89.0f
 #define QK_PITCH_MAX            89.0f
 
 void qk_input_poll(qk_input_state_t *state) {
     s_mouse_dx = 0;
     s_mouse_dy = 0;
+
+    bool console_open = qk_console_is_open();
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -40,10 +45,48 @@ void qk_input_poll(qk_input_state_t *state) {
             break;
 
         case SDL_EVENT_KEY_DOWN:
+            /* Tilde toggle (non-repeat) */
+            if (event.key.scancode == SDL_SCANCODE_GRAVE && !event.key.repeat) {
+                qk_console_toggle();
+                console_open = qk_console_is_open();
+
+                if (console_open) {
+                    /* Release mouse, start text input */
+                    SDL_Window *win = SDL_GetKeyboardFocus();
+                    if (win) {
+                        SDL_SetWindowRelativeMouseMode(win, false);
+                        SDL_StartTextInput(win);
+                    }
+                    s_mouse_captured = false;
+                } else {
+                    /* Stop text input; mouse re-captures on next click */
+                    SDL_Window *win = SDL_GetKeyboardFocus();
+                    if (win) {
+                        SDL_StopTextInput(win);
+                    }
+                }
+                break;
+            }
+
+            if (console_open) {
+                /* Route key events to console */
+                qk_console_key_event(event.key.scancode, true);
+
+                /* If console closed via Escape, manage mouse/text */
+                if (!qk_console_is_open()) {
+                    console_open = false;
+                    SDL_Window *win = SDL_GetKeyboardFocus();
+                    if (win) {
+                        SDL_StopTextInput(win);
+                    }
+                }
+                break;
+            }
+
+            /* Normal game key handling */
             if (event.key.scancode < 512) {
                 s_keys[event.key.scancode] = true;
             }
-            /* Escape releases mouse capture */
             if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
                 if (s_mouse_captured) {
                     SDL_SetWindowRelativeMouseMode(SDL_GetKeyboardFocus(), false);
@@ -55,16 +98,25 @@ void qk_input_poll(qk_input_state_t *state) {
             break;
 
         case SDL_EVENT_KEY_UP:
-            if (event.key.scancode < 512) {
-                s_keys[event.key.scancode] = false;
+            if (!console_open) {
+                if (event.key.scancode < 512) {
+                    s_keys[event.key.scancode] = false;
+                }
+            }
+            break;
+
+        case SDL_EVENT_TEXT_INPUT:
+            if (console_open) {
+                qk_console_text_event(event.text.text);
             }
             break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (console_open) break; /* ignore clicks when console open */
+
             if (event.button.button <= 5) {
                 s_mouse_buttons[event.button.button - 1] = true;
             }
-            /* Click to capture mouse */
             if (!s_mouse_captured) {
                 SDL_SetWindowRelativeMouseMode(SDL_GetKeyboardFocus(), true);
                 s_mouse_captured = true;
@@ -72,21 +124,20 @@ void qk_input_poll(qk_input_state_t *state) {
             break;
 
         case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (console_open) break;
             if (event.button.button <= 5) {
                 s_mouse_buttons[event.button.button - 1] = false;
             }
             break;
 
         case SDL_EVENT_MOUSE_MOTION:
-            if (s_mouse_captured) {
+            if (s_mouse_captured && !console_open) {
                 s_mouse_dx += (i32)event.motion.xrel;
                 s_mouse_dy += (i32)event.motion.yrel;
             }
             break;
 
         case SDL_EVENT_WINDOW_RESIZED:
-            /* Window resize is handled by the renderer via
-               qk_renderer_handle_window_resize, called from main loop */
             break;
 
         default:
@@ -94,19 +145,25 @@ void qk_input_poll(qk_input_state_t *state) {
         }
     }
 
-    /* Update view angles from mouse */
-    if (s_mouse_captured) {
-        s_yaw -= (f32)s_mouse_dx * QK_MOUSE_SENSITIVITY;
-        s_pitch -= (f32)s_mouse_dy * QK_MOUSE_SENSITIVITY;
+    /* Update view angles from mouse (only when not in console) */
+    if (s_mouse_captured && !console_open) {
+        /* Lazy-cache the sensitivity cvar pointer */
+        if (!s_cvar_sensitivity) {
+            s_cvar_sensitivity = qk_cvar_find("sensitivity");
+        }
+        f32 sens = s_cvar_sensitivity ? s_cvar_sensitivity->value.f : 0.022f;
 
-        /* Wrap yaw to 0..360 */
+        s_yaw -= (f32)s_mouse_dx * sens;
+        s_pitch -= (f32)s_mouse_dy * sens;
+
         while (s_yaw < 0.0f) s_yaw += 360.0f;
         while (s_yaw >= 360.0f) s_yaw -= 360.0f;
 
-        /* Clamp pitch */
         if (s_pitch < QK_PITCH_MIN) s_pitch = QK_PITCH_MIN;
         if (s_pitch > QK_PITCH_MAX) s_pitch = QK_PITCH_MAX;
     }
+
+    console_open = qk_console_is_open();
 
     if (state) {
         memcpy(state->keys, s_keys, sizeof(s_keys));
@@ -114,6 +171,7 @@ void qk_input_poll(qk_input_state_t *state) {
         state->mouse_dy = s_mouse_dy;
         memcpy(state->mouse_buttons, s_mouse_buttons, sizeof(s_mouse_buttons));
         state->quit_requested = s_quit_requested;
+        state->console_active = console_open;
     }
 }
 
@@ -123,6 +181,13 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
     cmd.server_time = server_time;
 
     if (!state) return cmd;
+
+    /* No game input while console is open */
+    if (state->console_active) {
+        cmd.pitch = s_pitch;
+        cmd.yaw = s_yaw;
+        return cmd;
+    }
 
     /* Movement from WASD */
     f32 forward = 0.0f;

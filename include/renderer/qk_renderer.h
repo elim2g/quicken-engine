@@ -68,9 +68,10 @@ typedef struct {
 qk_result_t qk_renderer_init(const qk_renderer_config_t *config);
 void        qk_renderer_shutdown(void);
 
-/* Resolution */
+/* Resolution / display */
 void qk_renderer_set_render_resolution(u32 width, u32 height);
 void qk_renderer_set_aspect_mode(bool aspect_fit);
+void qk_renderer_set_vsync(bool vsync);
 void qk_renderer_handle_window_resize(u32 new_width, u32 new_height);
 
 /* Resource upload (map load) */

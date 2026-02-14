@@ -26,7 +26,7 @@
 #define R_MAX_SWAPCHAIN_IMAGES  4
 #define R_FRAMES_IN_FLIGHT      2
 #define R_MAX_TEXTURES          256
-#define R_UI_MAX_QUADS          4096
+#define R_UI_MAX_QUADS          8192
 #define R_TIMESTAMP_COUNT       8
 #define R_ENTITY_MAX_DRAWS      512
 

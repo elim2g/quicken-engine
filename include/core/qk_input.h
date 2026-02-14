@@ -16,6 +16,7 @@ typedef struct {
     i32     mouse_dy;
     bool    mouse_buttons[5];
     bool    quit_requested;
+    bool    console_active;
 } qk_input_state_t;
 
 void            qk_input_poll(qk_input_state_t *state);

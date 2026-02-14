@@ -194,6 +194,17 @@ void qk_renderer_set_aspect_mode(bool aspect_fit)
     g_r.config.aspect_fit = aspect_fit;
 }
 
+void qk_renderer_set_vsync(bool vsync)
+{
+    if (!g_r.initialized) return;
+    if (vsync == g_r.config.vsync) return;
+
+    g_r.config.vsync = vsync;
+
+    /* Defer recreation to begin_frame where synchronization is correct */
+    g_r.swapchain_needs_recreate = true;
+}
+
 void qk_renderer_handle_window_resize(u32 new_width, u32 new_height)
 {
     if (!g_r.initialized) return;
@@ -316,12 +327,19 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
     /* Read GPU timers from previous frame */
     r_debug_timers_read();
 
+    /* Recreate swapchain BEFORE acquire if flagged (vsync change, etc).
+       Must happen after fence wait but before acquire to avoid
+       double-signaling the image_available semaphore. */
+    if (g_r.swapchain_needs_recreate) {
+        r_vulkan_recreate_swapchain();
+    }
+
     /* Acquire swapchain image */
     VkResult result = vkAcquireNextImageKHR(
         g_r.device.handle, g_r.swapchain.handle, UINT64_MAX,
         frame->image_available, VK_NULL_HANDLE, &g_r.current_image_index);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || g_r.swapchain_needs_recreate) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         r_vulkan_recreate_swapchain();
         result = vkAcquireNextImageKHR(
             g_r.device.handle, g_r.swapchain.handle, UINT64_MAX,
