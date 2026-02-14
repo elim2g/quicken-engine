@@ -164,7 +164,7 @@ static inline vec3_t angles_to_forward(f32 pitch, f32 yaw) {
     f32 sp = sinf(pitch * 3.14159265f / 180.0f);
     f32 cy = cosf(yaw * 3.14159265f / 180.0f);
     f32 sy = sinf(yaw * 3.14159265f / 180.0f);
-    return (vec3_t){ cp * cy, cp * sy, -sp };
+    return (vec3_t){ cp * cy, cp * sy, sp };
 }
 
 /*

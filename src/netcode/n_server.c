@@ -237,13 +237,14 @@ void n_server_broadcast_snapshots(n_server_t *srv) {
         n_bitwriter_init(&w, pkt + N_PACKET_HEADER_SIZE,
                          N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
 
-        /* Snapshot message: header (base_tick + current_tick = 8 bytes) + delta */
-        u16 msg_payload_len = (u16)(8 + delta_len);
+        /* Snapshot message: header (base_tick + current_tick + cmd_ack = 12 bytes) + delta */
+        u16 msg_payload_len = (u16)(12 + delta_len);
         n_msg_header_write(&w, N_MSG_SNAPSHOT, msg_payload_len);
 
         u32 base_tick = baseline ? baseline->tick : 0;
         n_write_u32(&w, base_tick);
         n_write_u32(&w, srv->tick);
+        n_write_u32(&w, cl->last_input_tick);
 
         /* Write delta data raw */
         for (u32 b = 0; b < delta_len; b++) {

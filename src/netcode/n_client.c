@@ -271,21 +271,24 @@ static void update_client_ack_bitfield(n_client_t *cl, u16 remote_seq) {
 }
 
 static void handle_snapshot_message(n_client_t *cl, const u8 *payload, u32 len) {
-    if (len < 8) return;
+    if (len < 12) return;
 
     n_bitreader_t r;
     n_bitreader_init(&r, payload, len);
 
     u32 base_tick = n_read_u32(&r);
     u32 current_tick = n_read_u32(&r);
+    u32 cmd_ack = n_read_u32(&r);
 
     if (n_bitreader_overflowed(&r)) return;
 
-    N_DBG("snapshot: tick=%u base=%u bytes=%u interp_count=%u",
-          current_tick, base_tick, len, cl->interp_count);
+    cl->last_server_cmd_ack = cmd_ack;
+
+    N_DBG("snapshot: tick=%u base=%u cmd_ack=%u bytes=%u interp_count=%u",
+          current_tick, base_tick, cmd_ack, len, cl->interp_count);
 
     /* Extract remaining delta data */
-    u32 delta_bytes = len - 8;
+    u32 delta_bytes = len - 12;
     u8 delta_buf[N_TRANSPORT_MTU];
     for (u32 i = 0; i < delta_bytes; i++) {
         delta_buf[i] = n_read_u8(&r);

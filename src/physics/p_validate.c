@@ -140,7 +140,7 @@ bool qk_physics_validate_strafejump(void) {
      *   2. Peak speed exceeds 320 (proving air accel exploit works)
      *   3. Multiple jumps completed successfully
      */
-    bool pass = (peak_speed > 325.0f && jump_count >= 4);
+    bool pass = (peak_speed > 400.0f && jump_count >= 4);
     printf("\nResult: %s (peak %.1f u/s, %d jumps)\n",
            pass ? "PASS" : "FAIL", (double)peak_speed, jump_count);
     printf("=== End Strafejump Validation ===\n\n");

@@ -105,16 +105,46 @@ static qk_camera_t build_camera(f32 pos_x, f32 pos_y, f32 pos_z,
     return cam;
 }
 
+/* ---- Grid Texture ---- */
+
+static qk_texture_id_t create_grid_texture(void) {
+    #define GRID_SIZE 256
+    #define GRID_LINE 4   /* line width in pixels */
+    #define GRID_CELL 32  /* cell size in pixels */
+
+    static u8 pixels[GRID_SIZE * GRID_SIZE * 4];
+
+    for (u32 y = 0; y < GRID_SIZE; y++) {
+        for (u32 x = 0; x < GRID_SIZE; x++) {
+            u32 idx = (y * GRID_SIZE + x) * 4;
+            bool on_line = (x % GRID_CELL) < GRID_LINE ||
+                           (y % GRID_CELL) < GRID_LINE;
+            u8 val = on_line ? 0x80 : 0x50;
+            pixels[idx + 0] = val;
+            pixels[idx + 1] = val;
+            pixels[idx + 2] = val;
+            pixels[idx + 3] = 0xFF;
+        }
+    }
+
+    qk_texture_id_t id = qk_renderer_upload_texture(pixels, GRID_SIZE, GRID_SIZE, 4);
+
+    #undef GRID_SIZE
+    #undef GRID_LINE
+    #undef GRID_CELL
+    return id;
+}
+
 /* ---- Test Room Render Geometry ---- */
 
-static void upload_test_room_geometry(void) {
+static void upload_test_room_geometry(qk_texture_id_t tex_id) {
     /*
      * Match the physics test room: interior [-1024,1024] x [-1024,1024] x [0,256].
      * 6 faces (floor, ceiling, 4 walls), 24 verts, 36 indices, 6 surfaces.
-     * Uses default white texture (id 0) with proper normals for lighting.
      */
     #define TR_HALF  1024.0f
     #define TR_TOP   256.0f
+    #define TR_UV_SCALE 128.0f
 
     static const struct { f32 p[3]; f32 n[3]; } face_data[6][4] = {
         /* Floor (Z=0, normal up) */
@@ -137,6 +167,16 @@ static void upload_test_room_geometry(void) {
           {{-TR_HALF,-TR_HALF,TR_TOP}, {0,1,0}},  {{ TR_HALF,-TR_HALF,TR_TOP}, {0,1,0}} },
     };
 
+    /* UV axis indices per face: floor/ceiling use XY, X-walls use YZ, Y-walls use XZ */
+    static const u32 uv_axis[6][2] = {
+        {0, 1}, /* floor:    X, Y */
+        {0, 1}, /* ceiling:  X, Y */
+        {1, 2}, /* +X wall:  Y, Z */
+        {1, 2}, /* -X wall:  Y, Z */
+        {0, 2}, /* +Y wall:  X, Z */
+        {0, 2}, /* -Y wall:  X, Z */
+    };
+
     qk_world_vertex_t verts[24];
     u32 indices[36];
     qk_draw_surface_t surfaces[6];
@@ -151,10 +191,9 @@ static void upload_test_room_geometry(void) {
             wv->normal[0]   = face_data[f][v].n[0];
             wv->normal[1]   = face_data[f][v].n[1];
             wv->normal[2]   = face_data[f][v].n[2];
-            /* Simple planar UV for tiling reference */
-            wv->uv[0] = wv->position[0] / 128.0f;
-            wv->uv[1] = wv->position[1] / 128.0f;
-            wv->texture_id = 0;
+            wv->uv[0] = wv->position[uv_axis[f][0]] / TR_UV_SCALE;
+            wv->uv[1] = wv->position[uv_axis[f][1]] / TR_UV_SCALE;
+            wv->texture_id = tex_id;
         }
 
         u32 bi = f * 6;
@@ -168,18 +207,75 @@ static void upload_test_room_geometry(void) {
         surfaces[f].index_offset  = bi;
         surfaces[f].index_count   = 6;
         surfaces[f].vertex_offset = base;
-        surfaces[f].texture_index = 0;
+        surfaces[f].texture_index = tex_id;
     }
 
     qk_result_t res = qk_renderer_upload_world(verts, 24, indices, 36, surfaces, 6);
     if (res != QK_SUCCESS) {
         fprintf(stderr, "Warning: Failed to upload test room geometry (%d)\n", res);
     } else {
-        printf("Test room geometry uploaded (6 faces).\n");
+        printf("Test room geometry uploaded (6 faces, grid texture %u).\n", tex_id);
     }
 
     #undef TR_HALF
     #undef TR_TOP
+    #undef TR_UV_SCALE
+}
+
+/* ---- Client Prediction State ---- */
+
+#define CL_CMD_BUFFER_SIZE 128
+
+typedef struct {
+    qk_usercmd_t cmd;
+    u32 sequence;
+} cl_stored_cmd_t;
+
+typedef struct {
+    qk_player_state_t state;
+    u32 sequence;
+} cl_predicted_state_t;
+
+static cl_stored_cmd_t      cl_cmd_buffer[CL_CMD_BUFFER_SIZE];
+static cl_predicted_state_t cl_pred_history[CL_CMD_BUFFER_SIZE];
+static qk_player_state_t   cl_predicted_ps;
+static u32                  cl_cmd_sequence;
+static bool                 cl_has_prediction;
+static f32                  cl_pred_accumulator;
+static u32                  cl_last_reconciled_ack;
+
+/* ---- Reconciliation ---- */
+
+static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
+    qk_player_state_t server_state;
+    if (!qk_net_client_get_server_player_state(&server_state)) return;
+
+    /* Find predicted state for ack_sequence */
+    u32 ack_idx = ack_sequence % CL_CMD_BUFFER_SIZE;
+    cl_predicted_state_t *predicted = &cl_pred_history[ack_idx];
+    if (predicted->sequence != ack_sequence) return;
+
+    /* Compare positions (epsilon = 0.1 units squared) */
+    f32 dx = server_state.origin.x - predicted->state.origin.x;
+    f32 dy = server_state.origin.y - predicted->state.origin.y;
+    f32 dz = server_state.origin.z - predicted->state.origin.z;
+    f32 dist_sq = dx * dx + dy * dy + dz * dz;
+
+    if (dist_sq < 0.1f) return; /* No correction needed */
+
+    /* Misprediction: snap to server state and replay */
+    cl_predicted_ps = server_state;
+
+    for (u32 seq = ack_sequence + 1; seq < cl_cmd_sequence; seq++) {
+        u32 idx = seq % CL_CMD_BUFFER_SIZE;
+        cl_stored_cmd_t *stored = &cl_cmd_buffer[idx];
+        if (stored->sequence != seq) break;
+
+        qk_physics_move(&cl_predicted_ps, &stored->cmd, world);
+
+        cl_pred_history[idx].state = cl_predicted_ps;
+        cl_pred_history[idx].sequence = seq;
+    }
 }
 
 /* ---- Server Tick ---- */
@@ -297,7 +393,8 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Warning: Failed to upload world geometry (%d)\n", res);
         }
     } else {
-        upload_test_room_geometry();
+        qk_texture_id_t grid_tex = create_grid_texture();
+        upload_test_room_geometry(grid_tex);
     }
 
     /* ---- Init gameplay ---- */
@@ -364,6 +461,15 @@ int main(int argc, char *argv[]) {
         qk_physics_player_init(ps, spawn_pos);
     }
 
+    /* ---- Init prediction state ---- */
+    memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
+    memset(cl_pred_history, 0, sizeof(cl_pred_history));
+    memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
+    cl_cmd_sequence = 0;
+    cl_has_prediction = false;
+    cl_pred_accumulator = 0.0f;
+    cl_last_reconciled_ack = 0;
+
     /* ---- Main loop ---- */
     printf("Entering main loop...\n");
 
@@ -393,46 +499,83 @@ int main(int argc, char *argv[]) {
             fps_timer -= 1.0;
         }
 
-        /* ---- Poll input FIRST for minimum latency ---- */
+        /* ---- 1. Poll input FIRST for minimum latency ---- */
         qk_input_poll(&input_state);
         if (input_state.quit_requested) {
             running = false;
             break;
         }
 
-        /* Build usercmd from raw input */
-        u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
-        qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
+        /* ---- 2. Client-side prediction at fixed tick rate ---- */
+        cl_pred_accumulator += real_dt;
+        while (cl_pred_accumulator >= QK_TICK_DT) {
+            /* Build usercmd with latest view angles */
+            u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
+            qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
 
-        /* Send input to server (via loopback) */
-        qk_net_client_send_input(&cmd);
+            /* Store in command buffer */
+            u32 cmd_idx = cl_cmd_sequence % CL_CMD_BUFFER_SIZE;
+            cl_cmd_buffer[cmd_idx].cmd = cmd;
+            cl_cmd_buffer[cmd_idx].sequence = cl_cmd_sequence;
 
-        /* ---- Server-side (loopback, runs in same process) ---- */
+            /* Send to server via netcode */
+            qk_net_client_send_input(&cmd);
+
+            /* Initialize prediction from server state if first time */
+            if (!cl_has_prediction) {
+                qk_player_state_t srv_state;
+                if (qk_net_client_get_server_player_state(&srv_state)) {
+                    cl_predicted_ps = srv_state;
+                    cl_has_prediction = true;
+                }
+            }
+
+            /* Run local physics prediction */
+            if (cl_has_prediction) {
+                qk_physics_move(&cl_predicted_ps, &cmd, phys_world);
+
+                /* Store predicted state */
+                cl_pred_history[cmd_idx].state = cl_predicted_ps;
+                cl_pred_history[cmd_idx].sequence = cl_cmd_sequence;
+            }
+
+            cl_cmd_sequence++;
+            cl_pred_accumulator -= QK_TICK_DT;
+        }
+
+        /* ---- 3. Server-side (loopback, runs in same process) ---- */
         server_accumulator += real_dt;
         while (server_accumulator >= QK_TICK_DT) {
             server_tick(phys_world);
             server_accumulator -= QK_TICK_DT;
         }
 
-        /* ---- Client-side ---- */
-
-        /* 4. Client tick (processes received snapshots) */
+        /* ---- 4. Client tick (processes received snapshots) ---- */
         qk_net_client_tick();
 
-        /* 5. Interpolate for rendering (minimal delay for loopback) */
+        /* ---- 5. Reconciliation check ---- */
+        u32 ack = qk_net_client_get_server_cmd_ack();
+        if (ack > cl_last_reconciled_ack && cl_has_prediction) {
+            cl_reconcile(ack, phys_world);
+            cl_last_reconciled_ack = ack;
+        }
+
+        /* ---- 6. Interpolate OTHER entities ---- */
         f64 render_time = now - QK_TICK_DT_F64;
         qk_net_client_interpolate(render_time);
 
-        /* 6. Build camera from local player state */
-        const qk_player_state_t *local_ps = qk_game_get_player_state(local_client_id);
-        f32 cam_x = 0, cam_y = 0, cam_z = 24, cam_pitch = 0, cam_yaw = 0;
-        if (local_ps) {
-            cam_x = local_ps->origin.x;
-            cam_y = local_ps->origin.y;
-            cam_z = local_ps->origin.z;
-            cam_pitch = local_ps->pitch;
-            cam_yaw = local_ps->yaw;
+        /* ---- 7. Build camera from predicted state ---- */
+        f32 cam_x = 0, cam_y = 0, cam_z = 24;
+        if (cl_has_prediction) {
+            /* Inter-tick position smoothing: lerp by accumulator fraction */
+            f32 pred_alpha = cl_pred_accumulator / QK_TICK_DT;
+            cam_x = cl_predicted_ps.origin.x + cl_predicted_ps.velocity.x * QK_TICK_DT * pred_alpha;
+            cam_y = cl_predicted_ps.origin.y + cl_predicted_ps.velocity.y * QK_TICK_DT * pred_alpha;
+            cam_z = cl_predicted_ps.origin.z + cl_predicted_ps.velocity.z * QK_TICK_DT * pred_alpha;
         }
+        /* View angles: ALWAYS from input system, NEVER from any game state */
+        f32 cam_pitch = qk_input_get_pitch();
+        f32 cam_yaw = qk_input_get_yaw();
 
         /* Handle window resize */
         qk_window_get_size(window, &win_w, &win_h);
@@ -445,16 +588,19 @@ int main(int argc, char *argv[]) {
         qk_camera_t camera = build_camera(cam_x, cam_y, cam_z,
                                             cam_pitch, cam_yaw, aspect);
 
-        /* 7. Render world */
+        /* ---- 8. Render world ---- */
         qk_renderer_begin_frame(&camera);
         qk_renderer_draw_world();
 
-        /* 8. Draw entities (capsules for players, spheres for projectiles) */
+        /* ---- 9. Draw entities (skip local player) ---- */
         const qk_interp_state_t *interp = qk_net_client_get_interp_state();
         if (interp) {
             for (u32 i = 0; i < QK_MAX_ENTITIES; i++) {
                 const qk_interp_entity_t *ie = &interp->entities[i];
                 if (!ie->active) continue;
+
+                /* Skip local player capsule (first person) */
+                if (i == (u32)local_client_id && ie->entity_type == 1) continue;
 
                 if (ie->entity_type == 1) {
                     u32 color = 0x00FF00FF;
@@ -467,7 +613,8 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* 9. HUD */
+        /* ---- 10. HUD (health/armor from server state, speed from prediction) ---- */
+        const qk_player_state_t *local_ps = qk_game_get_player_state(local_client_id);
         if (local_ps) {
             const qk_ca_state_t *ca = qk_game_get_ca_state();
             qk_ui_draw_hud(local_ps, ca,
@@ -481,19 +628,19 @@ int main(int argc, char *argv[]) {
             qk_ui_draw_text(10.0f, 10.0f, fps_buf, 16.0f, 0x00FF00FF);
         }
 
-        /* Speed display */
-        if (local_ps) {
-            f32 speed = sqrtf(local_ps->velocity.x * local_ps->velocity.x +
-                              local_ps->velocity.y * local_ps->velocity.y);
+        /* Speed display (from predicted state for responsiveness) */
+        if (cl_has_prediction) {
+            f32 speed = sqrtf(cl_predicted_ps.velocity.x * cl_predicted_ps.velocity.x +
+                              cl_predicted_ps.velocity.y * cl_predicted_ps.velocity.y);
             char speed_buf[32];
             snprintf(speed_buf, sizeof(speed_buf), "%.0f ups", (double)speed);
             qk_ui_draw_text(10.0f, 30.0f, speed_buf, 16.0f, 0xFFFF00FF);
         }
 
-        /* 10. UI tick (fade timers) */
+        /* ---- 11. UI tick (fade timers) ---- */
         qk_ui_tick((u32)(real_dt * 1000.0f));
 
-        /* 11. Present */
+        /* ---- 12. Present ---- */
         qk_renderer_end_frame();
     }
 

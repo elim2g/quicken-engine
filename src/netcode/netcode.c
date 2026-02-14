@@ -7,6 +7,7 @@
  */
 
 #include "n_internal.h"
+#include "gameplay/qk_gameplay.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -213,4 +214,55 @@ i32 qk_net_client_get_rtt(void) {
 
 u8 qk_net_client_get_id(void) {
     return s_client ? s_client->client_id : 0;
+}
+
+u32 qk_net_client_get_input_sequence(void) {
+    return s_client ? s_client->input_tick : 0;
+}
+
+u32 qk_net_client_get_server_cmd_ack(void) {
+    return s_client ? s_client->last_server_cmd_ack : 0;
+}
+
+bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
+    if (!out || !s_client) return false;
+    if (s_client->conn_state != N_CONN_CONNECTED) return false;
+
+    /* Loopback: read directly from gameplay module (authoritative) */
+    if (s_client->is_loopback) {
+        const qk_player_state_t *ps = qk_game_get_player_state(s_client->client_id);
+        if (!ps) return false;
+        *out = *ps;
+        return true;
+    }
+
+    /* Remote: extract from latest snapshot */
+    if (s_client->interp_count == 0) return false;
+
+    u32 idx = (s_client->interp_write - 1 + N_INTERP_BUFFER_SIZE) % N_INTERP_BUFFER_SIZE;
+    const n_snapshot_t *snap = &s_client->interp_snapshots[idx];
+
+    u8 eid = s_client->client_id;
+    if (!n_snapshot_has_entity(snap, eid)) return false;
+
+    const n_entity_state_t *e = &snap->entities[eid];
+
+    memset(out, 0, sizeof(*out));
+    out->origin.x = (f32)e->pos_x * 0.125f;
+    out->origin.y = (f32)e->pos_y * 0.125f;
+    out->origin.z = (f32)e->pos_z * 0.125f;
+    out->velocity.x = (f32)e->vel_x;
+    out->velocity.y = (f32)e->vel_y;
+    out->velocity.z = (f32)e->vel_z;
+    out->on_ground = (e->flags & 0x01) != 0;
+    out->jump_held = (e->flags & 0x02) != 0;
+    out->mins = QK_PLAYER_MINS;
+    out->maxs = QK_PLAYER_MAXS;
+    out->max_speed = QK_PM_MAX_SPEED;
+    out->gravity = QK_PM_GRAVITY;
+    out->health = (i16)e->health;
+    out->armor = (i16)e->armor;
+    out->weapon = (qk_weapon_id_t)e->weapon;
+
+    return true;
 }

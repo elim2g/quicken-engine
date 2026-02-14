@@ -13,8 +13,8 @@
 typedef struct qk_arena qk_arena_t;
 
 qk_arena_t *qk_arena_create(u64 size);
-void        *qk_arena_alloc(qk_arena_t *arena, u64 size);
-void         qk_arena_reset(qk_arena_t *arena);
-void         qk_arena_destroy(qk_arena_t *arena);
+void       *qk_arena_alloc(qk_arena_t *arena, u64 size);
+void       qk_arena_reset(qk_arena_t *arena);
+void       qk_arena_destroy(qk_arena_t *arena);
 
 #endif /* QK_ARENA_H */

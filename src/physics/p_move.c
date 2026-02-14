@@ -94,7 +94,7 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     if (ps->on_ground) {
         p_accelerate(ps, wish_dir, wish_speed, QK_PM_GROUND_ACCEL, dt);
     } else {
-        p_air_accelerate(ps, wish_dir, wish_speed, QK_PM_AIR_ACCEL, dt);
+        p_accelerate(ps, wish_dir, wish_speed, QK_PM_AIR_ACCEL, dt);
     }
 
     /* 6. Apply gravity (air only) */

@@ -374,6 +374,9 @@ typedef struct {
     u32                 input_history_head;
     u32                 input_tick;
 
+    /* Prediction reconciliation */
+    u32                 last_server_cmd_ack;
+
     /* Timing */
     f64                 last_packet_recv_time;
     f64                 connect_start_time;

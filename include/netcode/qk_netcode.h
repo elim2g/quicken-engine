@@ -80,4 +80,9 @@ qk_conn_state_t qk_net_client_get_state(void);
 i32             qk_net_client_get_rtt(void);
 u8              qk_net_client_get_id(void);
 
+/* Client prediction support */
+u32             qk_net_client_get_input_sequence(void);
+u32             qk_net_client_get_server_cmd_ack(void);
+bool            qk_net_client_get_server_player_state(qk_player_state_t *out);
+
 #endif /* QK_NETCODE_H */

@@ -165,6 +165,9 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
     return cmd;
 }
 
+f32 qk_input_get_pitch(void) { return s_pitch; }
+f32 qk_input_get_yaw(void) { return s_yaw; }
+
 #else /* QK_HEADLESS */
 
 #include <string.h>
@@ -181,5 +184,8 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
     cmd.server_time = server_time;
     return cmd;
 }
+
+f32 qk_input_get_pitch(void) { return 0.0f; }
+f32 qk_input_get_yaw(void) { return 0.0f; }
 
 #endif /* QK_HEADLESS */

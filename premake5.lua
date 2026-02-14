@@ -311,11 +311,19 @@ project "test-netcode"
     }
 
     includedirs {
-        "include"
+        "include",
+        "src/gameplay"
     }
 
     links {
-        "quicken-netcode"
+        "quicken-netcode",
+        "quicken-physics"
+    }
+
+    -- Gameplay sources compiled directly (netcode depends on gameplay for prediction API)
+    files {
+        "src/gameplay/**.c",
+        "src/gameplay/**.h"
     }
 
     filter "system:windows"

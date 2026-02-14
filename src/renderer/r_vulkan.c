@@ -345,15 +345,8 @@ static VkPresentModeKHR choose_present_mode(VkPresentModeKHR *modes, u32 count, 
         if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)   has_mailbox = true;
     }
 
-    if (has_immediate) {
-        fprintf(stderr, "[Renderer] Present mode: IMMEDIATE (lowest latency)\n");
-        return VK_PRESENT_MODE_IMMEDIATE_KHR;
-    }
-    if (has_mailbox) {
-        fprintf(stderr, "[Renderer] Present mode: MAILBOX\n");
-        return VK_PRESENT_MODE_MAILBOX_KHR;
-    }
-    fprintf(stderr, "[Renderer] Present mode: FIFO (vsync fallback)\n");
+    if (has_immediate) return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    if (has_mailbox)   return VK_PRESENT_MODE_MAILBOX_KHR;
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
