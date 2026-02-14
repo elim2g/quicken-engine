@@ -73,9 +73,10 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
 
     f32 dt = QK_TICK_DT;
 
-    /* 1. Compute wish direction from input + view angles */
+    /* 1. Compute wish direction from yaw only (pitch must not affect
+          movement speed -- looking up/down should not slow acceleration) */
     vec3_t forward, right, up;
-    p_angle_vectors(cmd->pitch, cmd->yaw, &forward, &right, &up);
+    p_angle_vectors(0.0f, cmd->yaw, &forward, &right, &up);
 
     vec3_t wish_dir;
     wish_dir.x = forward.x * cmd->forward_move + right.x * cmd->side_move;
