@@ -6,6 +6,7 @@
  */
 
 #include "n_internal.h"
+#include "core/qk_demo.h"
 #include <math.h>
 #include <stdio.h>
 
@@ -336,6 +337,12 @@ static void handle_snapshot_message(n_client_t *cl, const u8 *payload, u32 len) 
     /* Update baseline: the most recent fully decoded snapshot */
     cl->baseline_snapshot = *dest;
     cl->has_baseline = true;
+
+    /* Demo recording hook */
+    if (qk_demo_is_recording()) {
+        qk_demo_record_snapshot(dest->tick, dest->entity_count,
+                                dest->entity_mask, dest->entities);
+    }
 }
 
 static void handle_connect_challenge(n_client_t *cl, const u8 *payload, u32 len) {

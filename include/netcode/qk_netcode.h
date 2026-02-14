@@ -85,4 +85,9 @@ u32             qk_net_client_get_input_sequence(void);
 u32             qk_net_client_get_server_cmd_ack(void);
 bool            qk_net_client_get_server_player_state(qk_player_state_t *out);
 
+/* Demo playback: inject a snapshot directly into the interp buffer */
+void            qk_net_client_inject_demo_snapshot(u32 tick, u32 entity_count,
+                                                    const u64 *entity_mask,
+                                                    const n_entity_state_t *entities);
+
 #endif /* QK_NETCODE_H */

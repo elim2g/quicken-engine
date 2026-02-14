@@ -184,7 +184,8 @@ project "quicken"
     }
 
     removefiles {
-        "src/server_main.c"
+        "src/server_main.c",
+        "src/test_main.c"
     }
 
     includedirs {
@@ -296,6 +297,67 @@ project "quicken-server"
     filter {}
 
 --------------------------------------------------------------
+-- Automated test harness (headless gameplay tests)
+--------------------------------------------------------------
+project "quicken-test"
+    kind "ConsoleApp"
+    language "C"
+    cdialect "C11"
+
+    targetdir ("build/bin/" .. outputdir)
+    objdir ("build/obj/" .. outputdir .. "/quicken-test")
+
+    defines { "QK_HEADLESS" }
+
+    files {
+        "src/test_main.c",
+        "src/core/**.c",
+        "src/gameplay/**.c",
+        "src/gameplay/**.h",
+        "include/**.h"
+    }
+
+    removefiles {
+        "src/core/qk_window.c",
+        "src/core/qk_input.c"
+    }
+
+    includedirs {
+        "include",
+        "src/gameplay"
+    }
+
+    links {
+        "quicken-physics",
+        "quicken-netcode"
+    }
+
+    filter "system:windows"
+        system "windows"
+        links { "ws2_32" }
+
+    filter "system:linux"
+        system "linux"
+        links { "m", "pthread" }
+
+    filter "toolset:gcc or toolset:clang"
+        buildoptions {
+            "-Wall", "-Wextra", "-Wpedantic",
+            "-march=native",
+            "-std=c11",
+            "-ffp-contract=off"
+        }
+
+    filter "toolset:msc"
+        buildoptions {
+            "/W4",
+            "/arch:AVX2",
+            "/fp:precise"
+        }
+
+    filter {}
+
+--------------------------------------------------------------
 -- Netcode loopback test (exercises full loopback path)
 --------------------------------------------------------------
 project "test-netcode"
@@ -321,9 +383,11 @@ project "test-netcode"
     }
 
     -- Gameplay sources compiled directly (netcode depends on gameplay for prediction API)
+    -- Demo source needed because netcode hooks call qk_demo_is_recording()
     files {
         "src/gameplay/**.c",
-        "src/gameplay/**.h"
+        "src/gameplay/**.h",
+        "src/core/qk_demo.c"
     }
 
     filter "system:windows"

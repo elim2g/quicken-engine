@@ -26,7 +26,13 @@
 #include "ui/qk_ui.h"
 #include "core/qk_cvar.h"
 #include "core/qk_perf.h"
+#include "core/qk_demo.h"
 #include "ui/qk_console.h"
+
+/* ---- File-static state for demo system access ---- */
+static u8 s_local_client_id;
+static const char *s_map_path;
+static f64 s_demo_play_start_time;
 
 /* ---- Cached cvar pointers (set during init, read each frame) ---- */
 
@@ -375,6 +381,49 @@ static void server_tick(qk_phys_world_t *phys_world) {
     qk_net_server_tick();
 }
 
+/* ---- Demo Console Commands ---- */
+
+static void cmd_demo_record(i32 argc, const char **argv) {
+    if (argc < 2) {
+        qk_console_print("Usage: demo_record <name>");
+        return;
+    }
+    u32 start_tick = qk_net_server_get_tick();
+    if (qk_demo_record_start(argv[1], s_local_client_id,
+                              start_tick, s_map_path)) {
+        qk_console_printf("Recording demo '%s'...", argv[1]);
+    } else {
+        qk_console_printf("Failed to start recording '%s'.", argv[1]);
+    }
+}
+
+static void cmd_demo_stop(i32 argc, const char **argv) {
+    QK_UNUSED(argc);
+    QK_UNUSED(argv);
+    if (qk_demo_is_recording()) {
+        qk_demo_record_stop();
+        qk_console_print("Demo recording stopped.");
+    } else if (qk_demo_is_playing()) {
+        qk_demo_play_stop();
+        qk_console_print("Demo playback stopped.");
+    } else {
+        qk_console_print("Not recording or playing.");
+    }
+}
+
+static void cmd_demo_play(i32 argc, const char **argv) {
+    if (argc < 2) {
+        qk_console_print("Usage: demo_play <name>");
+        return;
+    }
+    if (qk_demo_play_start(argv[1])) {
+        s_demo_play_start_time = qk_platform_time_now();
+        qk_console_printf("Playing demo '%s'...", argv[1]);
+    } else {
+        qk_console_printf("Failed to play demo '%s'.", argv[1]);
+    }
+}
+
 /* ---- Main ---- */
 
 int main(int argc, char *argv[]) {
@@ -396,6 +445,7 @@ int main(int argc, char *argv[]) {
             map_path = argv[++i];
         }
     }
+    s_map_path = map_path;
 
     /* ---- Create window ---- */
     qk_window_t *window = NULL;
@@ -464,9 +514,16 @@ int main(int argc, char *argv[]) {
                                                cb_perflog_changed);
 
     qk_perf_init();
+    qk_demo_init();
 
     qk_console_register_cmd("vid_restart", cmd_vid_restart,
                              "Apply render setting changes");
+    qk_console_register_cmd("demo_record", cmd_demo_record,
+                             "Start recording a demo");
+    qk_console_register_cmd("demo_stop", cmd_demo_stop,
+                             "Stop recording or playing a demo");
+    qk_console_register_cmd("demo_play", cmd_demo_play,
+                             "Play back a recorded demo");
 
     /* ---- Load map ---- */
     qk_map_data_t map_data;
@@ -543,6 +600,7 @@ int main(int argc, char *argv[]) {
     }
 
     u8 local_client_id = qk_net_client_get_id();
+    s_local_client_id = local_client_id;
     printf("Connected as client %u (loopback)\n", local_client_id);
 
     /* ---- Connect local player to game ---- */
@@ -618,76 +676,99 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        /* ---- 2. Client-side prediction at fixed tick rate ---- */
-        cl_pred_accumulator += real_dt;
-        while (cl_pred_accumulator >= QK_TICK_DT) {
-            /* Build usercmd with latest view angles */
-            u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
-            qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
-
-            /* Store in command buffer */
-            u32 cmd_idx = cl_cmd_sequence % CL_CMD_BUFFER_SIZE;
-            cl_cmd_buffer[cmd_idx].cmd = cmd;
-            cl_cmd_buffer[cmd_idx].sequence = cl_cmd_sequence;
-
-            /* Send to server via netcode */
-            qk_net_client_send_input(&cmd);
-
-            /* Initialize prediction from server state if first time */
-            if (!cl_has_prediction) {
-                qk_player_state_t srv_state;
-                if (qk_net_client_get_server_player_state(&srv_state)) {
-                    cl_predicted_ps = srv_state;
-                    cl_has_prediction = true;
-                }
-            }
-
-            /* Run local physics prediction */
-            if (cl_has_prediction) {
-                qk_physics_move(&cl_predicted_ps, &cmd, phys_world);
-
-                /* Store predicted state */
-                cl_pred_history[cmd_idx].state = cl_predicted_ps;
-                cl_pred_history[cmd_idx].sequence = cl_cmd_sequence;
-            }
-
-            cl_cmd_sequence++;
-            cl_pred_accumulator -= QK_TICK_DT;
-        }
-
-        /* ---- 3. Server-side (loopback, runs in same process) ---- */
-        server_accumulator += real_dt;
-        while (server_accumulator >= QK_TICK_DT) {
-            server_tick(phys_world);
-            server_accumulator -= QK_TICK_DT;
-        }
-
-        /* ---- 4. Client tick (processes received snapshots) ---- */
-        qk_net_client_tick();
-
-        /* ---- 5. Reconciliation check ---- */
-        u32 ack = qk_net_client_get_server_cmd_ack();
-        if (ack > cl_last_reconciled_ack && cl_has_prediction) {
-            cl_reconcile(ack, phys_world);
-            cl_last_reconciled_ack = ack;
-        }
-
-        /* ---- 6. Interpolate OTHER entities ---- */
-        f64 render_time = now - QK_TICK_DT_F64;
-        qk_net_client_interpolate(render_time);
-
-        /* ---- 7. Build camera from predicted state ---- */
+        /* ---- Game/Demo branch ---- */
         f32 cam_x = 0, cam_y = 0, cam_z = 24;
-        if (cl_has_prediction) {
-            /* Inter-tick position smoothing: lerp by accumulator fraction */
-            f32 pred_alpha = cl_pred_accumulator / QK_TICK_DT;
-            cam_x = cl_predicted_ps.origin.x + cl_predicted_ps.velocity.x * QK_TICK_DT * pred_alpha;
-            cam_y = cl_predicted_ps.origin.y + cl_predicted_ps.velocity.y * QK_TICK_DT * pred_alpha;
-            cam_z = cl_predicted_ps.origin.z + cl_predicted_ps.velocity.z * QK_TICK_DT * pred_alpha;
+        f32 cam_pitch = 0, cam_yaw = 0;
+
+        if (qk_demo_is_playing()) {
+            /* ---- Demo playback path ---- */
+            f64 elapsed = now - s_demo_play_start_time;
+            u32 playback_tick = qk_demo_get_start_tick() +
+                                (u32)(elapsed * (f64)QK_TICK_RATE);
+
+            if (!qk_demo_play_tick(playback_tick)) {
+                qk_demo_play_stop();
+                qk_console_print("Demo playback ended.");
+            }
+
+            f64 render_time = (f64)playback_tick / (f64)QK_TICK_RATE - QK_TICK_DT_F64;
+            qk_net_client_interpolate(render_time);
+
+            /* Camera from POV entity */
+            u8 pov_id = qk_demo_get_pov_client_id();
+            const qk_interp_state_t *pov = qk_net_client_get_interp_state();
+            if (pov && pov->entities[pov_id].active) {
+                cam_x = pov->entities[pov_id].pos_x;
+                cam_y = pov->entities[pov_id].pos_y;
+                cam_z = pov->entities[pov_id].pos_z;
+            }
+            const qk_usercmd_t *demo_cmd = qk_demo_get_last_usercmd();
+            cam_pitch = demo_cmd->pitch;
+            cam_yaw = demo_cmd->yaw;
+        } else {
+            /* ---- Normal game path ---- */
+
+            /* 2. Client-side prediction at fixed tick rate */
+            cl_pred_accumulator += real_dt;
+            while (cl_pred_accumulator >= QK_TICK_DT) {
+                u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
+                qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
+
+                u32 cmd_idx = cl_cmd_sequence % CL_CMD_BUFFER_SIZE;
+                cl_cmd_buffer[cmd_idx].cmd = cmd;
+                cl_cmd_buffer[cmd_idx].sequence = cl_cmd_sequence;
+
+                qk_net_client_send_input(&cmd);
+
+                if (!cl_has_prediction) {
+                    qk_player_state_t srv_state;
+                    if (qk_net_client_get_server_player_state(&srv_state)) {
+                        cl_predicted_ps = srv_state;
+                        cl_has_prediction = true;
+                    }
+                }
+
+                if (cl_has_prediction) {
+                    qk_physics_move(&cl_predicted_ps, &cmd, phys_world);
+                    cl_pred_history[cmd_idx].state = cl_predicted_ps;
+                    cl_pred_history[cmd_idx].sequence = cl_cmd_sequence;
+                }
+
+                cl_cmd_sequence++;
+                cl_pred_accumulator -= QK_TICK_DT;
+            }
+
+            /* 3. Server-side (loopback, runs in same process) */
+            server_accumulator += real_dt;
+            while (server_accumulator >= QK_TICK_DT) {
+                server_tick(phys_world);
+                server_accumulator -= QK_TICK_DT;
+            }
+
+            /* 4. Client tick (processes received snapshots) */
+            qk_net_client_tick();
+
+            /* 5. Reconciliation check */
+            u32 ack = qk_net_client_get_server_cmd_ack();
+            if (ack > cl_last_reconciled_ack && cl_has_prediction) {
+                cl_reconcile(ack, phys_world);
+                cl_last_reconciled_ack = ack;
+            }
+
+            /* 6. Interpolate OTHER entities */
+            f64 render_time = now - QK_TICK_DT_F64;
+            qk_net_client_interpolate(render_time);
+
+            /* 7. Build camera from predicted state */
+            if (cl_has_prediction) {
+                f32 pred_alpha = cl_pred_accumulator / QK_TICK_DT;
+                cam_x = cl_predicted_ps.origin.x + cl_predicted_ps.velocity.x * QK_TICK_DT * pred_alpha;
+                cam_y = cl_predicted_ps.origin.y + cl_predicted_ps.velocity.y * QK_TICK_DT * pred_alpha;
+                cam_z = cl_predicted_ps.origin.z + cl_predicted_ps.velocity.z * QK_TICK_DT * pred_alpha;
+            }
+            cam_pitch = qk_input_get_pitch();
+            cam_yaw = qk_input_get_yaw();
         }
-        /* View angles: ALWAYS from input system, NEVER from any game state */
-        f32 cam_pitch = qk_input_get_pitch();
-        f32 cam_yaw = qk_input_get_yaw();
 
         /* Handle window resize */
         qk_window_get_size(window, &win_w, &win_h);
@@ -779,6 +860,7 @@ int main(int argc, char *argv[]) {
 
     /* ---- Shutdown ---- */
 shutdown:
+    qk_demo_shutdown();
     qk_perf_shutdown();
     qk_console_shutdown();
     qk_cvar_shutdown();

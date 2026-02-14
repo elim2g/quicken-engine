@@ -8,6 +8,7 @@
 #include "g_internal.h"
 #include "netcode/n_types.h"
 #include "physics/qk_physics.h"
+#include "core/qk_demo.h"
 
 /* ---- Global Game State ---- */
 static qk_game_state_t s_gs;
@@ -71,6 +72,16 @@ void qk_game_tick(qk_phys_world_t *world, f32 dt) {
 
     /* 4. Projectile tick (movement + collision against world and players) */
     g_projectile_tick(&s_gs, dt, world);
+
+    /* 5. Demo recording hooks */
+    if (qk_demo_is_recording()) {
+        u32 tick = s_gs.server_time_ms / QK_TICK_DT_MS_NOM;
+        qk_demo_record_gamestate(tick, &s_gs.ca);
+        for (u32 i = 0; i < s_gs.events.count; i++) {
+            qk_demo_record_event(tick, &s_gs.events.events[i],
+                                 (u16)sizeof(game_event_t));
+        }
+    }
 }
 
 void qk_game_shutdown(void) {

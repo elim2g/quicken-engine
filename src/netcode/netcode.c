@@ -8,6 +8,7 @@
 
 #include "n_internal.h"
 #include "gameplay/qk_gameplay.h"
+#include "core/qk_demo.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -198,6 +199,11 @@ void qk_net_client_send_input(const qk_usercmd_t *cmd) {
     input.weapon_select = cmd->weapon_select;
 
     n_client_send_input(s_client, &input, n_platform_time());
+
+    /* Demo recording hook */
+    if (qk_demo_is_recording()) {
+        qk_demo_record_usercmd(s_client->input_tick - 1, cmd);
+    }
 }
 
 const qk_interp_state_t *qk_net_client_get_interp_state(void) {
@@ -222,6 +228,28 @@ u32 qk_net_client_get_input_sequence(void) {
 
 u32 qk_net_client_get_server_cmd_ack(void) {
     return s_client ? s_client->last_server_cmd_ack : 0;
+}
+
+void qk_net_client_inject_demo_snapshot(u32 tick, u32 entity_count,
+                                         const u64 *entity_mask,
+                                         const n_entity_state_t *entities) {
+    if (!s_client) return;
+
+    u32 write_idx = s_client->interp_write;
+    n_snapshot_t *dest = &s_client->interp_snapshots[write_idx];
+
+    dest->tick = tick;
+    dest->entity_count = entity_count;
+    memcpy(dest->entity_mask, entity_mask, sizeof(dest->entity_mask));
+    memcpy(dest->entities, entities, sizeof(dest->entities));
+
+    s_client->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
+    if (s_client->interp_count < N_INTERP_BUFFER_SIZE) {
+        s_client->interp_count++;
+    }
+
+    s_client->baseline_snapshot = *dest;
+    s_client->has_baseline = true;
 }
 
 bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
