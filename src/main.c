@@ -768,6 +768,10 @@ int main(int argc, char *argv[]) {
                         qk_physics_player_init(mps, spawn);
                     }
 
+                    /* Load trigger volumes (teleporters + jump pads) */
+                    qk_game_load_triggers(map_data.teleporters, map_data.teleporter_count,
+                                           map_data.jump_pads, map_data.jump_pad_count);
+
                     /* Prediction (clean slate) */
                     memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
                     memset(cl_pred_history, 0, sizeof(cl_pred_history));

@@ -84,15 +84,11 @@ void qk_game_tick(qk_phys_world_t *world, f32 dt) {
     }
 }
 
-void qk_game_set_map_entities(const qk_teleporter_t *teleporters, u32 teleporter_count,
-                                const qk_jump_pad_t *jump_pads, u32 jump_pad_count,
-                                const qk_spawn_point_t *spawns, u32 spawn_count) {
-    s_gs.teleporters = teleporters;
-    s_gs.teleporter_count = teleporter_count;
-    s_gs.jump_pads = jump_pads;
-    s_gs.jump_pad_count = jump_pad_count;
-    s_gs.spawns = spawns;
-    s_gs.spawn_count = spawn_count;
+void qk_game_load_triggers(const qk_teleporter_t *teleporters, u32 teleporter_count,
+                            const qk_jump_pad_t *jump_pads, u32 jump_pad_count) {
+    /* Stub -- gameplay engineer provides full implementation via g_triggers.c */
+    (void)teleporters; (void)teleporter_count;
+    (void)jump_pads; (void)jump_pad_count;
 }
 
 void qk_game_shutdown(void) {
@@ -191,7 +187,9 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
         out->vel_z = (i16)ps->velocity.z;
         out->yaw = (u16)(ps->yaw * (65535.0f / 360.0f));
         out->pitch = (u16)(ps->pitch * (65535.0f / 360.0f));
-        out->flags = (ps->on_ground ? 0x01 : 0) | (ps->jump_held ? 0x02 : 0);
+        out->flags = (ps->on_ground ? QK_ENT_FLAG_ON_GROUND : 0)
+                   | (ps->jump_held ? QK_ENT_FLAG_JUMP_HELD : 0)
+                   | (ps->teleported ? QK_ENT_FLAG_TELEPORTED : 0);
         out->health = (ps->health > 0) ? (u8)((ps->health > 255) ? 255 : ps->health) : 0;
         out->armor = (ps->armor > 0) ? (u8)((ps->armor > 255) ? 255 : ps->armor) : 0;
         out->weapon = (u8)ps->weapon;

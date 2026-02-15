@@ -136,6 +136,7 @@ typedef struct {
     u16         damage_taken;
 
     u32         respawn_time;
+    bool        teleported;     /* set by gameplay on teleport, cleared next tick */
     qk_usercmd_t last_cmd;
 } qk_player_state_t;
 
@@ -178,8 +179,10 @@ typedef struct {
     vec3_t  target;         /* target position (apex or destination) */
 } qk_jump_pad_t;
 
-/* ---- Entity state flags (shared between netcode and gameplay) ---- */
+/* ---- Entity state flags (n_entity_state_t.flags, shared between netcode and gameplay) ---- */
 
-#define QK_ENT_FLAG_TELEPORTED  (1 << 0)  /* entity teleported this tick (skip interpolation) */
+#define QK_ENT_FLAG_ON_GROUND   (1 << 0)
+#define QK_ENT_FLAG_JUMP_HELD   (1 << 1)
+#define QK_ENT_FLAG_TELEPORTED  (1 << 2)  /* entity teleported this tick (skip interpolation) */
 
 #endif /* QK_TYPES_H */

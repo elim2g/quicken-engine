@@ -22,6 +22,7 @@
 #define LUMP_ENTITIES       0
 #define LUMP_TEXTURES       1
 #define LUMP_PLANES         2
+#define LUMP_MODELS         7
 #define LUMP_BRUSHES        8
 #define LUMP_BRUSHSIDES     9
 #define LUMP_VERTICES       10
@@ -83,6 +84,15 @@ typedef struct {
 } bsp_meshvert_t;
 
 typedef struct {
+    f32     mins[3];
+    f32     maxs[3];
+    i32     first_face;
+    i32     num_faces;
+    i32     first_brush;
+    i32     num_brushes;
+} bsp_model_t;
+
+typedef struct {
     i32     texture;
     i32     effect;
     i32     type;
@@ -103,6 +113,7 @@ typedef struct {
 
 _Static_assert(sizeof(bsp_texture_t)  == 72,  "bsp_texture_t packing");
 _Static_assert(sizeof(bsp_plane_t)    == 16,  "bsp_plane_t packing");
+_Static_assert(sizeof(bsp_model_t)    == 40,  "bsp_model_t packing");
 _Static_assert(sizeof(bsp_brush_t)    == 12,  "bsp_brush_t packing");
 _Static_assert(sizeof(bsp_brushside_t)== 8,   "bsp_brushside_t packing");
 _Static_assert(sizeof(bsp_vertex_t)   == 44,  "bsp_vertex_t packing");
@@ -599,11 +610,10 @@ typedef struct {
     char    classname[64];
     char    targetname[64];
     char    target[64];
+    char    model[16];
     vec3_t  origin;
     f32     angle;
-    vec3_t  mins;
-    vec3_t  maxs;
-    bool    has_model;       /* has a brush model (trigger volume) */
+    bool    has_origin;
 } bsp_entity_parsed_t;
 
 /* ---- Parse all entities from BSP entity lump ---- */
@@ -621,8 +631,6 @@ static u32 parse_bsp_entity_lump(const char *text, u32 text_len,
 
         bsp_entity_parsed_t *ent = &ents[count];
         memset(ent, 0, sizeof(*ent));
-
-        char model_str[64] = {0};
 
         while (p < end && *p != '}') {
             while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
@@ -647,14 +655,15 @@ static u32 parse_bsp_entity_lump(const char *text, u32 text_len,
             if (strcmp(key, "classname") == 0) strncpy(ent->classname, val, 63);
             else if (strcmp(key, "targetname") == 0) strncpy(ent->targetname, val, 63);
             else if (strcmp(key, "target") == 0) strncpy(ent->target, val, 63);
-            else if (strcmp(key, "origin") == 0) sscanf(val, "%f %f %f", &ent->origin.x, &ent->origin.y, &ent->origin.z);
+            else if (strcmp(key, "origin") == 0) {
+                sscanf(val, "%f %f %f", &ent->origin.x, &ent->origin.y, &ent->origin.z);
+                ent->has_origin = true;
+            }
             else if (strcmp(key, "angle") == 0) ent->angle = (f32)atof(val);
-            else if (strcmp(key, "model") == 0) strncpy(model_str, val, 63);
+            else if (strcmp(key, "model") == 0) strncpy(ent->model, val, 15);
         }
 
         if (p < end && *p == '}') p++;
-
-        ent->has_model = (model_str[0] == '*');
         count++;
     }
 
@@ -676,8 +685,8 @@ static const bsp_entity_parsed_t *find_entity_by_targetname(
 /* ---- Extract spawn points, teleporters, and jump pads from parsed entities ---- */
 
 static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
+                                  const bsp_model_t *models, u32 model_count,
                                   qk_map_data_t *out) {
-    /* Count each type */
     u32 spawn_cap = QK_MAP_MAX_SPAWN_POINTS;
     u32 tele_cap = QK_MAP_MAX_TELEPORTERS;
     u32 pad_cap = QK_MAP_MAX_JUMP_PADS;
@@ -710,14 +719,29 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
             const bsp_entity_parsed_t *dest = find_entity_by_targetname(ents, ent_count, e->target);
             if (dest) {
                 qk_teleporter_t *tp = &out->teleporters[out->teleporter_count];
-                tp->origin = e->origin;
-                /* Default trigger volume (32x32x32) if no brush model.
-                   Gameplay can refine using brush model bounds later. */
-                tp->mins = (vec3_t){e->origin.x - 16.0f, e->origin.y - 16.0f, e->origin.z - 16.0f};
-                tp->maxs = (vec3_t){e->origin.x + 16.0f, e->origin.y + 16.0f, e->origin.z + 16.0f};
                 tp->destination = dest->origin;
                 tp->dest_yaw = dest->angle;
-                out->teleporter_count++;
+
+                /* Get trigger volume bounds from BSP model if available */
+                if (e->model[0] == '*' && models) {
+                    i32 model_idx = atoi(&e->model[1]);
+                    if (model_idx >= 0 && (u32)model_idx < model_count) {
+                        const bsp_model_t *mdl = &models[model_idx];
+                        tp->mins = (vec3_t){mdl->mins[0], mdl->mins[1], mdl->mins[2]};
+                        tp->maxs = (vec3_t){mdl->maxs[0], mdl->maxs[1], mdl->maxs[2]};
+                        tp->origin = (vec3_t){
+                            (mdl->mins[0] + mdl->maxs[0]) * 0.5f,
+                            (mdl->mins[1] + mdl->maxs[1]) * 0.5f,
+                            (mdl->mins[2] + mdl->maxs[2]) * 0.5f
+                        };
+                        out->teleporter_count++;
+                    }
+                } else if (e->has_origin) {
+                    tp->origin = e->origin;
+                    tp->mins = (vec3_t){e->origin.x - 32.0f, e->origin.y - 32.0f, e->origin.z - 32.0f};
+                    tp->maxs = (vec3_t){e->origin.x + 32.0f, e->origin.y + 32.0f, e->origin.z + 32.0f};
+                    out->teleporter_count++;
+                }
             }
         }
 
@@ -728,11 +752,27 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
             const bsp_entity_parsed_t *dest = find_entity_by_targetname(ents, ent_count, e->target);
             if (dest) {
                 qk_jump_pad_t *jp = &out->jump_pads[out->jump_pad_count];
-                jp->origin = e->origin;
-                jp->mins = (vec3_t){e->origin.x - 16.0f, e->origin.y - 16.0f, e->origin.z - 16.0f};
-                jp->maxs = (vec3_t){e->origin.x + 16.0f, e->origin.y + 16.0f, e->origin.z + 16.0f};
                 jp->target = dest->origin;
-                out->jump_pad_count++;
+
+                if (e->model[0] == '*' && models) {
+                    i32 model_idx = atoi(&e->model[1]);
+                    if (model_idx >= 0 && (u32)model_idx < model_count) {
+                        const bsp_model_t *mdl = &models[model_idx];
+                        jp->mins = (vec3_t){mdl->mins[0], mdl->mins[1], mdl->mins[2]};
+                        jp->maxs = (vec3_t){mdl->maxs[0], mdl->maxs[1], mdl->maxs[2]};
+                        jp->origin = (vec3_t){
+                            (mdl->mins[0] + mdl->maxs[0]) * 0.5f,
+                            (mdl->mins[1] + mdl->maxs[1]) * 0.5f,
+                            (mdl->mins[2] + mdl->maxs[2]) * 0.5f
+                        };
+                        out->jump_pad_count++;
+                    }
+                } else if (e->has_origin) {
+                    jp->origin = e->origin;
+                    jp->mins = (vec3_t){e->origin.x - 32.0f, e->origin.y - 32.0f, e->origin.z - 32.0f};
+                    jp->maxs = (vec3_t){e->origin.x + 32.0f, e->origin.y + 32.0f, e->origin.z + 32.0f};
+                    out->jump_pad_count++;
+                }
             }
         }
     }
@@ -763,10 +803,11 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
 
     /* Get lump pointers */
     u32 tex_count = 0, plane_count = 0, brush_count = 0, side_count = 0;
-    u32 vert_count = 0, mv_count = 0, face_count = 0;
+    u32 vert_count = 0, mv_count = 0, face_count = 0, model_count = 0;
 
     const bsp_texture_t   *textures  = (const bsp_texture_t *)  get_lump(data, data_len, hdr, LUMP_TEXTURES,   sizeof(bsp_texture_t),   &tex_count);
     const bsp_plane_t     *planes    = (const bsp_plane_t *)    get_lump(data, data_len, hdr, LUMP_PLANES,     sizeof(bsp_plane_t),     &plane_count);
+    const bsp_model_t     *models    = (const bsp_model_t *)    get_lump(data, data_len, hdr, LUMP_MODELS,     sizeof(bsp_model_t),     &model_count);
     const bsp_brush_t     *brushes   = (const bsp_brush_t *)    get_lump(data, data_len, hdr, LUMP_BRUSHES,    sizeof(bsp_brush_t),     &brush_count);
     const bsp_brushside_t *sides     = (const bsp_brushside_t *)get_lump(data, data_len, hdr, LUMP_BRUSHSIDES, sizeof(bsp_brushside_t), &side_count);
     const bsp_vertex_t    *verts     = (const bsp_vertex_t *)   get_lump(data, data_len, hdr, LUMP_VERTICES,   sizeof(bsp_vertex_t),    &vert_count);
@@ -829,7 +870,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
         bsp_entity_parsed_t *ents = (bsp_entity_parsed_t *)calloc(BSP_MAX_ENTITIES, sizeof(bsp_entity_parsed_t));
         if (ents) {
             u32 ent_count = parse_bsp_entity_lump(ent_text, ent_len, ents, BSP_MAX_ENTITIES);
-            extract_bsp_entities(ents, ent_count, out);
+            extract_bsp_entities(ents, ent_count, models, model_count, out);
             free(ents);
         }
         fprintf(stderr, "[BSP] Spawn points: %u, Teleporters: %u, Jump pads: %u\n",

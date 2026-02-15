@@ -41,12 +41,10 @@ qk_result_t         qk_game_init(const qk_game_config_t *config);
 void                qk_game_tick(qk_phys_world_t *world, f32 dt);
 void                qk_game_shutdown(void);
 
-/* Set map entity data (teleporters, jump pads, spawn points).
-   Pointers are borrowed -- caller must keep qk_map_data_t alive
-   for the lifetime of the game. Call after qk_game_init. */
-void qk_game_set_map_entities(const qk_teleporter_t *teleporters, u32 teleporter_count,
-                                const qk_jump_pad_t *jump_pads, u32 jump_pad_count,
-                                const qk_spawn_point_t *spawns, u32 spawn_count);
+/* Load trigger volumes (teleporters + jump pads) from map data.
+   Makes internal copies of the data. Call after qk_game_init. */
+void qk_game_load_triggers(const qk_teleporter_t *teleporters, u32 teleporter_count,
+                            const qk_jump_pad_t *jump_pads, u32 jump_pad_count);
 
 /* Player management */
 qk_result_t         qk_game_player_connect(u8 client_num,
