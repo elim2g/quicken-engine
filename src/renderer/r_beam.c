@@ -21,11 +21,14 @@
 
 /* Rail beam parameters */
 #define RAIL_CORE_HALF_WIDTH    0.8f
-#define RAIL_SPIRAL_POINTS      56
-#define RAIL_SPIRAL_TURNS       4.0f
-#define RAIL_SPIRAL_RADIUS      3.0f
+#define RAIL_SPIRAL_PITCH       40.0f   /* world units per full spiral revolution */
+#define RAIL_SPIRAL_PTS_PER_TURN 28     /* particles per revolution */
+#define RAIL_SPIRAL_MIN_POINTS  12
+#define RAIL_SPIRAL_MAX_POINTS  512
+#define RAIL_SPIRAL_RADIUS      2.5f
 #define RAIL_PARTICLE_HALF_SIZE 1.2f
-#define RAIL_FADE_TIME          1.5f
+#define RAIL_FADE_TIME          1.75f
+#define RAIL_FIZZLE_AMPLITUDE   6.0f    /* max displacement at end of life */
 
 /* LG beam parameters */
 #define LG_SEGMENTS             24
@@ -308,14 +311,22 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
         }
     }
 
-    /* 2. Spiral particles */
+    /* 2. Spiral particles - count scales linearly with beam length */
     {
-        f32 spiral_radius = RAIL_SPIRAL_RADIUS * spiral_expand;
-        f32 particle_size = RAIL_PARTICLE_HALF_SIZE * fade;
+        f32 spiral_turns = beam_len / RAIL_SPIRAL_PITCH;
+        u32 spiral_points = (u32)(spiral_turns * RAIL_SPIRAL_PTS_PER_TURN);
+        if (spiral_points < RAIL_SPIRAL_MIN_POINTS) spiral_points = RAIL_SPIRAL_MIN_POINTS;
+        if (spiral_points > RAIL_SPIRAL_MAX_POINTS) spiral_points = RAIL_SPIRAL_MAX_POINTS;
 
-        for (u32 i = 0; i < RAIL_SPIRAL_POINTS; i++) {
-            f32 t = (f32)i / (f32)(RAIL_SPIRAL_POINTS - 1);
-            f32 angle = t * RAIL_SPIRAL_TURNS * 2.0f * PI;
+        f32 spiral_radius = RAIL_SPIRAL_RADIUS * spiral_expand;
+
+        /* Fizzle factor: 0 at birth, ramps quadratically toward 1 at death */
+        f32 fizzle = age_seconds / RAIL_FADE_TIME;
+        fizzle = fizzle * fizzle;
+
+        for (u32 i = 0; i < spiral_points; i++) {
+            f32 t = (f32)i / (f32)(spiral_points - 1);
+            f32 angle = t * spiral_turns * 2.0f * PI;
 
             f32 cx = cosf(angle) * spiral_radius;
             f32 cy = sinf(angle) * spiral_radius;
@@ -327,13 +338,31 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
                            + perp2[c] * cy;
             }
 
-            /* Vary particle brightness slightly for sparkle */
+            /* Fizzle: particles drift outward in random directions as beam dies.
+             * Each particle gets a fixed random drift direction; magnitude grows
+             * with fizzle. A subtle wobble adds organic irregularity. */
+            f32 fizzle_mag = RAIL_FIZZLE_AMPLITUDE * fizzle;
+            f32 drift_r1 = r_beam_hash(i * 127 + 31) * 2.0f - 1.0f;
+            f32 drift_r2 = r_beam_hash(i * 127 + 4999) * 2.0f - 1.0f;
+            f32 drift_ax = r_beam_hash(i * 127 + 9973) * 2.0f - 1.0f;
+            f32 wobble = sinf(age_seconds * 5.0f + (f32)i * 1.618f) * 0.3f + 1.0f;
+            for (int c = 0; c < 3; c++) {
+                center[c] += (perp1[c] * drift_r1 + perp2[c] * drift_r2) * fizzle_mag * wobble
+                           + axis_n[c] * drift_ax * fizzle_mag * 0.3f;
+            }
+
+            /* Particle grows slightly as it disperses */
+            f32 fizzle_size = 1.0f + fizzle * 0.6f;
+            f32 particle_size = RAIL_PARTICLE_HALF_SIZE * fade * fizzle_size;
+
+            /* Sparkle + wispy fade: some particles dim faster for a wispy look */
             f32 sparkle = 0.7f + 0.3f * r_beam_hash(i * 7 + (u32)(age_seconds * 60.0f));
+            f32 wisp = 1.0f - fizzle * 0.4f * r_beam_hash(i * 31 + 7777);
             f32 particle_color[4] = {
-                base_r * fade * sparkle,
-                base_g * fade * sparkle,
-                base_b * fade * sparkle,
-                fade * sparkle
+                base_r * fade * sparkle * wisp,
+                base_g * fade * sparkle * wisp,
+                base_b * fade * sparkle * wisp,
+                fade * sparkle * wisp
             };
 
             u32 emitted = r_beam_emit_billboard_quad(verts, v_start + v_count,
