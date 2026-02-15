@@ -70,10 +70,13 @@ void qk_game_tick(qk_phys_world_t *world, f32 dt) {
         qk_physics_move(ps, &ps->last_cmd, world);
     }
 
-    /* 4. Projectile tick (movement + collision against world and players) */
+    /* 4. Trigger checks (teleporters + jump pads, after physics) */
+    g_triggers_tick(&s_gs);
+
+    /* 5. Projectile tick (movement + collision against world and players) */
     g_projectile_tick(&s_gs, dt, world);
 
-    /* 5. Demo recording hooks */
+    /* 6. Demo recording hooks */
     if (qk_demo_is_recording()) {
         u32 tick = s_gs.server_time_ms / QK_TICK_DT_MS_NOM;
         qk_demo_record_gamestate(tick, &s_gs.ca);
@@ -86,12 +89,11 @@ void qk_game_tick(qk_phys_world_t *world, f32 dt) {
 
 void qk_game_load_triggers(const qk_teleporter_t *teleporters, u32 teleporter_count,
                             const qk_jump_pad_t *jump_pads, u32 jump_pad_count) {
-    /* Stub -- gameplay engineer provides full implementation via g_triggers.c */
-    (void)teleporters; (void)teleporter_count;
-    (void)jump_pads; (void)jump_pad_count;
+    g_triggers_load(teleporters, teleporter_count, jump_pads, jump_pad_count);
 }
 
 void qk_game_shutdown(void) {
+    g_triggers_clear();
     memset(&s_gs, 0, sizeof(s_gs));
 }
 
