@@ -74,6 +74,10 @@ void    p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd);
 void    p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
                const qk_phys_world_t *world);
 
+/* ---- p_launch.c ---- */
+
+vec3_t  p_calc_launch_velocity(vec3_t start, vec3_t target, f32 gravity);
+
 /* ---- p_world.c ---- */
 
 qk_phys_world_t *p_world_create(qk_collision_model_t *cm);
