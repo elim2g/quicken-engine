@@ -328,10 +328,26 @@ static void handle_snapshot_message(n_client_t *cl, const u8 *payload, u32 len) 
         return;
     }
 
-    /* Update write pointer */
-    cl->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
-    if (cl->interp_count < N_INTERP_BUFFER_SIZE) {
-        cl->interp_count++;
+    /* Check if any entity in this snapshot has the teleport flag set.
+     * If so, flush old snapshots to prevent interpolating between
+     * pre-teleport and post-teleport positions. */
+    bool has_teleport = false;
+    for (u32 eid = 0; eid < N_MAX_ENTITIES && !has_teleport; eid++) {
+        if (n_snapshot_has_entity(dest, (u8)eid) &&
+            (dest->entities[eid].flags & QK_ENT_FLAG_TELEPORTED)) {
+            has_teleport = true;
+        }
+    }
+
+    if (has_teleport) {
+        /* Reset interp buffer: only keep this snapshot */
+        cl->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
+        cl->interp_count = 1;
+    } else {
+        cl->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
+        if (cl->interp_count < N_INTERP_BUFFER_SIZE) {
+            cl->interp_count++;
+        }
     }
 
     /* Update baseline: the most recent fully decoded snapshot */
@@ -715,19 +731,34 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
         bool in_b = n_snapshot_has_entity(snap_b, (u8)id);
 
         if (in_a && in_b) {
-            /* Interpolate */
             const n_entity_state_t *ea = &snap_a->entities[id];
             const n_entity_state_t *eb = &snap_b->entities[id];
 
-            ie->pos_x = lerpf(dequant_pos(ea->pos_x), dequant_pos(eb->pos_x), t);
-            ie->pos_y = lerpf(dequant_pos(ea->pos_y), dequant_pos(eb->pos_y), t);
-            ie->pos_z = lerpf(dequant_pos(ea->pos_z), dequant_pos(eb->pos_z), t);
-            ie->vel_x = lerpf(dequant_vel(ea->vel_x), dequant_vel(eb->vel_x), t);
-            ie->vel_y = lerpf(dequant_vel(ea->vel_y), dequant_vel(eb->vel_y), t);
-            ie->vel_z = lerpf(dequant_vel(ea->vel_z), dequant_vel(eb->vel_z), t);
+            /* Detect teleport: if the flag is set in either snapshot,
+             * snap to B instead of interpolating. */
+            bool teleported = ((ea->flags | eb->flags) & QK_ENT_FLAG_TELEPORTED) != 0;
 
-            ie->yaw = lerp_angle(ea->yaw, eb->yaw, t);
-            ie->pitch = lerp_angle(ea->pitch, eb->pitch, t);
+            if (teleported) {
+                /* Snap to destination -- no lerp */
+                ie->pos_x = dequant_pos(eb->pos_x);
+                ie->pos_y = dequant_pos(eb->pos_y);
+                ie->pos_z = dequant_pos(eb->pos_z);
+                ie->vel_x = dequant_vel(eb->vel_x);
+                ie->vel_y = dequant_vel(eb->vel_y);
+                ie->vel_z = dequant_vel(eb->vel_z);
+                ie->yaw = (f32)eb->yaw * (360.0f / 65536.0f);
+                ie->pitch = (f32)eb->pitch * (360.0f / 65536.0f);
+            } else {
+                /* Normal interpolation */
+                ie->pos_x = lerpf(dequant_pos(ea->pos_x), dequant_pos(eb->pos_x), t);
+                ie->pos_y = lerpf(dequant_pos(ea->pos_y), dequant_pos(eb->pos_y), t);
+                ie->pos_z = lerpf(dequant_pos(ea->pos_z), dequant_pos(eb->pos_z), t);
+                ie->vel_x = lerpf(dequant_vel(ea->vel_x), dequant_vel(eb->vel_x), t);
+                ie->vel_y = lerpf(dequant_vel(ea->vel_y), dequant_vel(eb->vel_y), t);
+                ie->vel_z = lerpf(dequant_vel(ea->vel_z), dequant_vel(eb->vel_z), t);
+                ie->yaw = lerp_angle(ea->yaw, eb->yaw, t);
+                ie->pitch = lerp_angle(ea->pitch, eb->pitch, t);
+            }
 
             /* Discrete fields: use B if t >= 0.5 */
             const n_entity_state_t *src = (t >= 0.5f) ? eb : ea;
