@@ -263,6 +263,32 @@ typedef struct r_entity_state {
     bool                initialized;
 } r_entity_state_t;
 
+/* ---- Beam Types ---- */
+
+#define R_BEAM_MAX_DRAWS        64
+#define R_BEAM_MAX_VERTICES     16384   /* shared dynamic VB for all beams this frame */
+
+typedef struct r_beam_vertex {
+    f32     position[3];
+    f32     color[4];       /* RGBA with premultiplied alpha for additive blending */
+} r_beam_vertex_t;
+
+typedef struct r_beam_draw {
+    u32     vertex_offset;
+    u32     vertex_count;
+} r_beam_draw_t;
+
+typedef struct r_beam_state {
+    r_beam_vertex_t     vertices[R_BEAM_MAX_VERTICES];
+    r_beam_draw_t       draws[R_BEAM_MAX_DRAWS];
+    u32                 vertex_count;
+    u32                 draw_count;
+    VkBuffer            vertex_buffers[R_FRAMES_IN_FLIGHT];
+    VkDeviceMemory      vertex_memories[R_FRAMES_IN_FLIGHT];
+    void               *vertex_mapped[R_FRAMES_IN_FLIGHT];
+    bool                initialized;
+} r_beam_state_t;
+
 /* ---- Composition Push Constants ---- */
 
 typedef struct r_compose_push_constants {
@@ -299,6 +325,7 @@ typedef struct r_state {
     VkPipelineCache         pipeline_cache_handle;
     r_pipeline_t            world_pipeline;
     r_pipeline_t            entity_pipeline;
+    r_pipeline_t            beam_pipeline;
     r_pipeline_t            ui_pipeline;
     r_pipeline_t            compose_pipeline;
 
@@ -317,6 +344,8 @@ typedef struct r_state {
     r_world_geometry_t      world;
 
     r_entity_state_t        entities;
+
+    r_beam_state_t          beams;
 
     r_texture_manager_t     textures;
 
@@ -384,6 +413,7 @@ void        r_pipeline_cache_shutdown(void);
 VkShaderModule r_pipeline_load_shader(const char *path);
 qk_result_t r_pipeline_create_world(void);
 qk_result_t r_pipeline_create_entity(void);
+qk_result_t r_pipeline_create_beam(void);
 qk_result_t r_pipeline_create_ui(void);
 qk_result_t r_pipeline_create_compose(void);
 void        r_pipeline_destroy_all(void);
@@ -397,6 +427,11 @@ void r_world_record_commands(VkCommandBuffer cmd, u32 frame_index);
 qk_result_t r_entity_init(void);
 void        r_entity_shutdown(void);
 void        r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index);
+
+/* r_beam.c */
+qk_result_t r_beam_init(void);
+void        r_beam_shutdown(void);
+void        r_beam_record_commands(VkCommandBuffer cmd, u32 frame_index);
 
 /* r_ui.c */
 qk_result_t r_ui_init(void);

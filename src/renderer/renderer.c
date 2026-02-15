@@ -85,6 +85,9 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_pipeline_create_entity();
     if (res != QK_SUCCESS) return res;
 
+    res = r_pipeline_create_beam();
+    if (res != QK_SUCCESS) return res;
+
     res = r_pipeline_create_ui();
     if (res != QK_SUCCESS) return res;
 
@@ -106,6 +109,10 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_entity_init();
     if (res != QK_SUCCESS) return res;
 
+    /* Beam effect buffers */
+    res = r_beam_init();
+    if (res != QK_SUCCESS) return res;
+
     /* Debug timers */
     r_debug_init();
 
@@ -124,6 +131,7 @@ void qk_renderer_shutdown(void)
     vkDeviceWaitIdle(g_r.device.handle);
 
     r_debug_shutdown();
+    r_beam_shutdown();
     r_entity_shutdown();
     r_world_shutdown();
     r_compose_shutdown();
@@ -183,6 +191,7 @@ void qk_renderer_set_render_resolution(u32 width, u32 height)
     r_pipeline_destroy_all();
     r_pipeline_create_world();
     r_pipeline_create_entity();
+    r_pipeline_create_beam();
     r_pipeline_create_ui();
     r_pipeline_create_compose();
 
@@ -379,6 +388,8 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
     /* Reset per-frame draw lists */
     g_r.ui_quad_count = 0;
     g_r.entities.draw_count = 0;
+    g_r.beams.draw_count = 0;
+    g_r.beams.vertex_count = 0;
     g_r.stats_draw_calls = 0;
     g_r.stats_triangles = 0;
 }
@@ -450,6 +461,7 @@ void qk_renderer_end_frame(void)
         vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
         r_world_record_commands(cmd, fi);
         r_entity_record_commands(cmd, fi);
+        r_beam_record_commands(cmd, fi);
         r_ui_record_commands(cmd, fi);
         vkCmdEndRenderPass(cmd);
     }
