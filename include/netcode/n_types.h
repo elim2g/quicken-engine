@@ -13,7 +13,7 @@
 
 /* Entity state for network transmission (22 bytes, quantized) */
 typedef struct {
-    i16     pos_x, pos_y, pos_z;    /* fixed-point 13.3: +/-4096 at 0.125 precision */
+    i16     pos_x, pos_y, pos_z;    /* fixed-point 15.1: +/-16383 at 0.5 precision */
     i16     vel_x, vel_y, vel_z;    /* 1 unit/sec precision */
     u16     yaw;                     /* 0..65535 -> 0..360 degrees */
     u16     pitch;                   /* 0..65535 -> 0..360 degrees */

@@ -321,6 +321,39 @@ static rail_beam_t s_rail_beams[MAX_RAIL_BEAMS];
 static u8          s_prev_flags[QK_MAX_ENTITIES];
 static u32         s_rail_beam_next;
 
+/* ---- Diagnostic Trace ---- */
+
+static FILE *s_diag_file;
+static u32   s_diag_frame;
+
+static void cmd_diag(i32 argc, const char **argv) {
+    if (argc < 2) {
+        qk_console_print("Usage: diag start|stop");
+        return;
+    }
+    if (strcmp(argv[1], "start") == 0) {
+        if (s_diag_file) {
+            qk_console_print("diag: already running");
+            return;
+        }
+        s_diag_file = fopen("diag_trace.log", "w");
+        s_diag_frame = 0;
+        if (s_diag_file) {
+            fprintf(s_diag_file, "# QUICKEN diagnostic trace\n");
+            fprintf(s_diag_file, "# Columns vary by line prefix. Greppable.\n\n");
+            qk_console_print("diag: trace started -> diag_trace.log");
+        } else {
+            qk_console_print("diag: failed to open file");
+        }
+    } else if (strcmp(argv[1], "stop") == 0) {
+        if (s_diag_file) {
+            fclose(s_diag_file);
+            s_diag_file = NULL;
+            qk_console_printf("diag: stopped (%u frames written)", s_diag_frame);
+        }
+    }
+}
+
 /* ---- Client Prediction State ---- */
 
 #define CL_CMD_BUFFER_SIZE 128
@@ -561,6 +594,8 @@ int main(int argc, char *argv[]) {
                              "Stop recording or playing a demo");
     qk_console_register_cmd("demo_play", cmd_demo_play,
                              "Play back a recorded demo");
+    qk_console_register_cmd("diag", cmd_diag,
+                             "Diagnostic trace: diag start|stop");
 
     /* ---- Initial world (test room as baseline) ---- */
     qk_map_data_t map_data;
@@ -891,9 +926,19 @@ int main(int argc, char *argv[]) {
                 cl_last_reconciled_ack = ack;
             }
 
-            /* 6. Interpolate OTHER entities */
-            f64 render_time = now - QK_TICK_DT_F64;
-            qk_net_client_interpolate(render_time);
+            /* 6. Interpolate OTHER entities.
+             * render_time must be in the server's time domain (seconds since
+             * tick 0) so that render_tick lands between actual snapshot ticks.
+             * We target one tick behind the latest server tick to leave room
+             * for interpolation on both sides of the bracket. */
+            {
+                f64 srv_tick = (f64)qk_net_server_get_tick();
+                f64 frac = (f64)server_accumulator / (f64)QK_TICK_DT;
+                f64 render_tick = srv_tick + frac - 1.0;
+                if (render_tick < 0.0) render_tick = 0.0;
+                f64 render_time = render_tick * QK_TICK_DT_F64;
+                qk_net_client_interpolate(render_time);
+            }
 
             /* 7. Build camera from predicted state */
             if (cl_has_prediction) {
@@ -963,12 +1008,12 @@ int main(int argc, char *argv[]) {
                 bool is_local = (i == (u32)local_client_id);
 
                 if (is_local && cl_has_prediction) {
-                    /* Local player: use predicted state for zero-latency beam */
-                    eye_x = cl_predicted_ps.origin.x;
-                    eye_y = cl_predicted_ps.origin.y;
-                    eye_z = cl_predicted_ps.origin.z + 26.0f;
-                    fwd_pitch = cl_predicted_ps.pitch;
-                    fwd_yaw = cl_predicted_ps.yaw;
+                    /* Local player: camera position + raw input angles */
+                    eye_x = camera.position[0];
+                    eye_y = camera.position[1];
+                    eye_z = camera.position[2];
+                    fwd_pitch = cam_pitch;
+                    fwd_yaw = cam_yaw;
                 } else {
                     eye_x = ie->pos_x;
                     eye_y = ie->pos_y;
@@ -1008,8 +1053,8 @@ int main(int argc, char *argv[]) {
                     rb->color = is_local ? 0x00FF00FF : 0xFF0000FF;
                 }
 
-                /* LG beam: instantaneous each frame while FIRING */
-                if (ie->weapon == QK_WEAPON_LG && firing_now) {
+                /* LG beam: remote players only (local handled below) */
+                if (ie->weapon == QK_WEAPON_LG && firing_now && !is_local) {
                     f32 pr = fwd_pitch * (3.14159265f / 180.0f);
                     f32 yr = fwd_yaw * (3.14159265f / 180.0f);
                     f32 cp = cosf(pr), sp = sinf(pr);
@@ -1049,6 +1094,105 @@ int main(int argc, char *argv[]) {
                                             rb->end[0], rb->end[1], rb->end[2],
                                             age, rb->color);
             }
+
+            /* Local player LG beam: input-driven, per-frame, muzzle offset */
+            if (cl_has_prediction &&
+                cl_predicted_ps.weapon == QK_WEAPON_LG &&
+                cl_predicted_ps.alive_state == QK_PSTATE_ALIVE &&
+                cl_predicted_ps.pending_weapon == QK_WEAPON_NONE &&
+                cl_predicted_ps.switch_time == 0 &&
+                cl_predicted_ps.ammo[QK_WEAPON_LG] > 0 &&
+                input_state.mouse_buttons[0] &&
+                !input_state.console_active) {
+                f32 pr = cam_pitch * (3.14159265f / 180.0f);
+                f32 yr = cam_yaw * (3.14159265f / 180.0f);
+                f32 cp = cosf(pr), sp = sinf(pr);
+                f32 cy = cosf(yr), sy = sinf(yr);
+                f32 dx = cp * cy, dy = cp * sy, dz = sp;
+
+                f32 range = 768.0f;
+                vec3_t trace_start = {camera.position[0],
+                                      camera.position[1],
+                                      camera.position[2]};
+                vec3_t trace_end = {camera.position[0] + dx * range,
+                                    camera.position[1] + dy * range,
+                                    camera.position[2] + dz * range};
+
+                qk_trace_result_t tr = qk_physics_trace(phys_world,
+                    trace_start, trace_end, zero_ext, zero_ext);
+
+                /* Muzzle offset: 8 units right, 4 units below eye */
+                f32 muzzle_x = camera.position[0] + (-sy) * 8.0f;
+                f32 muzzle_y = camera.position[1] + cy * 8.0f;
+                f32 muzzle_z = camera.position[2] - 4.0f;
+
+                qk_renderer_draw_lg_beam(muzzle_x, muzzle_y, muzzle_z,
+                                          tr.end_pos.x, tr.end_pos.y,
+                                          tr.end_pos.z, (f32)now);
+            }
+        }
+
+        /* ---- 9c. Diagnostic trace ---- */
+        if (s_diag_file) {
+            const qk_interp_diag_t *idiag = qk_net_client_get_interp_diag();
+
+            /* Frame header */
+            fprintf(s_diag_file,
+                "FRAME %u now=%.6f dt=%.6f srv_tick=%u srv_acc=%.6f cl_acc=%.6f"
+                " interp=[%s a=%u b=%u t=%.4f rt=%.2f cnt=%u]\n",
+                s_diag_frame, now, (double)real_dt,
+                qk_net_server_get_tick(),
+                (double)server_accumulator, (double)cl_pred_accumulator,
+                (idiag && idiag->valid) ? "OK" : "NONE",
+                idiag ? idiag->snap_a_tick : 0,
+                idiag ? idiag->snap_b_tick : 0,
+                idiag ? (double)idiag->t : 0.0,
+                idiag ? idiag->render_tick : 0.0,
+                idiag ? idiag->interp_count : 0);
+
+            /* Projectile entities: server f32 vs packed i16 vs interp f32 */
+            for (u32 di = 0; di < qk_game_get_entity_count(); di++) {
+                n_entity_state_t packed;
+                qk_game_pack_entity((u8)di, &packed);
+                if (packed.entity_type != 2) continue;
+
+                f32 sx, sy, sz;
+                if (!qk_game_get_entity_origin((u8)di, &sx, &sy, &sz)) continue;
+
+                const qk_interp_entity_t *die = interp ? &interp->entities[di] : NULL;
+                bool di_active = die && die->active;
+                fprintf(s_diag_file,
+                    "  PROJ[%u] srv=(%.2f,%.2f,%.2f) i16=(%d,%d,%d) "
+                    "interp=(%s%.2f,%.2f,%.2f) vel=(%d,%d,%d)\n",
+                    di, (double)sx, (double)sy, (double)sz,
+                    packed.pos_x, packed.pos_y, packed.pos_z,
+                    di_active ? "" : "INACTIVE ",
+                    di_active ? (double)die->pos_x : 0.0,
+                    di_active ? (double)die->pos_y : 0.0,
+                    di_active ? (double)die->pos_z : 0.0,
+                    packed.vel_x, packed.vel_y, packed.vel_z);
+            }
+
+            /* Local player weapon/beam state */
+            {
+                const qk_player_state_t *dps =
+                    qk_game_get_player_state(local_client_id);
+                const qk_interp_entity_t *dle =
+                    interp ? &interp->entities[local_client_id] : NULL;
+                if (dps) {
+                    fprintf(s_diag_file,
+                        "  LOCAL srv_weapon=%u srv_wtime=%u "
+                        "interp_flags=0x%02x prev_flags=0x%02x "
+                        "interp_weapon=%u\n",
+                        dps->weapon, dps->weapon_time,
+                        dle ? dle->flags : 0,
+                        s_prev_flags[local_client_id],
+                        dle ? dle->weapon : 0);
+                }
+            }
+
+            s_diag_frame++;
+            if (s_diag_frame % 128 == 0) fflush(s_diag_file);
         }
 
         /* ---- 10. HUD (health/armor from server state, speed from prediction) ---- */
@@ -1105,6 +1249,7 @@ int main(int argc, char *argv[]) {
 
     /* ---- Shutdown ---- */
 shutdown:
+    if (s_diag_file) { fclose(s_diag_file); s_diag_file = NULL; }
     qk_demo_shutdown();
     qk_perf_shutdown();
     qk_console_shutdown();

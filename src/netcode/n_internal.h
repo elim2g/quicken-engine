@@ -367,6 +367,7 @@ typedef struct {
     n_snapshot_t        baseline_snapshot;
     bool                has_baseline;
     qk_interp_state_t  interp_state;
+    qk_interp_diag_t   interp_diag;
     f64                 interp_delay;
 
     /* Input */

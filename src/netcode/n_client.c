@@ -328,26 +328,16 @@ static void handle_snapshot_message(n_client_t *cl, const u8 *payload, u32 len) 
         return;
     }
 
-    /* Check if any entity in this snapshot has the teleport flag set.
-     * If so, flush old snapshots to prevent interpolating between
-     * pre-teleport and post-teleport positions. */
-    bool has_teleport = false;
-    for (u32 eid = 0; eid < N_MAX_ENTITIES && !has_teleport; eid++) {
-        if (n_snapshot_has_entity(dest, (u8)eid) &&
-            (dest->entities[eid].flags & QK_ENT_FLAG_TELEPORTED)) {
-            has_teleport = true;
-        }
-    }
-
-    if (has_teleport) {
-        /* Reset interp buffer: only keep this snapshot */
-        cl->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
-        cl->interp_count = 1;
-    } else {
-        cl->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
-        if (cl->interp_count < N_INTERP_BUFFER_SIZE) {
-            cl->interp_count++;
-        }
+    /* Teleport handling: do NOT flush the interp buffer here.
+     * Flushing destroys the delta-decode baseline chain, causing most
+     * subsequent snapshots to be dropped (base_tick mismatch).
+     * Instead, teleport is handled per-entity in n_client_interpolate()
+     * via XOR comparison of the toggle bit between snap_a and snap_b.
+     * When the bit differs, that entity snaps to destination without
+     * lerp.  Other entities (projectiles, etc.) interpolate normally. */
+    cl->interp_write = (write_idx + 1) % N_INTERP_BUFFER_SIZE;
+    if (cl->interp_count < N_INTERP_BUFFER_SIZE) {
+        cl->interp_count++;
     }
 
     /* Update baseline: the most recent fully decoded snapshot */
@@ -663,9 +653,9 @@ static f32 lerp_angle(u16 a_q, u16 b_q, f32 t) {
     return a + diff * t;
 }
 
-/* Dequantize position from 13.3 fixed-point */
+/* Dequantize position from 15.1 fixed-point */
 static f32 dequant_pos(i16 q) {
-    return (f32)q * 0.125f;
+    return (f32)q * 0.5f;
 }
 
 /* Dequantize velocity (1 unit/sec precision) */
@@ -684,6 +674,9 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
     if (!find_interp_pair(cl, render_tick, &snap_a, &snap_b)) {
         N_DBG("interp: no pair for render_tick=%.2f, interp_count=%u (fallback to latest)",
               render_tick, cl->interp_count);
+        cl->interp_diag.valid = false;
+        cl->interp_diag.render_tick = render_tick;
+        cl->interp_diag.interp_count = cl->interp_count;
         /* Not enough data to interpolate. If we have at least one snapshot,
          * use it directly. */
         if (cl->interp_count > 0) {
@@ -724,6 +717,15 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
     }
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
+
+    /* Fill interpolation diagnostics */
+    cl->interp_diag.valid = true;
+    cl->interp_diag.fallback = (snap_a->tick > (u32)render_tick);
+    cl->interp_diag.snap_a_tick = snap_a->tick;
+    cl->interp_diag.snap_b_tick = snap_b->tick;
+    cl->interp_diag.t = t;
+    cl->interp_diag.render_tick = render_tick;
+    cl->interp_diag.interp_count = cl->interp_count;
 
     for (u32 id = 0; id < N_MAX_ENTITIES; id++) {
         qk_interp_entity_t *ie = &cl->interp_state.entities[id];

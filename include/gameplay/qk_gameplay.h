@@ -63,4 +63,7 @@ qk_game_state_t         *qk_game_get_state(void);
 void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out);
 u32  qk_game_get_entity_count(void);
 
+/* Diagnostics: raw f32 entity origin (before quantization) */
+bool qk_game_get_entity_origin(u8 entity_id, f32 *x, f32 *y, f32 *z);
+
 #endif /* QK_GAMEPLAY_H */

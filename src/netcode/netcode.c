@@ -210,6 +210,10 @@ const qk_interp_state_t *qk_net_client_get_interp_state(void) {
     return s_client ? &s_client->interp_state : NULL;
 }
 
+const qk_interp_diag_t *qk_net_client_get_interp_diag(void) {
+    return s_client ? &s_client->interp_diag : NULL;
+}
+
 qk_conn_state_t qk_net_client_get_state(void) {
     return s_client ? (qk_conn_state_t)s_client->conn_state : QK_CONN_DISCONNECTED;
 }
@@ -276,9 +280,9 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
     const n_entity_state_t *e = &snap->entities[eid];
 
     memset(out, 0, sizeof(*out));
-    out->origin.x = (f32)e->pos_x * 0.125f;
-    out->origin.y = (f32)e->pos_y * 0.125f;
-    out->origin.z = (f32)e->pos_z * 0.125f;
+    out->origin.x = (f32)e->pos_x * 0.5f;
+    out->origin.y = (f32)e->pos_y * 0.5f;
+    out->origin.z = (f32)e->pos_z * 0.5f;
     out->velocity.x = (f32)e->vel_x;
     out->velocity.y = (f32)e->vel_y;
     out->velocity.z = (f32)e->vel_z;

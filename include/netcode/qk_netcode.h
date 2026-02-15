@@ -52,6 +52,17 @@ typedef struct {
     qk_interp_entity_t entities[QK_NET_MAX_ENTITIES];
 } qk_interp_state_t;
 
+/* Interpolation diagnostics (for AI trace ingestion) */
+typedef struct {
+    u32     snap_a_tick;
+    u32     snap_b_tick;
+    f32     t;
+    f64     render_tick;
+    u32     interp_count;
+    bool    valid;              /* false if no interp pair found */
+    bool    fallback;           /* true if using two-newest fallback */
+} qk_interp_diag_t;
+
 /* Server API */
 qk_result_t qk_net_server_init(const qk_net_server_config_t *config);
 void        qk_net_server_tick(void);
@@ -75,6 +86,7 @@ void        qk_net_client_shutdown(void);
 
 void        qk_net_client_send_input(const qk_usercmd_t *cmd);
 const qk_interp_state_t *qk_net_client_get_interp_state(void);
+const qk_interp_diag_t  *qk_net_client_get_interp_diag(void);
 
 qk_conn_state_t qk_net_client_get_state(void);
 i32             qk_net_client_get_rtt(void);

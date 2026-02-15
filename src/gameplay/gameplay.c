@@ -181,9 +181,9 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
     if (ent->type == ENTITY_PLAYER) {
         qk_player_state_t *ps = &ent->data.player;
         out->entity_type = (u8)ENTITY_PLAYER;
-        out->pos_x = (i16)(ps->origin.x * 8.0f);
-        out->pos_y = (i16)(ps->origin.y * 8.0f);
-        out->pos_z = (i16)(ps->origin.z * 8.0f);
+        out->pos_x = (i16)(ps->origin.x * 2.0f);
+        out->pos_y = (i16)(ps->origin.y * 2.0f);
+        out->pos_z = (i16)(ps->origin.z * 2.0f);
         out->vel_x = (i16)ps->velocity.x;
         out->vel_y = (i16)ps->velocity.y;
         out->vel_z = (i16)ps->velocity.z;
@@ -202,11 +202,10 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
                     firing = QK_ENT_FLAG_FIRING;
                 }
             } else {
-                /* Hitscan/projectile: flag set for 1 tick when weapon just fired.
-                   g_weapon_fire() sets weapon_time = fire_interval_ms, so if
-                   weapon_time equals fire_interval_ms the shot happened this tick. */
-                if (ps->weapon_time == wdef->fire_interval_ms &&
-                    wdef->fire_interval_ms > 0) {
+                /* Hitscan/projectile: flag held for 3 ticks after firing so
+                   client interpolation reliably catches the rising edge. */
+                if (ps->weapon_time >= wdef->fire_interval_ms - 2 * QK_TICK_DT_MS_NOM &&
+                    ps->weapon_time > 0 && wdef->fire_interval_ms > 0) {
                     firing = QK_ENT_FLAG_FIRING;
                 }
             }
@@ -224,9 +223,9 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
     } else if (ent->type == ENTITY_PROJECTILE) {
         projectile_t *p = &ent->data.projectile;
         out->entity_type = (u8)ENTITY_PROJECTILE;
-        out->pos_x = (i16)(p->origin.x * 8.0f);
-        out->pos_y = (i16)(p->origin.y * 8.0f);
-        out->pos_z = (i16)(p->origin.z * 8.0f);
+        out->pos_x = (i16)(p->origin.x * 2.0f);
+        out->pos_y = (i16)(p->origin.y * 2.0f);
+        out->pos_z = (i16)(p->origin.z * 2.0f);
         out->vel_x = (i16)p->velocity.x;
         out->vel_y = (i16)p->velocity.y;
         out->vel_z = (i16)p->velocity.z;
@@ -236,6 +235,24 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
 
 u32 qk_game_get_entity_count(void) {
     return s_gs.entities.high_water;
+}
+
+bool qk_game_get_entity_origin(u8 entity_id, f32 *x, f32 *y, f32 *z) {
+    if (entity_id >= QK_MAX_ENTITIES) return false;
+    entity_t *ent = &s_gs.entities.entities[entity_id];
+    if (!ent->active) return false;
+    if (ent->type == ENTITY_PLAYER) {
+        *x = ent->data.player.origin.x;
+        *y = ent->data.player.origin.y;
+        *z = ent->data.player.origin.z;
+    } else if (ent->type == ENTITY_PROJECTILE) {
+        *x = ent->data.projectile.origin.x;
+        *y = ent->data.projectile.origin.y;
+        *z = ent->data.projectile.origin.z;
+    } else {
+        return false;
+    }
+    return true;
 }
 
 /* ---- Process Commands (called during tick) ---- */
