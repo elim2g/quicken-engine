@@ -267,19 +267,26 @@ qk_result_t qk_renderer_upload_world(
     g_r.world.index_count = index_count;
     g_r.world.surface_count = surface_count;
 
-    /* Copy surface descriptors */
+    /* Copy surface descriptors, filtering out translucent non-solid surfaces
+       (light ray volumes, fog brushes, spotlight beams) */
     g_r.world.surfaces = malloc(surface_count * sizeof(r_draw_surface_t));
     if (!g_r.world.surfaces) return QK_ERROR_OUT_OF_MEMORY;
 
+    u32 kept = 0;
     for (u32 i = 0; i < surface_count; i++) {
-        g_r.world.surfaces[i].index_offset  = surfaces[i].index_offset;
-        g_r.world.surfaces[i].index_count   = surfaces[i].index_count;
-        g_r.world.surfaces[i].vertex_offset = surfaces[i].vertex_offset;
-        g_r.world.surfaces[i].texture_index = surfaces[i].texture_index;
+        u32 contents = surfaces[i].contents_flags;
+        if ((contents & 0x20000000u) && !(contents & 0x1u)) continue;
+
+        g_r.world.surfaces[kept].index_offset  = surfaces[i].index_offset;
+        g_r.world.surfaces[kept].index_count   = surfaces[i].index_count;
+        g_r.world.surfaces[kept].vertex_offset = surfaces[i].vertex_offset;
+        g_r.world.surfaces[kept].texture_index = surfaces[i].texture_index;
+        kept++;
     }
+    g_r.world.surface_count = kept;
 
     /* Sort surfaces by texture for batching */
-    for (u32 i = 1; i < surface_count; i++) {
+    for (u32 i = 1; i < kept; i++) {
         r_draw_surface_t key = g_r.world.surfaces[i];
         u32 j = i;
         while (j > 0 && g_r.world.surfaces[j - 1].texture_index > key.texture_index) {

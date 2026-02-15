@@ -224,14 +224,16 @@ qk_result_t r_pipeline_create_world(void)
         { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
           .offset = offsetof(r_world_vertex_t, normal) },
         { .location = 2, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,
-          .offset = offsetof(r_world_vertex_t, uv) }
+          .offset = offsetof(r_world_vertex_t, uv) },
+        { .location = 3, .binding = 0, .format = VK_FORMAT_R32_UINT,
+          .offset = offsetof(r_world_vertex_t, texture_id) }
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding,
-        .vertexAttributeDescriptionCount = 3,
+        .vertexAttributeDescriptionCount = 4,
         .pVertexAttributeDescriptions    = attrs
     };
 
