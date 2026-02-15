@@ -100,6 +100,15 @@ void qk_renderer_draw_capsule(f32 pos_x, f32 pos_y, f32 pos_z,
 void qk_renderer_draw_sphere(f32 pos_x, f32 pos_y, f32 pos_z,
                               f32 radius, u32 color_rgba);
 
+/* Beam effects */
+void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
+                                 f32 end_x, f32 end_y, f32 end_z,
+                                 f32 age_seconds, u32 color_rgba);
+
+void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
+                                f32 end_x, f32 end_y, f32 end_z,
+                                f32 time_seconds);
+
 /* Debug */
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 

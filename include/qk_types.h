@@ -184,5 +184,6 @@ typedef struct {
 #define QK_ENT_FLAG_ON_GROUND   (1 << 0)
 #define QK_ENT_FLAG_JUMP_HELD   (1 << 1)
 #define QK_ENT_FLAG_TELEPORTED  (1 << 2)  /* toggle bit: XOR between snapshots detects teleport */
+#define QK_ENT_FLAG_FIRING      (1 << 3)  /* entity is currently firing its weapon */
 
 #endif /* QK_TYPES_H */
