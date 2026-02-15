@@ -304,6 +304,23 @@ static void upload_test_room_geometry(qk_texture_id_t tex_id) {
     #undef TR_UV_SCALE
 }
 
+/* ---- Beam Effect State ---- */
+
+#define MAX_RAIL_BEAMS 16
+#define RAIL_BEAM_LIFETIME 1.5
+
+typedef struct {
+    f32     start[3];
+    f32     end[3];
+    f64     birth_time;
+    u32     color;
+    bool    active;
+} rail_beam_t;
+
+static rail_beam_t s_rail_beams[MAX_RAIL_BEAMS];
+static u8          s_prev_flags[QK_MAX_ENTITIES];
+static u32         s_rail_beam_next;
+
 /* ---- Client Prediction State ---- */
 
 #define CL_CMD_BUFFER_SIZE 128
@@ -776,7 +793,7 @@ int main(int argc, char *argv[]) {
                     qk_game_load_triggers(map_data.teleporters, map_data.teleporter_count,
                                            map_data.jump_pads, map_data.jump_pad_count);
 
-                    /* Prediction (clean slate) */
+                    /* Prediction + beam state (clean slate) */
                     memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
                     memset(cl_pred_history, 0, sizeof(cl_pred_history));
                     memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
@@ -785,6 +802,9 @@ int main(int argc, char *argv[]) {
                     cl_pred_accumulator = 0.0f;
                     cl_last_reconciled_ack = 0;
                     server_accumulator = 0.0f;
+                    memset(s_rail_beams, 0, sizeof(s_rail_beams));
+                    memset(s_prev_flags, 0, sizeof(s_prev_flags));
+                    s_rail_beam_next = 0;
 
                     qk_console_printf("Loaded: %s", path);
                 }
@@ -919,6 +939,115 @@ int main(int argc, char *argv[]) {
                     qk_renderer_draw_sphere(ie->pos_x, ie->pos_y, ie->pos_z,
                                              4.0f, 0xFF8800FF);
                 }
+            }
+        }
+
+        /* ---- 9b. Beam effects ---- */
+        if (interp) {
+            vec3_t zero_ext = {0, 0, 0};
+
+            for (u32 i = 0; i < QK_MAX_ENTITIES; i++) {
+                const qk_interp_entity_t *ie = &interp->entities[i];
+                if (!ie->active || ie->entity_type != 1) {
+                    s_prev_flags[i] = 0;
+                    continue;
+                }
+
+                u8 cur_flags = ie->flags;
+                u8 prev = s_prev_flags[i];
+                bool firing_now = (cur_flags & QK_ENT_FLAG_FIRING) != 0;
+                bool firing_prev = (prev & QK_ENT_FLAG_FIRING) != 0;
+
+                /* Determine eye position and forward direction */
+                f32 eye_x, eye_y, eye_z, fwd_pitch, fwd_yaw;
+                bool is_local = (i == (u32)local_client_id);
+
+                if (is_local && cl_has_prediction) {
+                    /* Local player: use predicted state for zero-latency beam */
+                    eye_x = cl_predicted_ps.origin.x;
+                    eye_y = cl_predicted_ps.origin.y;
+                    eye_z = cl_predicted_ps.origin.z + 26.0f;
+                    fwd_pitch = cl_predicted_ps.pitch;
+                    fwd_yaw = cl_predicted_ps.yaw;
+                } else {
+                    eye_x = ie->pos_x;
+                    eye_y = ie->pos_y;
+                    eye_z = ie->pos_z + 26.0f;
+                    fwd_pitch = ie->pitch;
+                    fwd_yaw = ie->yaw;
+                }
+
+                /* Rail beam: detect rising edge of FIRING flag */
+                if (ie->weapon == QK_WEAPON_RAIL && firing_now && !firing_prev) {
+                    f32 pr = fwd_pitch * (3.14159265f / 180.0f);
+                    f32 yr = fwd_yaw * (3.14159265f / 180.0f);
+                    f32 cp = cosf(pr), sp = sinf(pr);
+                    f32 cy = cosf(yr), sy = sinf(yr);
+                    f32 dx = cp * cy, dy = cp * sy, dz = sp;
+
+                    f32 range = 8192.0f;
+                    vec3_t start = {eye_x, eye_y, eye_z};
+                    vec3_t end_pt = {eye_x + dx * range,
+                                     eye_y + dy * range,
+                                     eye_z + dz * range};
+
+                    qk_trace_result_t tr = qk_physics_trace(phys_world,
+                                                              start, end_pt,
+                                                              zero_ext, zero_ext);
+
+                    rail_beam_t *rb = &s_rail_beams[s_rail_beam_next % MAX_RAIL_BEAMS];
+                    s_rail_beam_next++;
+                    rb->active = true;
+                    rb->birth_time = now;
+                    rb->start[0] = eye_x;
+                    rb->start[1] = eye_y;
+                    rb->start[2] = eye_z;
+                    rb->end[0] = tr.end_pos.x;
+                    rb->end[1] = tr.end_pos.y;
+                    rb->end[2] = tr.end_pos.z;
+                    rb->color = is_local ? 0x00FF00FF : 0xFF0000FF;
+                }
+
+                /* LG beam: instantaneous each frame while FIRING */
+                if (ie->weapon == QK_WEAPON_LG && firing_now) {
+                    f32 pr = fwd_pitch * (3.14159265f / 180.0f);
+                    f32 yr = fwd_yaw * (3.14159265f / 180.0f);
+                    f32 cp = cosf(pr), sp = sinf(pr);
+                    f32 cy = cosf(yr), sy = sinf(yr);
+                    f32 dx = cp * cy, dy = cp * sy, dz = sp;
+
+                    f32 range = 768.0f;
+                    vec3_t start = {eye_x, eye_y, eye_z};
+                    vec3_t end_pt = {eye_x + dx * range,
+                                     eye_y + dy * range,
+                                     eye_z + dz * range};
+
+                    qk_trace_result_t tr = qk_physics_trace(phys_world,
+                                                              start, end_pt,
+                                                              zero_ext, zero_ext);
+
+                    qk_renderer_draw_lg_beam(eye_x, eye_y, eye_z,
+                                              tr.end_pos.x, tr.end_pos.y, tr.end_pos.z,
+                                              (f32)now);
+                }
+
+                s_prev_flags[i] = cur_flags;
+            }
+
+            /* Draw active rail beams (persistent with decay) */
+            for (u32 i = 0; i < MAX_RAIL_BEAMS; i++) {
+                rail_beam_t *rb = &s_rail_beams[i];
+                if (!rb->active) continue;
+
+                f32 age = (f32)(now - rb->birth_time);
+                if (age > RAIL_BEAM_LIFETIME) {
+                    rb->active = false;
+                    continue;
+                }
+
+                qk_renderer_draw_rail_beam(rb->start[0], rb->start[1], rb->start[2],
+                                            rb->end[0], rb->end[1], rb->end[2],
+                                            age, rb->color);
             }
         }
 
