@@ -65,7 +65,29 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
         /* Reduce remaining time */
         time_left -= time_left * trace.fraction;
 
-        /* Record this clip plane */
+        /* Record this clip plane, but skip if nearly duplicate of an
+           existing plane. Curved surfaces decomposed into many small
+           brushes produce near-identical normals per frame; accumulating
+           them as separate clip planes causes the velocity to be killed
+           (classic "corner trap" between two nearly-parallel planes). */
+        {
+            bool duplicate = false;
+            for (i32 k = 0; k < num_planes; k++) {
+                if (vec3_dot(trace.hit_normal, planes[k]) > 0.99f) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) {
+                /* Re-clip velocity against the existing (nearly identical)
+                   plane and continue rather than adding a redundant entry */
+                ps->velocity = p_clip_velocity(ps->velocity,
+                                                trace.hit_normal,
+                                                QK_PM_OVERCLIP);
+                continue;
+            }
+        }
+
         if (num_planes >= P_MAX_CLIP_PLANES) {
             ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
             return true;

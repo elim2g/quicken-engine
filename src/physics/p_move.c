@@ -121,12 +121,13 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
         ps->velocity.z -= ps->gravity * dt;
     }
 
-    /* 7. Move and collide */
-    if (ps->on_ground) {
-        p_step_slide_move(ps, world, dt);
-    } else {
-        p_slide_move(ps, world, dt, 4);
-    }
+    /* 7. Move and collide.
+       StepSlideMove is used for both ground AND air movement. This is
+       critical for stair traversal while holding jump: the player is
+       briefly airborne between hops and would otherwise hit the vertical
+       face of the next step without step-up kicking in. Q3 uses
+       PM_StepSlideMove in both code paths. */
+    p_step_slide_move(ps, world, dt);
 
     /* 8. Re-check ground after move */
     p_categorize_position(ps, world);
