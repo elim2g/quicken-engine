@@ -136,7 +136,7 @@ typedef struct {
     u16         damage_taken;
 
     u32         respawn_time;
-    bool        teleported;     /* set by gameplay on teleport, cleared next tick */
+    u8          teleport_bit;   /* XOR-toggled on each teleport (never cleared) */
     qk_usercmd_t last_cmd;
 } qk_player_state_t;
 
@@ -183,6 +183,6 @@ typedef struct {
 
 #define QK_ENT_FLAG_ON_GROUND   (1 << 0)
 #define QK_ENT_FLAG_JUMP_HELD   (1 << 1)
-#define QK_ENT_FLAG_TELEPORTED  (1 << 2)  /* entity teleported this tick (skip interpolation) */
+#define QK_ENT_FLAG_TELEPORTED  (1 << 2)  /* toggle bit: XOR between snapshots detects teleport */
 
 #endif /* QK_TYPES_H */

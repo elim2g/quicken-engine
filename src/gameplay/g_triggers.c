@@ -119,8 +119,8 @@ static void g_check_teleporters(qk_game_state_t *gs) {
             ps->velocity.y = horiz_speed * sinf(yaw_rad);
             /* Keep vertical velocity as-is */
 
-            /* Signal netcode to skip interpolation this tick */
-            ps->teleported = true;
+            /* Toggle teleport bit — netcode detects via XOR between snapshots */
+            ps->teleport_bit ^= 1;
 
             /* Cooldown to prevent immediate re-trigger */
             s_teleport_cooldown[i] = TELEPORT_COOLDOWN_TICKS;
@@ -175,13 +175,6 @@ static void g_check_jump_pads(qk_game_state_t *gs) {
 /* ---- Public tick function ---- */
 
 void g_triggers_tick(qk_game_state_t *gs) {
-    /* Clear one-tick teleport flag from previous tick */
-    for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
-        i32 ent_idx = gs->player_entity[i];
-        if (ent_idx < 0) continue;
-        gs->entities.entities[ent_idx].data.player.teleported = false;
-    }
-
     g_check_teleporters(gs);
     g_check_jump_pads(gs);
 }

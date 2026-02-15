@@ -191,7 +191,7 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
         out->pitch = (u16)(ps->pitch * (65535.0f / 360.0f));
         out->flags = (ps->on_ground ? QK_ENT_FLAG_ON_GROUND : 0)
                    | (ps->jump_held ? QK_ENT_FLAG_JUMP_HELD : 0)
-                   | (ps->teleported ? QK_ENT_FLAG_TELEPORTED : 0);
+                   | ((ps->teleport_bit & 1) ? QK_ENT_FLAG_TELEPORTED : 0);
         out->health = (ps->health > 0) ? (u8)((ps->health > 255) ? 255 : ps->health) : 0;
         out->armor = (ps->armor > 0) ? (u8)((ps->armor > 255) ? 255 : ps->armor) : 0;
         out->weapon = (u8)ps->weapon;

@@ -734,9 +734,10 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
             const n_entity_state_t *ea = &snap_a->entities[id];
             const n_entity_state_t *eb = &snap_b->entities[id];
 
-            /* Detect teleport: if the flag is set in either snapshot,
-             * snap to B instead of interpolating. */
-            bool teleported = ((ea->flags | eb->flags) & QK_ENT_FLAG_TELEPORTED) != 0;
+            /* Detect teleport: toggle bit differs between snapshots.
+             * Robust against dropped packets — any two snapshots spanning
+             * a teleport will have different flag values. */
+            bool teleported = ((ea->flags ^ eb->flags) & QK_ENT_FLAG_TELEPORTED) != 0;
 
             if (teleported) {
                 /* Snap to destination -- no lerp */
