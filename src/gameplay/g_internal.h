@@ -97,6 +97,14 @@ struct qk_game_state {
     u8                  rounds_to_win;
     u32                 round_time_limit_ms;
     u32                 countdown_time_ms;
+
+    /* map entity data (borrowed pointers, caller keeps alive) */
+    const qk_teleporter_t  *teleporters;
+    u32                     teleporter_count;
+    const qk_jump_pad_t    *jump_pads;
+    u32                     jump_pad_count;
+    const qk_spawn_point_t *spawns;
+    u32                     spawn_count;
 };
 
 /* ---- Entity functions (g_entity.c) ---- */

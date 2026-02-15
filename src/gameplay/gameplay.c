@@ -84,6 +84,17 @@ void qk_game_tick(qk_phys_world_t *world, f32 dt) {
     }
 }
 
+void qk_game_set_map_entities(const qk_teleporter_t *teleporters, u32 teleporter_count,
+                                const qk_jump_pad_t *jump_pads, u32 jump_pad_count,
+                                const qk_spawn_point_t *spawns, u32 spawn_count) {
+    s_gs.teleporters = teleporters;
+    s_gs.teleporter_count = teleporter_count;
+    s_gs.jump_pads = jump_pads;
+    s_gs.jump_pad_count = jump_pad_count;
+    s_gs.spawns = spawns;
+    s_gs.spawn_count = spawn_count;
+}
+
 void qk_game_shutdown(void) {
     memset(&s_gs, 0, sizeof(s_gs));
 }
