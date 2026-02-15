@@ -441,6 +441,22 @@ static bool face_renderable(const bsp_face_t *f, const bsp_texture_t *textures, 
     return true;
 }
 
+/* ---- Deterministic color from texture name (packed RGBA8) ---- */
+
+static u32 texture_name_to_color(const char *name) {
+    /* djb2 hash */
+    u32 h = 5381;
+    for (const char *p = name; *p; p++)
+        h = ((h << 5) + h) + (u8)*p;
+
+    /* Derive RGB with decent saturation (avoid near-black/near-white) */
+    u8 r = (u8)(60 + (h % 180));
+    u8 g = (u8)(60 + ((h >> 8) % 180));
+    u8 b = (u8)(60 + ((h >> 16) % 180));
+
+    return ((u32)r) | ((u32)g << 8) | ((u32)b << 16) | 0xFF000000u;
+}
+
 /* ---- Build render geometry from BSP faces ---- */
 
 static qk_result_t build_bsp_render(
@@ -519,6 +535,11 @@ static qk_result_t build_bsp_render(
             if ((u32)(f->vertex + f->n_verts) > vert_count) continue;
             if ((u32)(f->meshvert + f->n_meshverts) > mv_count) continue;
 
+            /* Stamp per-vertex color from texture name */
+            u32 face_color = texture_name_to_color(textures[f->texture].name);
+            for (i32 v = 0; v < f->n_verts; v++)
+                rv[f->vertex + v].texture_id = face_color;
+
             u32 base_idx = idx_cursor;
             for (i32 m = 0; m < f->n_meshverts; m += 3) {
                 i32 v0 = f->vertex + meshverts[f->meshvert + m + 0].offset;
@@ -530,10 +551,12 @@ static qk_result_t build_bsp_render(
                 ri[idx_cursor++] = (v1 >= 0 && (u32)v1 < vert_count) ? (u32)v1 : 0;
             }
 
-            rs[surf_cursor].index_offset  = base_idx;
-            rs[surf_cursor].index_count   = idx_cursor - base_idx;
-            rs[surf_cursor].vertex_offset = 0;
-            rs[surf_cursor].texture_index = 0;
+            rs[surf_cursor].index_offset   = base_idx;
+            rs[surf_cursor].index_count    = idx_cursor - base_idx;
+            rs[surf_cursor].vertex_offset  = 0;
+            rs[surf_cursor].texture_index  = (u32)f->texture;
+            rs[surf_cursor].surface_flags  = (u32)textures[f->texture].flags;
+            rs[surf_cursor].contents_flags = (u32)textures[f->texture].contents;
             surf_cursor++;
         }
 
@@ -545,6 +568,8 @@ static qk_result_t build_bsp_render(
             u32 pv_count = ((u32)rows - 1) / 2;
 
             if (f->vertex < 0 || (u32)(f->vertex + rows * cols) > vert_count) continue;
+
+            u32 face_color = texture_name_to_color(textures[f->texture].name);
 
             for (u32 pv = 0; pv < pv_count; pv++) {
                 for (u32 pu = 0; pu < pu_count; pu++) {
@@ -559,7 +584,7 @@ static qk_result_t build_bsp_render(
                             qk_world_vertex_t *wv = &rv[vert_cursor++];
                             bezier_eval(cp, cols, u, v, wv->position, wv->normal);
                             world_uv(wv->position, wv->normal, wv->uv);
-                            wv->texture_id = 0;
+                            wv->texture_id = face_color;
                         }
                     }
 
@@ -582,10 +607,12 @@ static qk_result_t build_bsp_render(
                         }
                     }
 
-                    rs[surf_cursor].index_offset  = base_idx;
-                    rs[surf_cursor].index_count   = idx_cursor - base_idx;
-                    rs[surf_cursor].vertex_offset = 0;
-                    rs[surf_cursor].texture_index = 0;
+                    rs[surf_cursor].index_offset   = base_idx;
+                    rs[surf_cursor].index_count    = idx_cursor - base_idx;
+                    rs[surf_cursor].vertex_offset  = 0;
+                    rs[surf_cursor].texture_index  = (u32)f->texture;
+                    rs[surf_cursor].surface_flags  = (u32)textures[f->texture].flags;
+                    rs[surf_cursor].contents_flags = (u32)textures[f->texture].contents;
                     surf_cursor++;
                 }
             }

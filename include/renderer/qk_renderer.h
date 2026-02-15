@@ -41,7 +41,9 @@ typedef struct {
     u32     index_offset;
     u32     index_count;
     u32     vertex_offset;
-    u32     texture_index;
+    u32     texture_index;      /* BSP texture index (into texture lump) */
+    u32     surface_flags;      /* Q3 surface flags (NODRAW, SKY, TRANS33, etc.) */
+    u32     contents_flags;     /* Q3 contents flags (SOLID, FOG, PLAYERCLIP, etc.) */
 } qk_draw_surface_t;
 
 /* UI quad (low-level, used by UI module internally) */
