@@ -189,9 +189,33 @@ void qk_game_pack_entity(u8 entity_id, n_entity_state_t *out) {
         out->vel_z = (i16)ps->velocity.z;
         out->yaw = (u16)(ps->yaw * (65535.0f / 360.0f));
         out->pitch = (u16)(ps->pitch * (65535.0f / 360.0f));
+        /* Determine firing flag */
+        u8 firing = 0;
+        if (ps->weapon > QK_WEAPON_NONE && ps->weapon < QK_WEAPON_COUNT &&
+            ps->pending_weapon == QK_WEAPON_NONE) {
+            const g_weapon_def_t *wdef = &g_weapon_defs[ps->weapon];
+            if (wdef->fire_mode == FIRE_BEAM) {
+                /* Beam weapons: flag is set continuously while holding attack,
+                   weapon is ready or actively cycling, and player has ammo */
+                if ((ps->last_cmd.buttons & QK_BUTTON_ATTACK) &&
+                    ps->ammo[ps->weapon] > 0 && ps->switch_time == 0) {
+                    firing = QK_ENT_FLAG_FIRING;
+                }
+            } else {
+                /* Hitscan/projectile: flag set for 1 tick when weapon just fired.
+                   g_weapon_fire() sets weapon_time = fire_interval_ms, so if
+                   weapon_time equals fire_interval_ms the shot happened this tick. */
+                if (ps->weapon_time == wdef->fire_interval_ms &&
+                    wdef->fire_interval_ms > 0) {
+                    firing = QK_ENT_FLAG_FIRING;
+                }
+            }
+        }
+
         out->flags = (ps->on_ground ? QK_ENT_FLAG_ON_GROUND : 0)
                    | (ps->jump_held ? QK_ENT_FLAG_JUMP_HELD : 0)
-                   | ((ps->teleport_bit & 1) ? QK_ENT_FLAG_TELEPORTED : 0);
+                   | ((ps->teleport_bit & 1) ? QK_ENT_FLAG_TELEPORTED : 0)
+                   | firing;
         out->health = (ps->health > 0) ? (u8)((ps->health > 255) ? 255 : ps->health) : 0;
         out->armor = (ps->armor > 0) ? (u8)((ps->armor > 255) ? 255 : ps->armor) : 0;
         out->weapon = (u8)ps->weapon;
