@@ -151,6 +151,46 @@ qk_trace_result_t qk_physics_trace(const qk_phys_world_t *world,
     return p_trace_world(world, start, end, mins, maxs);
 }
 
+/* ---- Jump pad trajectory calculation ---- */
+
+vec3_t qk_physics_jumppad_velocity(vec3_t start, vec3_t target) {
+    /*
+     * Calculate launch velocity to arc from start to target under gravity.
+     * Uses the standard projectile motion formula:
+     *   height = target.z - start.z
+     *   time_up = sqrt(2 * max(height, 64) / gravity)
+     *   total_time = time_up + sqrt(2 * max(height, 0) / gravity)
+     *   vz = gravity * time_up
+     *   vx = (target.x - start.x) / total_time
+     *   vy = (target.y - start.y) / total_time
+     *
+     * We target the apex at the target height (like Q3 does).
+     */
+    f32 gravity = QK_PM_GRAVITY;
+    f32 height = target.z - start.z;
+
+    /* Time to reach apex (at target height, minimum 64 units for low pads) */
+    f32 apex = height > 64.0f ? height : 64.0f;
+    f32 time_up = sqrtf(2.0f * apex / gravity);
+
+    /* Z velocity to reach that apex */
+    f32 vz = gravity * time_up;
+
+    /* Total flight time: time up + time to fall back to target height */
+    f32 fall_height = apex - height;
+    f32 time_down = (fall_height > 0.0f) ? sqrtf(2.0f * fall_height / gravity) : 0.0f;
+    f32 total_time = time_up + time_down;
+
+    /* Horizontal velocity to cover XY distance in total_time */
+    f32 vx = 0.0f, vy = 0.0f;
+    if (total_time > 0.001f) {
+        vx = (target.x - start.x) / total_time;
+        vy = (target.y - start.y) / total_time;
+    }
+
+    return (vec3_t){vx, vy, vz};
+}
+
 /* ---- Get interpolation alpha for rendering ---- */
 
 f32 qk_physics_get_alpha(const qk_phys_time_t *ts) {

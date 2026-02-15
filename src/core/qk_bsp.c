@@ -591,26 +591,38 @@ static qk_result_t build_bsp_render(
     return QK_SUCCESS;
 }
 
-/* ---- Parse BSP entity lump for spawn points ---- */
+/* ---- Parsed entity for BSP entity lump ---- */
 
-static void parse_bsp_entities(const char *text, u32 text_len,
-                                qk_spawn_point_t **out_spawns, u32 *out_count) {
-    u32 cap = QK_MAP_MAX_SPAWN_POINTS;
-    qk_spawn_point_t *spawns = (qk_spawn_point_t *)calloc(cap, sizeof(qk_spawn_point_t));
-    if (!spawns) { *out_spawns = NULL; *out_count = 0; return; }
+#define BSP_MAX_ENTITIES 1024
 
+typedef struct {
+    char    classname[64];
+    char    targetname[64];
+    char    target[64];
+    vec3_t  origin;
+    f32     angle;
+    vec3_t  mins;
+    vec3_t  maxs;
+    bool    has_model;       /* has a brush model (trigger volume) */
+} bsp_entity_parsed_t;
+
+/* ---- Parse all entities from BSP entity lump ---- */
+
+static u32 parse_bsp_entity_lump(const char *text, u32 text_len,
+                                   bsp_entity_parsed_t *ents, u32 max_ents) {
     u32 count = 0;
     const char *p = text;
     const char *end = text + text_len;
 
-    while (p < end) {
+    while (p < end && count < max_ents) {
         while (p < end && *p != '{') p++;
         if (p >= end) break;
         p++;
 
-        char classname[64] = {0};
-        vec3_t origin = {0, 0, 0};
-        f32 angle = 0.0f;
+        bsp_entity_parsed_t *ent = &ents[count];
+        memset(ent, 0, sizeof(*ent));
+
+        char model_str[64] = {0};
 
         while (p < end && *p != '}') {
             while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
@@ -632,30 +644,103 @@ static void parse_bsp_entities(const char *text, u32 text_len,
             while (p < end && *p != '"' && vi < 255) val[vi++] = *p++;
             if (p < end && *p == '"') p++;
 
-            if (strcmp(key, "classname") == 0) strncpy(classname, val, 63);
-            else if (strcmp(key, "origin") == 0) sscanf(val, "%f %f %f", &origin.x, &origin.y, &origin.z);
-            else if (strcmp(key, "angle") == 0) angle = (f32)atof(val);
+            if (strcmp(key, "classname") == 0) strncpy(ent->classname, val, 63);
+            else if (strcmp(key, "targetname") == 0) strncpy(ent->targetname, val, 63);
+            else if (strcmp(key, "target") == 0) strncpy(ent->target, val, 63);
+            else if (strcmp(key, "origin") == 0) sscanf(val, "%f %f %f", &ent->origin.x, &ent->origin.y, &ent->origin.z);
+            else if (strcmp(key, "angle") == 0) ent->angle = (f32)atof(val);
+            else if (strcmp(key, "model") == 0) strncpy(model_str, val, 63);
         }
 
         if (p < end && *p == '}') p++;
 
-        if (count < cap &&
-            (strcmp(classname, "info_player_deathmatch") == 0 ||
-             strcmp(classname, "info_player_start") == 0)) {
-            spawns[count].origin = origin;
-            spawns[count].yaw = angle;
-            count++;
+        ent->has_model = (model_str[0] == '*');
+        count++;
+    }
+
+    return count;
+}
+
+/* ---- Find entity by targetname ---- */
+
+static const bsp_entity_parsed_t *find_entity_by_targetname(
+    const bsp_entity_parsed_t *ents, u32 count, const char *targetname) {
+    if (!targetname || targetname[0] == '\0') return NULL;
+    for (u32 i = 0; i < count; i++) {
+        if (ents[i].targetname[0] != '\0' && strcmp(ents[i].targetname, targetname) == 0)
+            return &ents[i];
+    }
+    return NULL;
+}
+
+/* ---- Extract spawn points, teleporters, and jump pads from parsed entities ---- */
+
+static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
+                                  qk_map_data_t *out) {
+    /* Count each type */
+    u32 spawn_cap = QK_MAP_MAX_SPAWN_POINTS;
+    u32 tele_cap = QK_MAP_MAX_TELEPORTERS;
+    u32 pad_cap = QK_MAP_MAX_JUMP_PADS;
+
+    out->spawn_points = (qk_spawn_point_t *)calloc(spawn_cap, sizeof(qk_spawn_point_t));
+    out->teleporters = (qk_teleporter_t *)calloc(tele_cap, sizeof(qk_teleporter_t));
+    out->jump_pads = (qk_jump_pad_t *)calloc(pad_cap, sizeof(qk_jump_pad_t));
+    out->spawn_count = 0;
+    out->teleporter_count = 0;
+    out->jump_pad_count = 0;
+
+    if (!out->spawn_points || !out->teleporters || !out->jump_pads) return;
+
+    for (u32 i = 0; i < ent_count; i++) {
+        const bsp_entity_parsed_t *e = &ents[i];
+
+        /* Spawn points */
+        if (out->spawn_count < spawn_cap &&
+            (strcmp(e->classname, "info_player_deathmatch") == 0 ||
+             strcmp(e->classname, "info_player_start") == 0)) {
+            out->spawn_points[out->spawn_count].origin = e->origin;
+            out->spawn_points[out->spawn_count].yaw = e->angle;
+            out->spawn_count++;
+        }
+
+        /* Teleporters: trigger_teleport -> target -> misc_teleporter_dest/target_position */
+        if (out->teleporter_count < tele_cap &&
+            strcmp(e->classname, "trigger_teleport") == 0 &&
+            e->target[0] != '\0') {
+            const bsp_entity_parsed_t *dest = find_entity_by_targetname(ents, ent_count, e->target);
+            if (dest) {
+                qk_teleporter_t *tp = &out->teleporters[out->teleporter_count];
+                tp->origin = e->origin;
+                /* Default trigger volume (32x32x32) if no brush model.
+                   Gameplay can refine using brush model bounds later. */
+                tp->mins = (vec3_t){e->origin.x - 16.0f, e->origin.y - 16.0f, e->origin.z - 16.0f};
+                tp->maxs = (vec3_t){e->origin.x + 16.0f, e->origin.y + 16.0f, e->origin.z + 16.0f};
+                tp->destination = dest->origin;
+                tp->dest_yaw = dest->angle;
+                out->teleporter_count++;
+            }
+        }
+
+        /* Jump pads: trigger_push -> target -> target_position */
+        if (out->jump_pad_count < pad_cap &&
+            strcmp(e->classname, "trigger_push") == 0 &&
+            e->target[0] != '\0') {
+            const bsp_entity_parsed_t *dest = find_entity_by_targetname(ents, ent_count, e->target);
+            if (dest) {
+                qk_jump_pad_t *jp = &out->jump_pads[out->jump_pad_count];
+                jp->origin = e->origin;
+                jp->mins = (vec3_t){e->origin.x - 16.0f, e->origin.y - 16.0f, e->origin.z - 16.0f};
+                jp->maxs = (vec3_t){e->origin.x + 16.0f, e->origin.y + 16.0f, e->origin.z + 16.0f};
+                jp->target = dest->origin;
+                out->jump_pad_count++;
+            }
         }
     }
 
-    if (count == 0) {
-        free(spawns);
-        *out_spawns = NULL;
-        *out_count = 0;
-    } else {
-        *out_spawns = spawns;
-        *out_count = count;
-    }
+    /* Free empty arrays */
+    if (out->spawn_count == 0) { free(out->spawn_points); out->spawn_points = NULL; }
+    if (out->teleporter_count == 0) { free(out->teleporters); out->teleporters = NULL; }
+    if (out->jump_pad_count == 0) { free(out->jump_pads); out->jump_pads = NULL; }
 }
 
 /* ---- Public API ---- */
@@ -736,13 +821,19 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
         }
     }
 
-    /* Parse entities for spawn points */
+    /* Parse entities for spawn points, teleporters, jump pads */
     u32 ent_len = 0;
     const char *ent_text = (const char *)get_lump(data, data_len, hdr,
                                                    LUMP_ENTITIES, 1, &ent_len);
     if (ent_text && ent_len > 0) {
-        parse_bsp_entities(ent_text, ent_len, &out->spawn_points, &out->spawn_count);
-        fprintf(stderr, "[BSP] Spawn points: %u\n", out->spawn_count);
+        bsp_entity_parsed_t *ents = (bsp_entity_parsed_t *)calloc(BSP_MAX_ENTITIES, sizeof(bsp_entity_parsed_t));
+        if (ents) {
+            u32 ent_count = parse_bsp_entity_lump(ent_text, ent_len, ents, BSP_MAX_ENTITIES);
+            extract_bsp_entities(ents, ent_count, out);
+            free(ents);
+        }
+        fprintf(stderr, "[BSP] Spawn points: %u, Teleporters: %u, Jump pads: %u\n",
+                out->spawn_count, out->teleporter_count, out->jump_pad_count);
     }
 
     return QK_SUCCESS;

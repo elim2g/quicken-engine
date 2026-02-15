@@ -18,7 +18,7 @@ typedef struct {
     u16     yaw;                     /* 0..65535 -> 0..360 degrees */
     u16     pitch;                   /* 0..65535 -> 0..360 degrees */
     u8      entity_type;
-    u8      flags;
+    u8      flags;                   /* QK_ENT_FLAG_* bits (see qk_types.h) */
     u8      health;                  /* 0..255, clamped from i16 */
     u8      armor;                   /* 0..255 */
     u8      weapon;

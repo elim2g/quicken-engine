@@ -159,4 +159,27 @@ typedef struct {
     f32     yaw;
 } qk_spawn_point_t;
 
+/* ---- Teleporter ---- */
+
+typedef struct {
+    vec3_t  origin;         /* trigger volume center */
+    vec3_t  mins;           /* trigger volume AABB min */
+    vec3_t  maxs;           /* trigger volume AABB max */
+    vec3_t  destination;    /* destination position */
+    f32     dest_yaw;       /* destination facing angle */
+} qk_teleporter_t;
+
+/* ---- Jump Pad ---- */
+
+typedef struct {
+    vec3_t  origin;         /* trigger volume center */
+    vec3_t  mins;           /* trigger volume AABB min */
+    vec3_t  maxs;           /* trigger volume AABB max */
+    vec3_t  target;         /* target position (apex or destination) */
+} qk_jump_pad_t;
+
+/* ---- Entity state flags (shared between netcode and gameplay) ---- */
+
+#define QK_ENT_FLAG_TELEPORTED  (1 << 0)  /* entity teleported this tick (skip interpolation) */
+
 #endif /* QK_TYPES_H */

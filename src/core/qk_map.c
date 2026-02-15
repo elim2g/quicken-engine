@@ -700,53 +700,100 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
     return QK_SUCCESS;
 }
 
-/* ---- Extract spawn points ---- */
+/* ---- Extract entity key-value helpers ---- */
 
-static void extract_spawn_points(const parsed_map_t *parsed,
-                                  qk_spawn_point_t **out_spawns, u32 *out_count) {
-    /* Count spawn entities */
-    u32 count = 0;
+static const char *ent_get_value(const map_entity_t *ent, const char *key) {
+    for (u32 k = 0; k < ent->kv_count; k++) {
+        if (strcmp(ent->kvs[k].key, key) == 0) return ent->kvs[k].value;
+    }
+    return NULL;
+}
+
+static vec3_t ent_get_origin(const map_entity_t *ent) {
+    const char *val = ent_get_value(ent, "origin");
+    vec3_t v = {0, 0, 0};
+    if (val) sscanf(val, "%f %f %f", &v.x, &v.y, &v.z);
+    return v;
+}
+
+static f32 ent_get_angle(const map_entity_t *ent) {
+    const char *val = ent_get_value(ent, "angle");
+    return val ? (f32)atof(val) : 0.0f;
+}
+
+static const map_entity_t *find_by_targetname(const parsed_map_t *parsed, const char *targetname) {
+    if (!targetname || targetname[0] == '\0') return NULL;
     for (u32 e = 0; e < parsed->entity_count; e++) {
-        if (strcmp(parsed->entities[e].classname, "info_player_deathmatch") == 0 ||
-            strcmp(parsed->entities[e].classname, "info_player_start") == 0) {
-            count++;
-        }
+        const char *tn = ent_get_value(&parsed->entities[e], "targetname");
+        if (tn && strcmp(tn, targetname) == 0) return &parsed->entities[e];
     }
+    return NULL;
+}
 
-    if (count == 0) {
-        *out_spawns = NULL;
-        *out_count = 0;
-        return;
-    }
+/* ---- Extract spawn points, teleporters, and jump pads ---- */
 
-    *out_spawns = (qk_spawn_point_t *)calloc(count, sizeof(qk_spawn_point_t));
-    if (!*out_spawns) { *out_count = 0; return; }
+static void extract_map_entities(const parsed_map_t *parsed, qk_map_data_t *out) {
+    u32 spawn_cap = QK_MAP_MAX_SPAWN_POINTS;
+    u32 tele_cap = QK_MAP_MAX_TELEPORTERS;
+    u32 pad_cap = QK_MAP_MAX_JUMP_PADS;
 
-    u32 idx = 0;
+    out->spawn_points = (qk_spawn_point_t *)calloc(spawn_cap, sizeof(qk_spawn_point_t));
+    out->teleporters = (qk_teleporter_t *)calloc(tele_cap, sizeof(qk_teleporter_t));
+    out->jump_pads = (qk_jump_pad_t *)calloc(pad_cap, sizeof(qk_jump_pad_t));
+    out->spawn_count = 0;
+    out->teleporter_count = 0;
+    out->jump_pad_count = 0;
+
+    if (!out->spawn_points || !out->teleporters || !out->jump_pads) return;
+
     for (u32 e = 0; e < parsed->entity_count; e++) {
         const map_entity_t *ent = &parsed->entities[e];
-        if (strcmp(ent->classname, "info_player_deathmatch") != 0 &&
-            strcmp(ent->classname, "info_player_start") != 0) {
-            continue;
+
+        /* Spawn points */
+        if (out->spawn_count < spawn_cap &&
+            (strcmp(ent->classname, "info_player_deathmatch") == 0 ||
+             strcmp(ent->classname, "info_player_start") == 0)) {
+            out->spawn_points[out->spawn_count].origin = ent_get_origin(ent);
+            out->spawn_points[out->spawn_count].yaw = ent_get_angle(ent);
+            out->spawn_count++;
         }
 
-        qk_spawn_point_t *sp = &(*out_spawns)[idx++];
-        sp->origin = (vec3_t){0, 0, 0};
-        sp->yaw = 0.0f;
-
-        for (u32 k = 0; k < ent->kv_count; k++) {
-            if (strcmp(ent->kvs[k].key, "origin") == 0) {
-                f32 x = 0, y = 0, z = 0;
-                sscanf(ent->kvs[k].value, "%f %f %f", &x, &y, &z);
-                sp->origin = (vec3_t){x, y, z};
+        /* Teleporters */
+        if (out->teleporter_count < tele_cap &&
+            strcmp(ent->classname, "trigger_teleport") == 0) {
+            const char *target = ent_get_value(ent, "target");
+            const map_entity_t *dest = find_by_targetname(parsed, target);
+            if (dest) {
+                qk_teleporter_t *tp = &out->teleporters[out->teleporter_count];
+                tp->origin = ent_get_origin(ent);
+                tp->mins = (vec3_t){tp->origin.x - 16.0f, tp->origin.y - 16.0f, tp->origin.z - 16.0f};
+                tp->maxs = (vec3_t){tp->origin.x + 16.0f, tp->origin.y + 16.0f, tp->origin.z + 16.0f};
+                tp->destination = ent_get_origin(dest);
+                tp->dest_yaw = ent_get_angle(dest);
+                out->teleporter_count++;
             }
-            if (strcmp(ent->kvs[k].key, "angle") == 0) {
-                sp->yaw = (f32)atof(ent->kvs[k].value);
+        }
+
+        /* Jump pads */
+        if (out->jump_pad_count < pad_cap &&
+            strcmp(ent->classname, "trigger_push") == 0) {
+            const char *target = ent_get_value(ent, "target");
+            const map_entity_t *dest = find_by_targetname(parsed, target);
+            if (dest) {
+                qk_jump_pad_t *jp = &out->jump_pads[out->jump_pad_count];
+                jp->origin = ent_get_origin(ent);
+                jp->mins = (vec3_t){jp->origin.x - 16.0f, jp->origin.y - 16.0f, jp->origin.z - 16.0f};
+                jp->maxs = (vec3_t){jp->origin.x + 16.0f, jp->origin.y + 16.0f, jp->origin.z + 16.0f};
+                jp->target = ent_get_origin(dest);
+                out->jump_pad_count++;
             }
         }
     }
 
-    *out_count = idx;
+    /* Free empty arrays */
+    if (out->spawn_count == 0) { free(out->spawn_points); out->spawn_points = NULL; }
+    if (out->teleporter_count == 0) { free(out->teleporters); out->teleporters = NULL; }
+    if (out->jump_pad_count == 0) { free(out->jump_pads); out->jump_pads = NULL; }
 }
 
 /* ---- Public API ---- */
@@ -797,9 +844,10 @@ qk_result_t qk_map_load_from_memory(const char *data, u64 data_len, qk_map_data_
                 out->vertex_count, out->index_count, out->surface_count);
     }
 
-    /* Extract spawn points */
-    extract_spawn_points(parsed, &out->spawn_points, &out->spawn_count);
-    fprintf(stderr, "[MapLoader] Spawn points: %u\n", out->spawn_count);
+    /* Extract spawn points, teleporters, jump pads */
+    extract_map_entities(parsed, out);
+    fprintf(stderr, "[MapLoader] Spawn points: %u, Teleporters: %u, Jump pads: %u\n",
+            out->spawn_count, out->teleporter_count, out->jump_pad_count);
 
     free(parsed);
     return QK_SUCCESS;
@@ -865,6 +913,10 @@ void qk_map_free(qk_map_data_t *map) {
 
     /* Free spawn points */
     free(map->spawn_points);
+
+    /* Free teleporters and jump pads */
+    free(map->teleporters);
+    free(map->jump_pads);
 
     memset(map, 0, sizeof(*map));
 }

@@ -63,6 +63,11 @@ qk_trace_result_t qk_physics_trace(const qk_phys_world_t *world,
                                      vec3_t start, vec3_t end,
                                      vec3_t mins, vec3_t maxs);
 
+/* Calculate launch velocity for a jump pad given start and target positions.
+   Returns the velocity vector that will arc the player from 'start' to 'target'
+   under QK_PM_GRAVITY. Used by gameplay to apply jump pad impulse. */
+vec3_t qk_physics_jumppad_velocity(vec3_t start, vec3_t target);
+
 /* Get interpolation alpha for rendering */
 f32 qk_physics_get_alpha(const qk_phys_time_t *ts);
 

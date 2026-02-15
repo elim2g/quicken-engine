@@ -25,6 +25,8 @@
 #define QK_MAP_MAX_INDICES          (65536 * 3)
 #define QK_MAP_MAX_SURFACES         4096
 #define QK_MAP_MAX_SPAWN_POINTS     64
+#define QK_MAP_MAX_TELEPORTERS      64
+#define QK_MAP_MAX_JUMP_PADS        64
 
 /* Map data produced by the loader */
 typedef struct {
@@ -42,6 +44,14 @@ typedef struct {
     /* Spawn points for gameplay */
     qk_spawn_point_t       *spawn_points;
     u32                     spawn_count;
+
+    /* Teleporters for gameplay */
+    qk_teleporter_t        *teleporters;
+    u32                     teleporter_count;
+
+    /* Jump pads for gameplay */
+    qk_jump_pad_t          *jump_pads;
+    u32                     jump_pad_count;
 } qk_map_data_t;
 
 /* Load a .map file and produce all game data */
