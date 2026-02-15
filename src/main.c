@@ -378,7 +378,11 @@ static void server_tick(qk_phys_world_t *phys_world) {
     for (u32 i = 0; i < qk_game_get_entity_count(); i++) {
         n_entity_state_t net_state;
         qk_game_pack_entity((u8)i, &net_state);
-        qk_net_server_set_entity((u8)i, &net_state);
+        if (net_state.entity_type == 0) {
+            qk_net_server_remove_entity((u8)i);
+        } else {
+            qk_net_server_set_entity((u8)i, &net_state);
+        }
     }
 
     /* 4. Netcode broadcasts snapshots to all clients */

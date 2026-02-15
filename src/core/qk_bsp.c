@@ -848,26 +848,31 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
     fprintf(stderr, "[BSP] %u vertices, %u meshverts, %u faces\n",
             vert_count, mv_count, face_count);
 
-    /* Build collision model */
-    if (brushes && sides && planes && textures) {
+    /* Build collision model (model 0 = worldspawn only; models 1+ are brush entities) */
+    if (brushes && sides && planes && textures && models && model_count > 0) {
+        u32 m0_first_brush = (u32)models[0].first_brush;
+        u32 m0_num_brushes = (u32)models[0].num_brushes;
         qk_result_t res = build_bsp_collision(textures, tex_count,
                                                planes, plane_count,
-                                               brushes, brush_count,
+                                               brushes + m0_first_brush, m0_num_brushes,
                                                sides, side_count,
                                                &out->collision);
         if (res == QK_SUCCESS) {
-            fprintf(stderr, "[BSP] Collision: %u solid brushes\n", out->collision.brush_count);
+            fprintf(stderr, "[BSP] Collision: %u solid brushes (model 0: %u/%u brushes)\n",
+                    out->collision.brush_count, m0_num_brushes, brush_count);
         } else {
             fprintf(stderr, "[BSP] Warning: collision build failed (%d)\n", res);
         }
     }
 
-    /* Add patch collision (thin slab brushes from bezier patches) */
-    if (verts && faces && textures) {
+    /* Add patch collision (thin slab brushes from bezier patches, model 0 only) */
+    if (verts && faces && textures && models && model_count > 0) {
+        u32 m0_first_face = (u32)models[0].first_face;
+        u32 m0_num_faces  = (u32)models[0].num_faces;
         u32 before = out->collision.brush_count;
         build_patch_collision(textures, tex_count,
                               verts, vert_count,
-                              faces, face_count,
+                              faces + m0_first_face, m0_num_faces,
                               &out->collision);
         u32 patch_brushes = out->collision.brush_count - before;
         if (patch_brushes > 0)
