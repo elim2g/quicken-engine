@@ -153,6 +153,12 @@ void g_ca_count_alive(qk_game_state_t *gs);
 void g_event_push(game_event_queue_t *queue, const game_event_t *event);
 void g_event_clear(game_event_queue_t *queue);
 
+/* ---- Trigger functions (g_triggers.c) ---- */
+void g_triggers_load(const qk_teleporter_t *teleporters, u32 teleporter_count,
+                     const qk_jump_pad_t *jump_pads, u32 jump_pad_count);
+void g_triggers_clear(void);
+void g_triggers_tick(qk_game_state_t *gs);
+
 /* ---- Process commands (gameplay.c) ---- */
 void g_process_commands(qk_game_state_t *gs, u32 tick_dt_ms);
 
