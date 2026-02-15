@@ -30,6 +30,7 @@
 #define LUMP_FACES          13
 
 #define Q3_CONTENTS_SOLID       0x1
+#define Q3_CONTENTS_FOG         0x40
 #define Q3_CONTENTS_PLAYERCLIP  0x10000
 
 #define Q3_SURF_NODRAW          0x80
@@ -437,6 +438,7 @@ static void build_patch_collision(
 static bool face_renderable(const bsp_face_t *f, const bsp_texture_t *textures, u32 tex_count) {
     if (f->texture < 0 || (u32)f->texture >= tex_count) return false;
     if (textures[f->texture].flags & (Q3_SURF_NODRAW | Q3_SURF_SKY)) return false;
+    if (textures[f->texture].contents & Q3_CONTENTS_FOG) return false;
     if (is_tool_texture(textures[f->texture].name)) return false;
     return true;
 }
