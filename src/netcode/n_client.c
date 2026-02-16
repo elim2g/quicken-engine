@@ -763,8 +763,10 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
                 ie->pitch = lerp_angle(ea->pitch, eb->pitch, t);
             }
 
-            /* Discrete fields: use B if t >= 0.5 */
-            const n_entity_state_t *src = (t >= 0.5f) ? eb : ea;
+            /* Discrete fields: always use the newer snapshot (B).
+               Delaying until t >= 0.5 causes flags/weapon to appear
+               stale for up to half a tick interval. */
+            const n_entity_state_t *src = eb;
             ie->entity_type = src->entity_type;
             ie->flags = src->flags;
             ie->health = src->health;
@@ -774,8 +776,11 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
             ie->active = true;
 
         } else if (in_b && !in_a) {
-            /* Entity spawned: snap to B if close enough */
-            if (render_tick >= (f64)snap_b->tick - 0.5) {
+            /* Entity spawned: show immediately from snap_b.
+               The old threshold (render_tick >= snap_b->tick - 0.5)
+               delayed new entities for many frames, making rockets
+               and other projectiles invisible at spawn. */
+            {
                 const n_entity_state_t *eb = &snap_b->entities[id];
                 ie->pos_x = dequant_pos(eb->pos_x);
                 ie->pos_y = dequant_pos(eb->pos_y);
@@ -792,8 +797,6 @@ void n_client_interpolate(n_client_t *cl, f64 render_time) {
                 ie->weapon = eb->weapon;
                 ie->ammo = eb->ammo;
                 ie->active = true;
-            } else {
-                ie->active = false;
             }
 
         } else if (in_a && !in_b) {

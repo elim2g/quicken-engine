@@ -212,9 +212,15 @@ void n_server_broadcast_snapshots(n_server_t *srv) {
             u32 base_idx = cl->last_acked_snapshot_tick % N_SNAPSHOT_HISTORY;
             n_snapshot_t *candidate = &srv->snapshot_buffer.snapshots[base_idx];
             if (candidate->tick == cl->last_acked_snapshot_tick) {
-                /* Verify baseline hasn't been overwritten */
+                /* Verify baseline hasn't been overwritten and isn't
+                 * the current tick (self-reference).  Self-reference
+                 * happens when a multi-tick batch inflates ack_tick
+                 * to match srv->tick.  The client can't have received
+                 * the current tick's snapshot yet, so delta-encoding
+                 * against it causes a client-side drop and cascading
+                 * failures.  Fall back to full snapshot instead. */
                 u32 age = srv->tick - cl->last_acked_snapshot_tick;
-                if (age < N_SNAPSHOT_HISTORY) {
+                if (age > 0 && age < N_SNAPSHOT_HISTORY) {
                     baseline = candidate;
                 }
             }

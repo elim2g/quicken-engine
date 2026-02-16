@@ -147,18 +147,23 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
 
 void p_step_slide_move(qk_player_state_t *ps,
                        const qk_phys_world_t *world, f32 dt) {
-    /* Save starting state */
     vec3_t start_origin = ps->origin;
     vec3_t start_velocity = ps->velocity;
 
-    /* First, try a normal slide move */
-    p_slide_move(ps, world, dt, 4);
+    /* Try normal slide first. If no collision, we're done --
+       no step-up needed. This avoids vertical oscillation on
+       flat ground that "step-up first" would cause. */
+    bool hit_wall = p_slide_move(ps, world, dt, 4);
 
-    /* Save the result of the non-stepped move */
-    vec3_t down_origin = ps->origin;
-    vec3_t down_velocity = ps->velocity;
+    if (!hit_wall) {
+        return;
+    }
 
-    /* Restore and try the stepped move */
+    /* Hit something. Save the normal-slide result. */
+    vec3_t normal_origin = ps->origin;
+    vec3_t normal_velocity = ps->velocity;
+
+    /* Restore to start for step-up attempt */
     ps->origin = start_origin;
     ps->velocity = start_velocity;
 
@@ -171,7 +176,7 @@ void p_step_slide_move(qk_player_state_t *ps,
         ps->origin = trace.end_pos;
     }
 
-    /* Slide move from the stepped-up position */
+    /* Slide from the stepped-up position */
     p_slide_move(ps, world, dt, 4);
 
     /* Step back down */
@@ -183,26 +188,13 @@ void p_step_slide_move(qk_player_state_t *ps,
         ps->origin = trace.end_pos;
     }
 
-    /* Snap to ground if we landed on a walkable surface */
+    /* If step-up landed on walkable ground, use it */
     if (trace.fraction < 1.0f &&
         trace.hit_normal.z >= QK_PM_MIN_WALK_NORMAL) {
-        /* Use the stepped result if it got further horizontally */
-        f32 step_dist_sq = (ps->origin.x - start_origin.x) *
-                           (ps->origin.x - start_origin.x) +
-                           (ps->origin.y - start_origin.y) *
-                           (ps->origin.y - start_origin.y);
-        f32 down_dist_sq = (down_origin.x - start_origin.x) *
-                           (down_origin.x - start_origin.x) +
-                           (down_origin.y - start_origin.y) *
-                           (down_origin.y - start_origin.y);
-
-        if (step_dist_sq > down_dist_sq) {
-            /* Stepped move was better */
-            return;
-        }
+        return;
     }
 
-    /* Non-stepped move was better (or stepped move didn't land) */
-    ps->origin = down_origin;
-    ps->velocity = down_velocity;
+    /* Step-up didn't find walkable ground -- use normal slide result */
+    ps->origin = normal_origin;
+    ps->velocity = normal_velocity;
 }

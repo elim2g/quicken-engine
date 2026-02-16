@@ -109,6 +109,23 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
                                 f32 end_x, f32 end_y, f32 end_z,
                                 f32 time_seconds);
 
+/* Viewmodel (first-person weapon model, right-handed placement) */
+void qk_renderer_draw_viewmodel(u32 weapon_id, f32 pitch_deg, f32 yaw_deg,
+                                 f32 time_seconds, bool firing);
+
+/* Rocket smoke trail (retro zdoom-style particles behind rocket) */
+void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
+                                    f32 vel_x, f32 vel_y, f32 vel_z,
+                                    f32 age_seconds);
+
+/* Smoke particle batch: camera-facing billboard quads through beam pipeline.
+ * Call begin, emit N puffs, then end. All puffs go into one draw call. */
+void qk_renderer_begin_smoke(void);
+void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
+                                  f32 half_size, u32 color_rgba,
+                                  f32 angle_rad);
+void qk_renderer_end_smoke(void);
+
 /* Debug */
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 

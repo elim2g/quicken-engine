@@ -240,6 +240,9 @@ typedef struct r_entity_push_constants {
 typedef enum {
     R_ENTITY_MESH_CAPSULE = 0,
     R_ENTITY_MESH_SPHERE,
+    R_ENTITY_MESH_VIEWMODEL_RL,    /* Rocket Launcher */
+    R_ENTITY_MESH_VIEWMODEL_RG,    /* Railgun */
+    R_ENTITY_MESH_VIEWMODEL_LG,    /* Lightning Gun */
     R_ENTITY_MESH_COUNT
 } r_entity_mesh_type_t;
 

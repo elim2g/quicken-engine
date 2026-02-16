@@ -192,7 +192,7 @@ static qk_camera_t build_camera(f32 pos_x, f32 pos_y, f32 pos_z,
 static qk_texture_id_t create_grid_texture(void) {
     #define GRID_SIZE 256
     #define GRID_LINE 4   /* line width in pixels */
-    #define GRID_CELL 32  /* cell size in pixels */
+    #define GRID_CELL 64  /* cell size in pixels */
 
     static u8 pixels[GRID_SIZE * GRID_SIZE * 4];
 
@@ -321,6 +321,31 @@ static rail_beam_t s_rail_beams[MAX_RAIL_BEAMS];
 static u8          s_prev_flags[QK_MAX_ENTITIES];
 static u32         s_rail_beam_next;
 
+/* ---- Rocket Smoke Particles ---- */
+
+#define SMOKE_POOL_SIZE       1024
+#define SMOKE_MAX_AGE         2.0f
+#define SMOKE_SPAWN_SPACING   8.0f
+#define MAX_TRACKED_ROCKETS   32
+
+typedef struct {
+    f32 pos[3];
+    f64 birth_time;
+    f32 angle;      /* random billboard rotation (radians) */
+} smoke_particle_t;
+
+static smoke_particle_t s_smoke_pool[SMOKE_POOL_SIZE];
+static u32 s_smoke_pool_head;
+
+typedef struct {
+    u32  entity_id;
+    bool active;
+    f32  last_pos[3];
+    u32  last_tick;
+} rocket_smoke_tracker_t;
+
+static rocket_smoke_tracker_t s_rocket_trackers[MAX_TRACKED_ROCKETS];
+
 /* ---- Diagnostic Trace ---- */
 
 static FILE *s_diag_file;
@@ -387,15 +412,32 @@ static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
     cl_predicted_state_t *predicted = &cl_pred_history[ack_idx];
     if (predicted->sequence != ack_sequence) return;
 
+    /* Always sync authoritative gameplay state from server
+     * (weapon, ammo, health, alive_state, etc.) so changes
+     * are visible immediately even when standing still. */
+    cl_predicted_ps.weapon          = server_state.weapon;
+    cl_predicted_ps.pending_weapon  = server_state.pending_weapon;
+    cl_predicted_ps.weapon_time     = server_state.weapon_time;
+    cl_predicted_ps.switch_time     = server_state.switch_time;
+    memcpy(cl_predicted_ps.ammo, server_state.ammo, sizeof(server_state.ammo));
+    cl_predicted_ps.health          = server_state.health;
+    cl_predicted_ps.armor           = server_state.armor;
+    cl_predicted_ps.alive_state     = server_state.alive_state;
+    cl_predicted_ps.frags           = server_state.frags;
+    cl_predicted_ps.deaths          = server_state.deaths;
+    cl_predicted_ps.damage_given    = server_state.damage_given;
+    cl_predicted_ps.damage_taken    = server_state.damage_taken;
+    cl_predicted_ps.respawn_time    = server_state.respawn_time;
+
     /* Compare positions (epsilon = 0.1 units squared) */
     f32 dx = server_state.origin.x - predicted->state.origin.x;
     f32 dy = server_state.origin.y - predicted->state.origin.y;
     f32 dz = server_state.origin.z - predicted->state.origin.z;
     f32 dist_sq = dx * dx + dy * dy + dz * dz;
 
-    if (dist_sq < 0.1f) return; /* No correction needed */
+    if (dist_sq < 0.1f) return; /* Position matches, no replay needed */
 
-    /* Misprediction: snap to server state and replay */
+    /* Position misprediction: snap to server state and replay */
     cl_predicted_ps = server_state;
 
     for (u32 seq = ack_sequence + 1; seq < cl_cmd_sequence; seq++) {
@@ -840,6 +882,15 @@ int main(int argc, char *argv[]) {
                     memset(s_rail_beams, 0, sizeof(s_rail_beams));
                     memset(s_prev_flags, 0, sizeof(s_prev_flags));
                     s_rail_beam_next = 0;
+                    memset(s_smoke_pool, 0, sizeof(s_smoke_pool));
+                    s_smoke_pool_head = 0;
+                    memset(s_rocket_trackers, 0, sizeof(s_rocket_trackers));
+
+                    /* Reset time reference so the next frame's dt
+                     * doesn't include the map loading duration.
+                     * Without this, the accumulators spike and cause
+                     * a multi-tick batch that breaks delta encoding. */
+                    prev_time = qk_platform_time_now();
 
                     qk_console_printf("Loaded: %s", path);
                 }
@@ -983,11 +1034,109 @@ int main(int argc, char *argv[]) {
                 } else if (ie->entity_type == 2) {
                     qk_renderer_draw_sphere(ie->pos_x, ie->pos_y, ie->pos_z,
                                              4.0f, 0xFF8800FF);
+
+                    /* Smoke trail: spawn particles when tick advances */
+                    u32 cur_tick = qk_net_server_get_tick();
+                    rocket_smoke_tracker_t *tracker = NULL;
+                    for (u32 t = 0; t < MAX_TRACKED_ROCKETS; t++) {
+                        if (s_rocket_trackers[t].active && s_rocket_trackers[t].entity_id == i) {
+                            tracker = &s_rocket_trackers[t];
+                            break;
+                        }
+                    }
+                    if (!tracker) {
+                        for (u32 t = 0; t < MAX_TRACKED_ROCKETS; t++) {
+                            if (!s_rocket_trackers[t].active) {
+                                tracker = &s_rocket_trackers[t];
+                                tracker->active = true;
+                                tracker->entity_id = i;
+                                tracker->last_pos[0] = ie->pos_x;
+                                tracker->last_pos[1] = ie->pos_y;
+                                tracker->last_pos[2] = ie->pos_z;
+                                tracker->last_tick = cur_tick;
+                                break;
+                            }
+                        }
+                    }
+                    if (tracker && cur_tick > tracker->last_tick) {
+                        f32 dx = ie->pos_x - tracker->last_pos[0];
+                        f32 dy = ie->pos_y - tracker->last_pos[1];
+                        f32 dz = ie->pos_z - tracker->last_pos[2];
+                        f32 dist = sqrtf(dx*dx + dy*dy + dz*dz);
+
+                        u32 num_puffs = (dist > 0.1f)
+                            ? (u32)(dist / SMOKE_SPAWN_SPACING) + 1 : 1;
+
+                        for (u32 p = 0; p < num_puffs; p++) {
+                            f32 frac = (num_puffs > 1)
+                                ? (f32)(p + 1) / (f32)num_puffs : 1.0f;
+                            u32 slot = s_smoke_pool_head % SMOKE_POOL_SIZE;
+                            smoke_particle_t *puff = &s_smoke_pool[slot];
+                            s_smoke_pool_head++;
+                            puff->pos[0] = tracker->last_pos[0] + dx * frac;
+                            puff->pos[1] = tracker->last_pos[1] + dy * frac;
+                            puff->pos[2] = tracker->last_pos[2] + dz * frac;
+                            puff->birth_time = now;
+                            /* Random rotation: hash the slot index */
+                            u32 h = slot * 0x45d9f3bu;
+                            h = ((h >> 16) ^ h) * 0x45d9f3bu;
+                            h = (h >> 16) ^ h;
+                            puff->angle = (f32)(h & 0xFFFF) / 65535.0f
+                                          * 6.28318530f;
+                        }
+
+                        tracker->last_pos[0] = ie->pos_x;
+                        tracker->last_pos[1] = ie->pos_y;
+                        tracker->last_pos[2] = ie->pos_z;
+                        tracker->last_tick = cur_tick;
+                    }
+                }
+            }
+
+            /* Expire rocket trackers (NOT the smoke — smoke lives independently) */
+            for (u32 t = 0; t < MAX_TRACKED_ROCKETS; t++) {
+                if (!s_rocket_trackers[t].active) continue;
+                u32 eid = s_rocket_trackers[t].entity_id;
+                const qk_interp_entity_t *ie = &interp->entities[eid];
+                if (!ie->active || ie->entity_type != 2) {
+                    s_rocket_trackers[t].active = false;
                 }
             }
         }
 
-        /* ---- 9b. Beam effects ---- */
+        /* ---- 9a. Draw smoke particles (independent of rocket lifetime) ---- */
+        qk_renderer_begin_smoke();
+        for (u32 s = 0; s < SMOKE_POOL_SIZE; s++) {
+            smoke_particle_t *p = &s_smoke_pool[s];
+            if (p->birth_time == 0.0) continue;
+            f32 age = (f32)(now - p->birth_time);
+            if (age > SMOKE_MAX_AGE) {
+                p->birth_time = 0.0;
+                continue;
+            }
+            f32 frac = age / SMOKE_MAX_AGE;
+            f32 fade = 1.0f - frac;
+            fade = fade * fade; /* quadratic falloff */
+            f32 half_size = 1.5f + frac * 5.0f;
+            u8 grey = (u8)(80.0f * fade);
+            u8 alpha = (u8)(180.0f * fade);
+            u32 color = ((u32)grey << 24) | ((u32)grey << 16)
+                       | ((u32)grey << 8) | alpha;
+            qk_renderer_emit_smoke_puff(p->pos[0], p->pos[1], p->pos[2],
+                                         half_size, color, p->angle);
+        }
+        qk_renderer_end_smoke();
+
+        /* ---- 9b. Viewmodel (first-person weapon) ---- */
+        if (cl_has_prediction && cl_predicted_ps.alive_state == QK_PSTATE_ALIVE) {
+            qk_renderer_draw_viewmodel(
+                cl_predicted_ps.weapon,
+                cam_pitch, cam_yaw,
+                (f32)now,
+                input_state.mouse_buttons[0] && !input_state.console_active);
+        }
+
+        /* ---- 9c. Beam effects ---- */
         if (interp) {
             vec3_t zero_ext = {0, 0, 0};
 
@@ -1044,9 +1193,17 @@ int main(int argc, char *argv[]) {
                     s_rail_beam_next++;
                     rb->active = true;
                     rb->birth_time = now;
-                    rb->start[0] = eye_x;
-                    rb->start[1] = eye_y;
-                    rb->start[2] = eye_z;
+                    if (is_local) {
+                        /* Muzzle offset: 8 units right, 4 units below eye.
+                           right = (sy, -cy, 0) in QUAKE yaw convention. */
+                        rb->start[0] = camera.position[0] + sy * 8.0f;
+                        rb->start[1] = camera.position[1] + (-cy) * 8.0f;
+                        rb->start[2] = camera.position[2] - 4.0f;
+                    } else {
+                        rb->start[0] = eye_x;
+                        rb->start[1] = eye_y;
+                        rb->start[2] = eye_z;
+                    }
                     rb->end[0] = tr.end_pos.x;
                     rb->end[1] = tr.end_pos.y;
                     rb->end[2] = tr.end_pos.z;
@@ -1121,9 +1278,10 @@ int main(int argc, char *argv[]) {
                 qk_trace_result_t tr = qk_physics_trace(phys_world,
                     trace_start, trace_end, zero_ext, zero_ext);
 
-                /* Muzzle offset: 8 units right, 4 units below eye */
-                f32 muzzle_x = camera.position[0] + (-sy) * 8.0f;
-                f32 muzzle_y = camera.position[1] + cy * 8.0f;
+                /* Muzzle offset: 8 units right, 4 units below eye.
+                   right = (sy, -cy, 0) in QUAKE yaw convention. */
+                f32 muzzle_x = camera.position[0] + sy * 8.0f;
+                f32 muzzle_y = camera.position[1] + (-cy) * 8.0f;
                 f32 muzzle_z = camera.position[2] - 4.0f;
 
                 qk_renderer_draw_lg_beam(muzzle_x, muzzle_y, muzzle_z,

@@ -493,6 +493,212 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
     g_r.beams.vertex_count = v_start + v_count;
 }
 
+/* ---- Rocket Smoke Trail ---- */
+
+#define ROCKET_TRAIL_PARTICLES  12
+#define ROCKET_TRAIL_LENGTH     70.0f
+#define ROCKET_TRAIL_BASE_SIZE  1.5f
+#define ROCKET_TRAIL_EXPAND     3.0f
+
+void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
+                                    f32 vel_x, f32 vel_y, f32 vel_z,
+                                    f32 age_seconds)
+{
+    if (!g_r.beams.initialized) return;
+    if (g_r.beams.draw_count >= R_BEAM_MAX_DRAWS) return;
+
+    /* Trail direction = opposite of velocity (smoke is behind the rocket) */
+    f32 vel_len = sqrtf(vel_x * vel_x + vel_y * vel_y + vel_z * vel_z);
+    if (vel_len < 1e-3f) return;
+
+    f32 inv_vel = 1.0f / vel_len;
+    f32 trail_dir[3] = { -vel_x * inv_vel, -vel_y * inv_vel, -vel_z * inv_vel };
+
+    /* Use trail_dir as beam axis for billboarding */
+    f32 axis_n[3] = { trail_dir[0], trail_dir[1], trail_dir[2] };
+
+    /* Camera position */
+    u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
+    r_view_uniforms_t *view = (r_view_uniforms_t *)g_r.frames[fi].view_ubo_mapped;
+    f32 cam_pos[3] = { 0.0f, 0.0f, 0.0f };
+    if (view) {
+        cam_pos[0] = view->camera_pos[0];
+        cam_pos[1] = view->camera_pos[1];
+        cam_pos[2] = view->camera_pos[2];
+    }
+
+    /* Perpendicular vectors for jitter displacement */
+    f32 perp1[3], perp2[3];
+    {
+        f32 up[3] = { 0.0f, 0.0f, 1.0f };
+        if (fabsf(r_beam_dot(axis_n, up)) > 0.9f) {
+            up[0] = 1.0f; up[1] = 0.0f; up[2] = 0.0f;
+        }
+        r_beam_cross(perp1, axis_n, up);
+        r_beam_normalize(perp1);
+        r_beam_cross(perp2, axis_n, perp1);
+        r_beam_normalize(perp2);
+    }
+
+    u32 v_start = g_r.beams.vertex_count;
+    u32 v_count = 0;
+    r_beam_vertex_t *verts = g_r.beams.vertices;
+
+    /* Hash seed based on age for per-rocket variation */
+    u32 age_seed = (u32)(age_seconds * 1000.0f);
+
+    for (u32 i = 0; i < ROCKET_TRAIL_PARTICLES; i++) {
+        f32 t = (f32)i / (f32)(ROCKET_TRAIL_PARTICLES - 1); /* 0 = at rocket, 1 = trail end */
+
+        f32 dist = t * ROCKET_TRAIL_LENGTH;
+
+        /* Base position along trail */
+        f32 pos[3] = { pos_x, pos_y, pos_z };
+        f32 center[3];
+        for (int c = 0; c < 3; c++) {
+            center[c] = pos[c] + trail_dir[c] * dist;
+        }
+
+        /* Random perpendicular jitter for organic look - hash-based, stable per particle */
+        f32 jitter_scale = 2.0f + t * 4.0f; /* more jitter further from rocket */
+        f32 j1 = (r_beam_hash(i * 127 + age_seed + 31) * 2.0f - 1.0f) * jitter_scale;
+        f32 j2 = (r_beam_hash(i * 127 + age_seed + 4999) * 2.0f - 1.0f) * jitter_scale;
+        for (int c = 0; c < 3; c++) {
+            center[c] += perp1[c] * j1 + perp2[c] * j2;
+        }
+
+        /* Size: grows with distance from rocket */
+        f32 half_size = ROCKET_TRAIL_BASE_SIZE + t * ROCKET_TRAIL_EXPAND;
+
+        /* Color: smoky grey, fading with distance */
+        f32 alpha = (1.0f - t) * 0.5f; /* more opaque near rocket */
+        f32 brightness = 0.3f - t * 0.1f; /* darker further back */
+        if (brightness < 0.1f) brightness = 0.1f;
+
+        f32 color[4] = {
+            brightness * alpha,
+            brightness * alpha,
+            brightness * alpha,
+            alpha
+        };
+
+        u32 emitted = r_beam_emit_billboard_quad(verts, v_start + v_count,
+                                                  center, half_size,
+                                                  cam_pos, axis_n,
+                                                  color);
+        v_count += emitted;
+    }
+
+    if (v_count == 0) return;
+
+    r_beam_draw_t *draw = &g_r.beams.draws[g_r.beams.draw_count++];
+    draw->vertex_offset = v_start;
+    draw->vertex_count = v_count;
+    g_r.beams.vertex_count = v_start + v_count;
+}
+
+/* ---- Smoke Particle Batch ---- */
+
+static u32 s_smoke_batch_v_start;
+
+void qk_renderer_begin_smoke(void)
+{
+    s_smoke_batch_v_start = g_r.beams.vertex_count;
+}
+
+void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
+                                  f32 half_size, u32 color_rgba,
+                                  f32 angle_rad)
+{
+    if (!g_r.beams.initialized) return;
+    u32 offset = g_r.beams.vertex_count;
+    if (offset + 6 > R_BEAM_MAX_VERTICES) return;
+
+    /* Camera position for billboarding */
+    u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
+    r_view_uniforms_t *view = (r_view_uniforms_t *)g_r.frames[fi].view_ubo_mapped;
+    f32 cam_pos[3] = { 0, 0, 0 };
+    if (view) {
+        cam_pos[0] = view->camera_pos[0];
+        cam_pos[1] = view->camera_pos[1];
+        cam_pos[2] = view->camera_pos[2];
+    }
+
+    f32 center[3] = { x, y, z };
+
+    /* Camera-facing billboard */
+    f32 to_cam[3] = {
+        cam_pos[0] - x,
+        cam_pos[1] - y,
+        cam_pos[2] - z
+    };
+    r_beam_normalize(to_cam);
+
+    /* Right = world_up x to_cam */
+    f32 world_up[3] = { 0, 0, 1 };
+    f32 right[3];
+    r_beam_cross(right, world_up, to_cam);
+    r_beam_normalize(right);
+
+    /* Up = to_cam x right */
+    f32 up[3];
+    r_beam_cross(up, to_cam, right);
+    r_beam_normalize(up);
+
+    /* Rotate right/up by angle_rad around the to_cam axis */
+    f32 ca = cosf(angle_rad), sa = sinf(angle_rad);
+    f32 rot_right[3], rot_up[3];
+    for (int i = 0; i < 3; i++) {
+        rot_right[i] = right[i] * ca + up[i] * sa;
+        rot_up[i]    = -right[i] * sa + up[i] * ca;
+    }
+
+    /* Color from RGBA u32 */
+    f32 color[4] = {
+        (f32)((color_rgba >> 24) & 0xFF) / 255.0f,
+        (f32)((color_rgba >> 16) & 0xFF) / 255.0f,
+        (f32)((color_rgba >>  8) & 0xFF) / 255.0f,
+        (f32)( color_rgba        & 0xFF) / 255.0f
+    };
+
+    /* Quad corners (rotated) */
+    r_beam_vertex_t *verts = g_r.beams.vertices;
+    f32 corners[4][3];
+    for (int i = 0; i < 3; i++) {
+        corners[0][i] = center[i] - rot_right[i] * half_size - rot_up[i] * half_size;
+        corners[1][i] = center[i] + rot_right[i] * half_size - rot_up[i] * half_size;
+        corners[2][i] = center[i] + rot_right[i] * half_size + rot_up[i] * half_size;
+        corners[3][i] = center[i] - rot_right[i] * half_size + rot_up[i] * half_size;
+    }
+
+    memcpy(verts[offset + 0].position, corners[0], sizeof(f32) * 3);
+    memcpy(verts[offset + 0].color, color, sizeof(f32) * 4);
+    memcpy(verts[offset + 1].position, corners[1], sizeof(f32) * 3);
+    memcpy(verts[offset + 1].color, color, sizeof(f32) * 4);
+    memcpy(verts[offset + 2].position, corners[2], sizeof(f32) * 3);
+    memcpy(verts[offset + 2].color, color, sizeof(f32) * 4);
+
+    memcpy(verts[offset + 3].position, corners[0], sizeof(f32) * 3);
+    memcpy(verts[offset + 3].color, color, sizeof(f32) * 4);
+    memcpy(verts[offset + 4].position, corners[2], sizeof(f32) * 3);
+    memcpy(verts[offset + 4].color, color, sizeof(f32) * 4);
+    memcpy(verts[offset + 5].position, corners[3], sizeof(f32) * 3);
+    memcpy(verts[offset + 5].color, color, sizeof(f32) * 4);
+
+    g_r.beams.vertex_count = offset + 6;
+}
+
+void qk_renderer_end_smoke(void)
+{
+    u32 v_count = g_r.beams.vertex_count - s_smoke_batch_v_start;
+    if (v_count == 0) return;
+    if (g_r.beams.draw_count >= R_BEAM_MAX_DRAWS) return;
+
+    r_beam_draw_t *draw = &g_r.beams.draws[g_r.beams.draw_count++];
+    draw->vertex_offset = s_smoke_batch_v_start;
+    draw->vertex_count = v_count;
+}
+
 /* ---- Command Recording ---- */
 
 void r_beam_record_commands(VkCommandBuffer cmd, u32 frame_index)

@@ -34,6 +34,7 @@
 #define QK_PM_MIN_WALK_NORMAL   0.7f
 #define QK_PM_AIR_WISHSPEED_CAP 30.0f
 #define QK_PM_JUMP_BUFFER_TICKS 4       /* ~31ms at 128Hz */
+#define QK_PM_SKIM_TICKS        25      /* ~195ms at 128Hz (Quake-style 200ms skim window) */
 #define QK_TRACE_EPSILON        0.03125f
 
 /* ---- Player bounding box ---- */
@@ -109,6 +110,7 @@ typedef struct {
     bool        jump_held;
     u8          jump_buffer_ticks;
     u8          splash_slick_ticks;
+    u8          skim_ticks;         /* ground skim: slide along walls without velocity penalty */
     f32         max_speed;
     f32         gravity;
     u32         command_time;

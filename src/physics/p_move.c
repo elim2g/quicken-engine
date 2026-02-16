@@ -94,6 +94,7 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     }
 
     /* 2. Check ground */
+    bool was_airborne = !ps->on_ground;
     p_categorize_position(ps, world);
 
     /* 3. Jump check */
@@ -127,10 +128,43 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
        briefly airborne between hops and would otherwise hit the vertical
        face of the next step without step-up kicking in. Q3 uses
        PM_StepSlideMove in both code paths. */
+    vec3_t skim_saved_vel = ps->velocity;
+    f32 pre_collision_vz = ps->velocity.z;
+
     p_step_slide_move(ps, world, dt);
 
     /* 8. Re-check ground after move */
     p_categorize_position(ps, world);
+
+    /* Zero vertical velocity while firmly grounded. The collision
+       response in p_slide_move clips velocity against the floor normal,
+       but floating-point residuals can cause micro-oscillation.
+       Only do this when NOT in skim (skim needs to preserve momentum). */
+    if (ps->on_ground && ps->skim_ticks == 0) {
+        ps->velocity.z = 0.0f;
+    }
+
+    /* Skim velocity restore: preserve speed through wall clips.
+       Done after step 8 so on_ground reflects post-collision state.
+       Only restore z when airborne -- on ground, the collision response
+       properly zeroes z against the floor; restoring a stale negative z
+       causes vertical oscillation (floor vibration). */
+    if (ps->skim_ticks > 0) {
+        ps->velocity.x = skim_saved_vel.x;
+        ps->velocity.y = skim_saved_vel.y;
+        if (!ps->on_ground) {
+            ps->velocity.z = skim_saved_vel.z;
+        }
+    }
+
+    /* 8b. Skim activation: landing after meaningful airtime.
+       Checked after step 8 so on_ground is reliable regardless of
+       fall speed (old step 2b missed fast landings where the player
+       passed through the 0.25-unit ground-trace window in one tick).
+       Uses pre-collision velocity since floor collision clips z to 0. */
+    if (was_airborne && ps->on_ground && pre_collision_vz < -50.0f) {
+        ps->skim_ticks = QK_PM_SKIM_TICKS;
+    }
 
     /* Slick period: don't snap to ground while moving upward (rocket jump) */
     if (ps->splash_slick_ticks > 0 && ps->velocity.z > 0.0f) {
@@ -140,5 +174,12 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     /* 9. Decrement splash slick counter */
     if (ps->splash_slick_ticks > 0) {
         ps->splash_slick_ticks--;
+    }
+
+    /* 10. Decrement skim counter. The timer runs regardless of ground
+       state -- the whole point is that after landing, the player jumps
+       and skims wall corners while AIRBORNE during the skim window. */
+    if (ps->skim_ticks > 0) {
+        ps->skim_ticks--;
     }
 }
