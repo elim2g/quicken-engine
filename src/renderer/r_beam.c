@@ -699,15 +699,104 @@ void qk_renderer_end_smoke(void)
     draw->vertex_count = v_count;
 }
 
-/* ---- Explosion Effect (stub - renderer agent will implement) ---- */
+/* ---- Explosion Effect ---- */
+
+#define EXPLOSION_PARTICLE_COUNT    24
+#define EXPLOSION_DURATION          1.0f
+#define EXPLOSION_DRIFT_SPEED       0.4f    /* fraction of radius per second */
+#define EXPLOSION_BASE_HALF_SIZE    6.0f
+#define EXPLOSION_GOLDEN_ANGLE      2.399963f  /* PI * (3 - sqrt(5)) */
 
 void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
                                  f32 radius, f32 age_seconds,
                                  f32 r, f32 g, f32 b, f32 a)
 {
-    (void)x; (void)y; (void)z;
-    (void)radius; (void)age_seconds;
-    (void)r; (void)g; (void)b; (void)a;
+    if (!g_r.beams.initialized) return;
+    if (g_r.beams.draw_count >= R_BEAM_MAX_DRAWS) return;
+    if (age_seconds >= EXPLOSION_DURATION) return;
+    if (a <= 0.0f) return;
+
+    f32 t = age_seconds / EXPLOSION_DURATION;
+    f32 fade = (1.0f - t);
+    fade = fade * fade;   /* quadratic falloff */
+
+    /* Camera position for billboarding */
+    u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
+    r_view_uniforms_t *view = (r_view_uniforms_t *)g_r.frames[fi].view_ubo_mapped;
+    f32 cam_pos[3] = { 0.0f, 0.0f, 0.0f };
+    if (view) {
+        cam_pos[0] = view->camera_pos[0];
+        cam_pos[1] = view->camera_pos[1];
+        cam_pos[2] = view->camera_pos[2];
+    }
+
+    /* Use world-up as billboard axis for point explosions */
+    f32 up_axis[3] = { 0.0f, 0.0f, 1.0f };
+
+    u32 v_start = g_r.beams.vertex_count;
+    u32 v_count = 0;
+    r_beam_vertex_t *verts = g_r.beams.vertices;
+
+    /* Distribute particles on a Fibonacci sphere */
+    for (u32 i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+        /* Fibonacci sphere: even distribution on unit sphere */
+        f32 fi_y = 1.0f - (2.0f * (f32)i + 1.0f) / (f32)EXPLOSION_PARTICLE_COUNT;
+        f32 r_xz = sqrtf(1.0f - fi_y * fi_y);
+        f32 theta = EXPLOSION_GOLDEN_ANGLE * (f32)i;
+        f32 dir[3] = {
+            r_xz * cosf(theta),
+            r_xz * sinf(theta),
+            fi_y
+        };
+
+        /* Per-particle random drift factor (stable per particle index) */
+        f32 drift_var = 0.7f + 0.6f * r_beam_hash(i * 197 + 53);
+        f32 dist = radius * (1.0f + t * EXPLOSION_DRIFT_SPEED * drift_var);
+
+        f32 center[3] = {
+            x + dir[0] * dist,
+            y + dir[1] * dist,
+            z + dir[2] * dist
+        };
+
+        /* Per-particle size variation: shrink as age increases */
+        f32 size_var = 0.6f + 0.8f * r_beam_hash(i * 311 + 7);
+        f32 half_size = EXPLOSION_BASE_HALF_SIZE * size_var * (1.0f - t * 0.5f);
+
+        /* Fiery color variation per particle: shift between orange and yellow */
+        f32 hue_shift = r_beam_hash(i * 73 + 1021);
+        f32 pr = r * (0.9f + 0.2f * hue_shift);
+        f32 pg = g * (0.5f + 0.5f * hue_shift);
+        f32 pb = b * (0.2f + 0.3f * (1.0f - hue_shift));
+
+        /* Sparkle: time-varying brightness jitter */
+        f32 sparkle = 0.75f + 0.25f * r_beam_hash(i * 41 + (u32)(age_seconds * 30.0f));
+
+        /* Per-particle wisp: some particles fade faster for organic look */
+        f32 wisp = 1.0f - t * 0.5f * r_beam_hash(i * 59 + 3331);
+
+        f32 intensity = fade * sparkle * wisp * a;
+
+        f32 color[4] = {
+            pr * intensity,
+            pg * intensity,
+            pb * intensity,
+            intensity
+        };
+
+        u32 emitted = r_beam_emit_billboard_quad(verts, v_start + v_count,
+                                                  center, half_size,
+                                                  cam_pos, up_axis,
+                                                  color);
+        v_count += emitted;
+    }
+
+    if (v_count == 0) return;
+
+    r_beam_draw_t *draw = &g_r.beams.draws[g_r.beams.draw_count++];
+    draw->vertex_offset = v_start;
+    draw->vertex_count = v_count;
+    g_r.beams.vertex_count = v_start + v_count;
 }
 
 /* ---- Command Recording ---- */
