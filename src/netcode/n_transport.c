@@ -112,7 +112,7 @@ bool n_transport_open_udp(n_transport_t *t, u16 bind_port) {
         return false;
     }
 
-    t->socket_fd = (int)sock;
+    t->socket_fd = (intptr_t)sock;
 #else
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return false;
@@ -143,7 +143,7 @@ void n_transport_close(n_transport_t *t) {
 #ifdef QK_PLATFORM_WINDOWS
         closesocket((SOCKET)t->socket_fd);
 #else
-        close(t->socket_fd);
+        close((int)t->socket_fd);
 #endif
         t->socket_fd = -1;
     }
@@ -165,7 +165,7 @@ static i32 udp_send(n_transport_t *t, const n_address_t *to,
     if (result == SOCKET_ERROR) return -1;
     return result;
 #else
-    ssize_t result = sendto(t->socket_fd, data, len, 0,
+    ssize_t result = sendto((int)t->socket_fd, data, len, 0,
                             (struct sockaddr *)&addr, sizeof(addr));
     if (result < 0) return -1;
     return (i32)result;
@@ -184,7 +184,7 @@ static i32 udp_recv(n_transport_t *t, n_address_t *from,
     if (result == SOCKET_ERROR) return 0;
 #else
     socklen_t addr_len = sizeof(addr);
-    ssize_t result = recvfrom(t->socket_fd, data, max_len, 0,
+    ssize_t result = recvfrom((int)t->socket_fd, data, max_len, 0,
                               (struct sockaddr *)&addr, &addr_len);
     if (result < 0) return 0;
 #endif

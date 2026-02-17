@@ -127,6 +127,25 @@ void n_server_disconnect_client(n_server_t *srv, u32 slot) {
 
     N_DBG("disconnect_client: slot=%u loopback=%d", slot, cl->is_loopback);
 
+    /* Notify the client (best-effort, no retransmit) */
+    if (cl->state == N_CONN_CONNECTED) {
+        u8 pkt[N_TRANSPORT_MTU];
+        n_packet_header_t hdr = {0};
+        hdr.sequence = cl->outgoing_sequence++;
+        hdr.ack = cl->incoming_sequence;
+        hdr.ack_bitfield = cl->ack_bitfield;
+        n_packet_header_write(pkt, &hdr);
+
+        n_bitwriter_t w;
+        n_bitwriter_init(&w, pkt + N_PACKET_HEADER_SIZE,
+                         N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
+        n_msg_header_write(&w, N_MSG_DISCONNECT, 0);
+        n_msg_header_write(&w, N_MSG_NOP, 0);
+
+        u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
+        n_server_send_to_client(srv, slot, pkt, total);
+    }
+
     if (cl->is_loopback) {
         n_transport_close(&cl->transport);
     }
@@ -137,23 +156,6 @@ void n_server_disconnect_client(n_server_t *srv, u32 slot) {
     if (srv->client_count > 0) {
         srv->client_count--;
     }
-}
-
-int n_server_connect_loopback(n_server_t *srv) {
-    i32 slot = n_server_allocate_slot(srv);
-    if (slot < 0) return -1;
-
-    n_client_slot_t *cl = &srv->clients[slot];
-    slot_reset(cl);
-    cl->client_id = (u8)slot;
-    cl->state = N_CONN_CONNECTED;
-    cl->is_loopback = true;
-    cl->address.ip = 0;
-    cl->address.port = 0;
-    cl->last_packet_recv_time = n_platform_time();
-
-    srv->client_count++;
-    return slot;
 }
 
 /* ---- Send to client ---- */
@@ -171,26 +173,6 @@ void n_server_send_to_client(n_server_t *srv, u32 slot, const u8 *data, u32 len)
     srv->stats.bytes_sent += len;
 }
 
-/* ---- Build and send a packet to a client ---- */
-
-static u32 build_packet(n_server_t *srv, u32 slot, u8 *buf, u32 max_len) {
-    n_client_slot_t *cl = &srv->clients[slot];
-
-    /* Write packet header */
-    n_packet_header_t hdr;
-    hdr.sequence = cl->outgoing_sequence++;
-    hdr.ack = cl->incoming_sequence;
-    hdr.ack_bitfield = cl->ack_bitfield;
-
-    n_packet_header_write(buf, &hdr);
-
-    /* Payload area starts after 8-byte header */
-    n_bitwriter_t w;
-    n_bitwriter_init(&w, buf + N_PACKET_HEADER_SIZE, max_len - N_PACKET_HEADER_SIZE);
-
-    return N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
-}
-
 /* ---- Snapshot broadcast ---- */
 
 void n_server_broadcast_snapshots(n_server_t *srv) {
@@ -205,6 +187,7 @@ void n_server_broadcast_snapshots(n_server_t *srv) {
     for (u32 i = 0; i < srv->max_clients; i++) {
         n_client_slot_t *cl = &srv->clients[i];
         if (cl->state != N_CONN_CONNECTED) continue;
+        if (!cl->map_ready) continue;   /* wait for map handshake */
 
         /* Find baseline snapshot for this client */
         const n_snapshot_t *baseline = NULL;
@@ -396,9 +379,16 @@ static void handle_connect_response(n_server_t *srv, u32 slot,
     n_bitwriter_t w;
     n_bitwriter_init(&w, resp + N_PACKET_HEADER_SIZE,
                      N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
-    n_msg_header_write(&w, N_MSG_CONNECT_ACCEPTED, 5);
+    u32 map_name_len = (u32)strlen(srv->map_name);
+    if (map_name_len > 127) map_name_len = 127;
+    u16 accept_payload_len = (u16)(5 + 1 + map_name_len);
+    n_msg_header_write(&w, N_MSG_CONNECT_ACCEPTED, accept_payload_len);
     n_write_u8(&w, cl->client_id);
     n_write_u32(&w, srv->tick);
+    n_write_u8(&w, (u8)map_name_len);
+    for (u32 mi = 0; mi < map_name_len; mi++) {
+        n_write_u8(&w, (u8)srv->map_name[mi]);
+    }
     n_msg_header_write(&w, N_MSG_NOP, 0);
 
     u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
@@ -480,6 +470,49 @@ static void handle_clock_sync_message(n_server_t *srv, u32 slot,
     n_msg_header_write(&w, N_MSG_CLOCK_SYNC, 16);
     n_write_f64(&w, client_send_time);
     n_write_f64(&w, n_platform_time());
+    n_msg_header_write(&w, N_MSG_NOP, 0);
+
+    u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
+    n_server_send_to_client(srv, slot, resp, total);
+}
+
+static void handle_map_loaded_message(n_server_t *srv, u32 slot,
+                                       const u8 *payload, u32 len) {
+    n_client_slot_t *cl = &srv->clients[slot];
+    if (cl->state != N_CONN_CONNECTED) return;
+    if (len < 4) return;
+
+    n_bitreader_t r;
+    n_bitreader_init(&r, payload, len);
+    u32 client_map_hash = n_read_u32(&r);
+
+    /* Validate map hash (0 on server means no map set, accept anything) */
+    if (srv->map_name_hash != 0 && client_map_hash != srv->map_name_hash) {
+        N_DBG("map_loaded: slot=%u hash mismatch (client=0x%08x server=0x%08x)",
+              slot, client_map_hash, srv->map_name_hash);
+        return;
+    }
+
+    cl->map_ready = true;
+
+    /* Reset snapshot baseline so client gets a full snapshot first */
+    cl->last_acked_snapshot_tick = 0;
+
+    N_DBG("map_loaded: slot=%u confirmed (hash=0x%08x)", slot, client_map_hash);
+
+    /* Send MAP_CONFIRMED with current server tick */
+    u8 resp[N_TRANSPORT_MTU];
+    n_packet_header_t hdr = {0};
+    hdr.sequence = cl->outgoing_sequence++;
+    hdr.ack = cl->incoming_sequence;
+    hdr.ack_bitfield = cl->ack_bitfield;
+    n_packet_header_write(resp, &hdr);
+
+    n_bitwriter_t w;
+    n_bitwriter_init(&w, resp + N_PACKET_HEADER_SIZE,
+                     N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
+    n_msg_header_write(&w, N_MSG_MAP_CONFIRMED, 4);
+    n_write_u32(&w, srv->tick);
     n_msg_header_write(&w, N_MSG_NOP, 0);
 
     u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
@@ -605,6 +638,16 @@ void n_server_process_packet(n_server_t *srv, u8 *data, u32 len,
                     payload_buf[b] = n_read_u8(&r);
                 }
                 handle_clock_sync_message(srv, (u32)slot, payload_buf, payload_bytes);
+                break;
+            }
+
+            case N_MSG_MAP_LOADED: {
+                u8 payload_buf[64];
+                u32 payload_bytes = msg.length < 64 ? msg.length : 64;
+                for (u32 b = 0; b < payload_bytes; b++) {
+                    payload_buf[b] = n_read_u8(&r);
+                }
+                handle_map_loaded_message(srv, (u32)slot, payload_buf, payload_bytes);
                 break;
             }
 

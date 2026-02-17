@@ -136,12 +136,14 @@ void n_client_connect_local(n_client_t *cl, n_server_t *srv) {
 
     server_slot->state = N_CONN_CONNECTED;
     server_slot->is_loopback = true;
+    server_slot->map_ready = true;  /* loopback: same process, map is shared */
     server_slot->last_packet_recv_time = now;
     srv->client_count++;
 
     cl->conn_state = N_CONN_CONNECTED;
     cl->client_id = (u8)slot;
     cl->input_tick = srv->tick;
+    cl->map_ready = true;   /* loopback: same process, map is shared */
 
     /* Zero clock offset for loopback (zero latency, same clock) */
     cl->clock.smoothed_offset = (f64)srv->tick * N_TICK_INTERVAL - now;
@@ -179,6 +181,7 @@ void n_client_disconnect(n_client_t *cl) {
     cl->has_baseline = false;
     cl->interp_count = 0;
     cl->interp_write = 0;
+    cl->map_ready = false;
     n_clock_init(&cl->clock);
 }
 
@@ -378,6 +381,19 @@ static void handle_connect_accepted(n_client_t *cl, const u8 *payload, u32 len) 
     cl->conn_state = N_CONN_CONNECTED;
     cl->input_tick = server_tick;
 
+    /* Read map name (if present in payload) */
+    cl->server_map_name[0] = '\0';
+    if (len >= 6) {
+        u8 map_name_len = n_read_u8(&r);
+        if (map_name_len > 0 && map_name_len < sizeof(cl->server_map_name)) {
+            for (u32 mi = 0; mi < map_name_len && !n_bitreader_overflowed(&r); mi++) {
+                cl->server_map_name[mi] = (char)n_read_u8(&r);
+            }
+            cl->server_map_name[map_name_len] = '\0';
+            N_DBG("connect_accepted: map='%s'", cl->server_map_name);
+        }
+    }
+
     /* Initialize clock offset estimate from server tick */
     f64 now = n_platform_time();
     f64 server_time = (f64)server_tick * N_TICK_INTERVAL;
@@ -457,6 +473,21 @@ void n_client_process_packet(n_client_t *cl, const u8 *data, u32 len, f64 now) {
             case N_MSG_CLOCK_SYNC:
                 handle_clock_sync_response(cl, payload_buf, payload_bytes);
                 break;
+            case N_MSG_MAP_CONFIRMED: {
+                if (payload_bytes >= 4) {
+                    n_bitreader_t mr;
+                    n_bitreader_init(&mr, payload_buf, payload_bytes);
+                    u32 server_tick = n_read_u32(&mr);
+                    cl->map_ready = true;
+                    cl->input_tick = server_tick;
+                    /* Reset interp buffer for clean start */
+                    cl->interp_count = 0;
+                    cl->interp_write = 0;
+                    cl->has_baseline = false;
+                    N_DBG("map_confirmed: server_tick=%u", server_tick);
+                }
+                break;
+            }
             case N_MSG_DISCONNECT:
                 cl->conn_state = N_CONN_DISCONNECTED;
                 break;

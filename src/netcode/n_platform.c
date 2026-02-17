@@ -92,3 +92,14 @@ u32 n_random_u32(void) {
     s_rng_state *= 16777619u;
     return s_rng_state;
 }
+
+u32 n_hash_map_name(const char *name) {
+    u32 hash = 2166136261u;
+    if (name) {
+        while (*name) {
+            hash ^= (u8)*name++;
+            hash *= 16777619u;
+        }
+    }
+    return hash;
+}

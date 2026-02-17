@@ -156,9 +156,9 @@ static void test_snapshot_flow(void) {
 
     /* Server sets an entity */
     n_entity_state_t ent = {0};
-    ent.pos_x = (i16)(100.0f / 0.125f);  /* 100.0 in 13.3 fixed-point = 800 */
-    ent.pos_y = (i16)(200.0f / 0.125f);
-    ent.pos_z = (i16)(50.0f / 0.125f);
+    ent.pos_x = (i16)(100.0f / 0.5f);    /* 100.0 in 15.1 fixed-point = 200 */
+    ent.pos_y = (i16)(200.0f / 0.5f);
+    ent.pos_z = (i16)(50.0f / 0.5f);
     ent.vel_x = 300;
     ent.vel_y = 0;
     ent.vel_z = 0;
@@ -264,8 +264,8 @@ static void test_delta_compression(void) {
     /* Set up 3 entities */
     for (u8 id = 0; id < 3; id++) {
         n_entity_state_t ent = {0};
-        ent.pos_x = (i16)((f32)(id * 100) / 0.125f);
-        ent.pos_y = (i16)((f32)(id * 50) / 0.125f);
+        ent.pos_x = (i16)((f32)(id * 100) / 0.5f);
+        ent.pos_y = (i16)((f32)(id * 50) / 0.5f);
         ent.entity_type = id + 1;
         ent.health = 100 + id * 50;
         qk_net_server_set_entity(id, &ent);
@@ -279,8 +279,8 @@ static void test_delta_compression(void) {
 
     /* Now update only entity 1's position (delta should be small) */
     n_entity_state_t ent1_update = {0};
-    ent1_update.pos_x = (i16)(150.0f / 0.125f);
-    ent1_update.pos_y = (i16)(75.0f / 0.125f);
+    ent1_update.pos_x = (i16)(150.0f / 0.5f);
+    ent1_update.pos_y = (i16)(75.0f / 0.5f);
     ent1_update.entity_type = 2;
     ent1_update.health = 150;
     qk_net_server_set_entity(1, &ent1_update);
@@ -401,7 +401,7 @@ static void test_full_game_loop(void) {
 
         /* Update entity state */
         n_entity_state_t ent = {0};
-        ent.pos_x = (i16)(player_x / 0.125f);
+        ent.pos_x = (i16)(player_x / 0.5f);
         ent.pos_y = 0;
         ent.pos_z = 0;
         ent.entity_type = 1;
@@ -492,7 +492,7 @@ static void test_early_frame_interpolation(void) {
 
     /* Now set an entity and tick once */
     n_entity_state_t ent = {0};
-    ent.pos_x = (i16)(10.0f / 0.125f);
+    ent.pos_x = (i16)(10.0f / 0.5f);
     ent.entity_type = 1;
     ent.health = 100;
     qk_net_server_set_entity(0, &ent);

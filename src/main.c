@@ -8,6 +8,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -37,6 +38,21 @@ static f64 s_demo_play_start_time;
 /* ---- Deferred map change ---- */
 static char s_pending_map[256];
 static char s_loaded_map_path[512];
+
+/* ---- Remote client tracking (for mid-session join detection) ---- */
+static bool s_client_map_ready[QK_MAX_PLAYERS];
+
+/* ---- Connection mode ---- */
+typedef enum {
+    CONN_MODE_LOCAL,        /* loopback: hosting + playing locally */
+    CONN_MODE_CONNECTING,   /* UDP handshake in progress */
+    CONN_MODE_LOADING_MAP,  /* connected, loading server's map */
+    CONN_MODE_HANDSHAKING,  /* map loaded, waiting for server confirmation */
+    CONN_MODE_REMOTE        /* fully connected to remote server */
+} conn_mode_t;
+
+static conn_mode_t s_conn_mode = CONN_MODE_LOCAL;
+static f64         s_connect_start_time;
 
 /* ---- Cached cvar pointers (set during init, read each frame) ---- */
 
@@ -455,6 +471,23 @@ static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
 /* ---- Server Tick ---- */
 
 static void server_tick(qk_phys_world_t *phys_world) {
+    /* 0. Detect remote client connects and disconnects */
+    for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
+        bool was_ready = s_client_map_ready[i];
+        bool is_ready = qk_net_server_is_client_map_ready(i);
+
+        if (is_ready && !was_ready) {
+            /* New client is map-ready: connect them to gameplay.
+             * They start as spectators and join the next round. */
+            qk_game_player_connect(i, "Remote", QK_TEAM_ALPHA);
+            s_client_map_ready[i] = true;
+        } else if (!is_ready && was_ready) {
+            /* Client disconnected or lost map-ready: remove from gameplay */
+            qk_game_player_disconnect(i);
+            s_client_map_ready[i] = false;
+        }
+    }
+
     /* 1. Read inputs from all connected clients */
     for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
         qk_usercmd_t cmd;
@@ -486,6 +519,10 @@ static void server_tick(qk_phys_world_t *phys_world) {
 static void cmd_map(i32 argc, const char **argv) {
     if (argc < 2) {
         qk_console_print("Usage: map <name>");
+        return;
+    }
+    if (s_conn_mode != CONN_MODE_LOCAL) {
+        qk_console_print("Cannot change map while connected to a remote server. Disconnect first.");
         return;
     }
     snprintf(s_pending_map, sizeof(s_pending_map), "%s", argv[1]);
@@ -532,6 +569,130 @@ static void cmd_demo_play(i32 argc, const char **argv) {
     } else {
         qk_console_printf("Failed to play demo '%s'.", argv[1]);
     }
+}
+
+/* ---- Loopback Restoration Helpers ---- */
+
+/* Restore loopback netcode (server + client). Caller must have already
+ * shut down the previous client (and server if applicable). */
+static void restore_loopback_netcode(void) {
+    qk_net_server_config_t nsc = {0};
+    nsc.server_port = 0;
+    nsc.max_clients = QK_MAX_PLAYERS;
+    nsc.tick_rate = (f64)QK_TICK_RATE;
+    qk_net_server_init(&nsc);
+
+    qk_net_client_config_t ncc = {0};
+    ncc.interp_delay = 0.0;
+    qk_net_client_init(&ncc);
+    qk_net_client_connect_local();
+
+    s_conn_mode = CONN_MODE_LOCAL;
+}
+
+/* Restore local gameplay after remote disconnect.
+ * Reinits gameplay, connects local player with spawn state, resets prediction. */
+static void restore_local_gameplay(void) {
+    qk_game_shutdown();
+
+    qk_game_config_t gc = {0};
+    qk_game_init(&gc);
+
+    u8 lid = qk_net_client_get_id();
+    s_local_client_id = lid;
+    memset(s_client_map_ready, 0, sizeof(s_client_map_ready));
+    qk_game_player_connect(lid, "Player", QK_TEAM_ALPHA);
+    s_client_map_ready[lid] = true;
+
+    qk_player_state_t *ps = qk_game_get_player_state_mut(lid);
+    if (ps) {
+        ps->alive_state = QK_PSTATE_ALIVE;
+        ps->health = QK_CA_SPAWN_HEALTH;
+        ps->armor = QK_CA_SPAWN_ARMOR;
+        ps->weapon = QK_WEAPON_ROCKET;
+        ps->ammo[QK_WEAPON_ROCKET] = 50;
+        ps->ammo[QK_WEAPON_RAIL] = 25;
+        ps->ammo[QK_WEAPON_LG] = 150;
+        qk_physics_player_init(ps, (vec3_t){0.0f, 0.0f, 24.0f});
+    }
+
+    memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
+    memset(cl_pred_history, 0, sizeof(cl_pred_history));
+    memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
+    cl_cmd_sequence = 0;
+    cl_has_prediction = false;
+    cl_pred_accumulator = 0.0f;
+    cl_last_reconciled_ack = 0;
+}
+
+/* ---- Connect / Disconnect Console Commands ---- */
+
+static void cmd_connect(i32 argc, const char **argv) {
+    if (argc < 2) {
+        qk_console_print("Usage: connect <ip>:<port>");
+        return;
+    }
+    if (s_conn_mode != CONN_MODE_LOCAL) {
+        qk_console_print("Already connecting or connected to a remote server. Disconnect first.");
+        return;
+    }
+
+    /* Parse address:port */
+    char addr_buf[256];
+    snprintf(addr_buf, sizeof(addr_buf), "%s", argv[1]);
+    char *colon = strrchr(addr_buf, ':');
+    if (!colon) {
+        qk_console_print("Invalid address. Use <ip>:<port> (e.g. 127.0.0.1:27960)");
+        return;
+    }
+    *colon = '\0';
+    u16 port = (u16)atoi(colon + 1);
+    if (port == 0) {
+        qk_console_print("Invalid port number.");
+        return;
+    }
+
+    qk_console_printf("Connecting to %s:%u...", addr_buf, (u32)port);
+
+    /* Tear down loopback server + client */
+    qk_net_client_disconnect();
+    qk_net_client_shutdown();
+    qk_net_server_shutdown();
+
+    /* Init fresh client for remote connection */
+    qk_net_client_config_t ncc = {0};
+    ncc.interp_delay = 0.020;  /* 20ms interpolation delay for remote */
+    qk_net_client_init(&ncc);
+
+    qk_result_t res = qk_net_client_connect_remote(addr_buf, port);
+    if (res != QK_SUCCESS) {
+        qk_console_printf("Failed to connect: error %d", res);
+        qk_net_client_shutdown();
+        restore_loopback_netcode();
+        return;
+    }
+
+    s_conn_mode = CONN_MODE_CONNECTING;
+    s_connect_start_time = qk_platform_time_now();
+}
+
+static void cmd_disconnect(i32 argc, const char **argv) {
+    QK_UNUSED(argc);
+    QK_UNUSED(argv);
+
+    if (s_conn_mode == CONN_MODE_LOCAL) {
+        qk_console_print("Not connected to a remote server.");
+        return;
+    }
+
+    qk_console_print("Disconnecting...");
+
+    qk_net_client_disconnect();
+    qk_net_client_shutdown();
+    restore_loopback_netcode();
+    restore_local_gameplay();
+
+    qk_console_print("Disconnected. Returned to local server.");
 }
 
 /* ---- Main ---- */
@@ -638,6 +799,10 @@ int main(int argc, char *argv[]) {
                              "Play back a recorded demo");
     qk_console_register_cmd("diag", cmd_diag,
                              "Diagnostic trace: diag start|stop");
+    qk_console_register_cmd("connect", cmd_connect,
+                             "Connect to a remote server (connect <ip>:<port>)");
+    qk_console_register_cmd("disconnect", cmd_disconnect,
+                             "Disconnect from remote server");
 
     /* ---- Initial world (test room as baseline) ---- */
     qk_map_data_t map_data;
@@ -693,6 +858,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "FATAL: Failed to connect player (%d)\n", res);
         goto shutdown;
     }
+    s_client_map_ready[local_client_id] = true;
 
     /* Spawn the player at default position (map load will respawn) */
     qk_player_state_t *ps = qk_game_get_player_state_mut(local_client_id);
@@ -759,8 +925,11 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        /* ---- Handle deferred map change ---- */
-        if (s_pending_map[0] != '\0') {
+        /* Sync local_client_id from file-static (console commands may change it) */
+        local_client_id = s_local_client_id;
+
+        /* ---- Handle deferred map change (local mode only) ---- */
+        if (s_pending_map[0] != '\0' && s_conn_mode == CONN_MODE_LOCAL) {
             char path[512];
             bool found = false;
 
@@ -837,6 +1006,7 @@ int main(int argc, char *argv[]) {
                     nsc.max_clients = QK_MAX_PLAYERS;
                     nsc.tick_rate = (f64)QK_TICK_RATE;
                     qk_net_server_init(&nsc);
+                    qk_net_server_set_map(path);
 
                     qk_net_client_config_t ncc = {0};
                     ncc.interp_delay = 0.0;
@@ -847,7 +1017,9 @@ int main(int argc, char *argv[]) {
                     s_local_client_id = local_client_id;
 
                     /* Player (connect + spawn) */
+                    memset(s_client_map_ready, 0, sizeof(s_client_map_ready));
                     qk_game_player_connect(local_client_id, "Player", QK_TEAM_ALPHA);
+                    s_client_map_ready[local_client_id] = true;
                     qk_player_state_t *mps = qk_game_get_player_state_mut(local_client_id);
                     if (mps) {
                         mps->alive_state = QK_PSTATE_ALIVE;
@@ -886,6 +1058,12 @@ int main(int argc, char *argv[]) {
                     s_smoke_pool_head = 0;
                     memset(s_rocket_trackers, 0, sizeof(s_rocket_trackers));
 
+                    /* Map handshake: notify netcode that map is loaded.
+                     * For loopback this is fast-tracked (no round trip).
+                     * For remote, this sends N_MSG_MAP_LOADED to server
+                     * and the server won't send snapshots until confirmed. */
+                    qk_net_client_notify_map_loaded(path);
+
                     /* Reset time reference so the next frame's dt
                      * doesn't include the map loading duration.
                      * Without this, the accumulators spike and cause
@@ -896,6 +1074,144 @@ int main(int argc, char *argv[]) {
                 }
             }
             s_pending_map[0] = '\0';
+        }
+
+        /* ---- Remote connection state machine ---- */
+        if (s_conn_mode == CONN_MODE_CONNECTING) {
+            qk_net_client_tick();  /* drive the UDP handshake */
+            qk_conn_state_t cs = qk_net_client_get_state();
+            if (cs == QK_CONN_CONNECTED) {
+                const char *server_map = qk_net_client_get_server_map();
+                if (server_map && server_map[0] != '\0') {
+                    qk_console_printf("Connected! Server map: %s", server_map);
+                    s_conn_mode = CONN_MODE_LOADING_MAP;
+
+                    /* Load map for remote play (no netcode teardown) */
+                    char rpath[512];
+                    bool rfound = false;
+                    snprintf(rpath, sizeof(rpath), "assets/maps/%s", server_map);
+                    { FILE *mf = fopen(rpath, "rb"); if (mf) { fclose(mf); rfound = true; } }
+                    if (!rfound) {
+                        const char *exts[] = { ".bsp", ".map" };
+                        for (int e = 0; e < 2 && !rfound; e++) {
+                            snprintf(rpath, sizeof(rpath), "assets/maps/%s%s", server_map, exts[e]);
+                            FILE *mf = fopen(rpath, "rb");
+                            if (mf) { fclose(mf); rfound = true; }
+                        }
+                    }
+                    if (!rfound) {
+                        snprintf(rpath, sizeof(rpath), "%s", server_map);
+                        FILE *mf = fopen(rpath, "rb");
+                        if (mf) { fclose(mf); rfound = true; }
+                    }
+
+                    if (!rfound) {
+                        qk_console_printf("Map not found locally: %s", server_map);
+                        qk_console_print("Disconnecting...");
+                        qk_net_client_disconnect();
+                        qk_net_client_shutdown();
+                        restore_loopback_netcode();
+                    } else {
+                        qk_map_data_t new_map;
+                        memset(&new_map, 0, sizeof(new_map));
+                        res = qk_map_load(rpath, &new_map);
+                        if (res != QK_SUCCESS) {
+                            qk_console_printf("Failed to load map '%s' (%d)", server_map, res);
+                            qk_net_client_disconnect();
+                            qk_net_client_shutdown();
+                            restore_loopback_netcode();
+                        } else {
+                            /* Tear down old game state (but NOT netcode) */
+                            qk_game_shutdown();
+                            qk_renderer_free_world();
+                            qk_physics_world_destroy(phys_world);
+                            phys_world = NULL;
+                            qk_map_free(&map_data);
+
+                            /* Rebuild world */
+                            map_data = new_map;
+                            map_loaded = true;
+                            strncpy(s_loaded_map_path, rpath, sizeof(s_loaded_map_path) - 1);
+                            s_loaded_map_path[sizeof(s_loaded_map_path) - 1] = '\0';
+                            s_map_path = s_loaded_map_path;
+
+                            if (map_data.collision.brush_count > 0)
+                                phys_world = qk_physics_world_create(&map_data.collision);
+                            if (!phys_world)
+                                phys_world = qk_physics_world_create_test_room();
+
+                            if (map_data.vertex_count > 0) {
+                                for (u32 si = 0; si < map_data.surface_count; si++)
+                                    map_data.surfaces[si].texture_index = grid_tex;
+                                qk_renderer_upload_world(map_data.vertices, map_data.vertex_count,
+                                                          map_data.indices, map_data.index_count,
+                                                          map_data.surfaces, map_data.surface_count);
+                            }
+
+                            /* Game state */
+                            qk_game_config_t gc2 = {0};
+                            qk_game_init(&gc2);
+
+                            local_client_id = qk_net_client_get_id();
+                            s_local_client_id = local_client_id;
+                            memset(s_client_map_ready, 0, sizeof(s_client_map_ready));
+                            qk_game_player_connect(local_client_id, "Player", QK_TEAM_ALPHA);
+                            s_client_map_ready[local_client_id] = true;
+
+                            qk_game_load_triggers(map_data.teleporters, map_data.teleporter_count,
+                                                   map_data.jump_pads, map_data.jump_pad_count);
+
+                            /* Reset prediction + effect state */
+                            memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
+                            memset(cl_pred_history, 0, sizeof(cl_pred_history));
+                            memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
+                            cl_cmd_sequence = 0;
+                            cl_has_prediction = false;
+                            cl_pred_accumulator = 0.0f;
+                            cl_last_reconciled_ack = 0;
+                            memset(s_rail_beams, 0, sizeof(s_rail_beams));
+                            memset(s_prev_flags, 0, sizeof(s_prev_flags));
+                            s_rail_beam_next = 0;
+                            memset(s_smoke_pool, 0, sizeof(s_smoke_pool));
+                            s_smoke_pool_head = 0;
+                            memset(s_rocket_trackers, 0, sizeof(s_rocket_trackers));
+
+                            /* Handshake: notify server that map is loaded */
+                            qk_net_client_notify_map_loaded(rpath);
+                            s_conn_mode = CONN_MODE_HANDSHAKING;
+                            s_connect_start_time = qk_platform_time_now();
+                            prev_time = s_connect_start_time;
+                            qk_console_printf("Loaded: %s (waiting for server confirmation...)", rpath);
+                        }
+                    }
+                }
+            } else if (cs == QK_CONN_DISCONNECTED) {
+                qk_console_print("Connection failed.");
+                qk_net_client_shutdown();
+                restore_loopback_netcode();
+            } else if (now - s_connect_start_time > 10.0) {
+                qk_console_print("Connection timed out.");
+                qk_net_client_disconnect();
+                qk_net_client_shutdown();
+                restore_loopback_netcode();
+            }
+        }
+
+        if (s_conn_mode == CONN_MODE_HANDSHAKING) {
+            qk_net_client_tick();
+            if (qk_net_client_is_map_ready()) {
+                qk_console_print("Server confirmed map. Entering game.");
+                s_conn_mode = CONN_MODE_REMOTE;
+            } else if (qk_net_client_get_state() == QK_CONN_DISCONNECTED) {
+                qk_console_print("Lost connection during handshake.");
+                qk_net_client_shutdown();
+                restore_loopback_netcode();
+            } else if (now - s_connect_start_time > 10.0) {
+                qk_console_print("Handshake timed out.");
+                qk_net_client_disconnect();
+                qk_net_client_shutdown();
+                restore_loopback_netcode();
+            }
         }
 
         /* ---- Game/Demo branch ---- */
@@ -927,8 +1243,89 @@ int main(int argc, char *argv[]) {
             const qk_usercmd_t *demo_cmd = qk_demo_get_last_usercmd();
             cam_pitch = demo_cmd->pitch;
             cam_yaw = demo_cmd->yaw;
+        } else if (s_conn_mode == CONN_MODE_CONNECTING ||
+                   s_conn_mode == CONN_MODE_LOADING_MAP ||
+                   s_conn_mode == CONN_MODE_HANDSHAKING) {
+            /* Waiting for remote connection -- just show current view */
+            cam_pitch = qk_input_get_pitch();
+            cam_yaw = qk_input_get_yaw();
+        } else if (s_conn_mode == CONN_MODE_REMOTE) {
+            /* ---- Remote play path (no local server) ---- */
+
+            /* Client-side prediction at fixed tick rate */
+            cl_pred_accumulator += real_dt;
+            while (cl_pred_accumulator >= QK_TICK_DT) {
+                u32 server_time = cl_cmd_sequence * QK_TICK_DT_MS_NOM;
+                qk_usercmd_t cmd = qk_input_build_usercmd(&input_state, server_time);
+
+                u32 cmd_idx = cl_cmd_sequence % CL_CMD_BUFFER_SIZE;
+                cl_cmd_buffer[cmd_idx].cmd = cmd;
+                cl_cmd_buffer[cmd_idx].sequence = cl_cmd_sequence;
+
+                qk_net_client_send_input(&cmd);
+
+                if (!cl_has_prediction) {
+                    qk_player_state_t srv_state;
+                    if (qk_net_client_get_server_player_state(&srv_state)) {
+                        cl_predicted_ps = srv_state;
+                        cl_has_prediction = true;
+                    }
+                }
+
+                if (cl_has_prediction) {
+                    qk_physics_move(&cl_predicted_ps, &cmd, phys_world);
+                    cl_pred_history[cmd_idx].state = cl_predicted_ps;
+                    cl_pred_history[cmd_idx].sequence = cl_cmd_sequence;
+                }
+
+                cl_cmd_sequence++;
+                cl_pred_accumulator -= QK_TICK_DT;
+            }
+
+            /* No local server tick -- server runs remotely */
+
+            /* Client tick (processes received snapshots from remote server) */
+            qk_net_client_tick();
+
+            /* Reconciliation check */
+            u32 ack = qk_net_client_get_server_cmd_ack();
+            if (ack > cl_last_reconciled_ack && cl_has_prediction) {
+                cl_reconcile(ack, phys_world);
+                cl_last_reconciled_ack = ack;
+            }
+
+            /* Interpolate other entities.
+             * For remote, estimate the server's current tick from input_sequence
+             * (initialized from server tick at connect, advances with local timing).
+             * Render ~2 ticks behind to leave room for interpolation. */
+            {
+                f64 input_tick = (f64)qk_net_client_get_input_sequence();
+                f64 render_tick = input_tick - 2.0;
+                if (render_tick < 0.0) render_tick = 0.0;
+                f64 render_time = render_tick * QK_TICK_DT_F64;
+                qk_net_client_interpolate(render_time);
+            }
+
+            /* Build camera from predicted state */
+            if (cl_has_prediction) {
+                f32 pred_alpha = cl_pred_accumulator / QK_TICK_DT;
+                cam_x = cl_predicted_ps.origin.x + cl_predicted_ps.velocity.x * QK_TICK_DT * pred_alpha;
+                cam_y = cl_predicted_ps.origin.y + cl_predicted_ps.velocity.y * QK_TICK_DT * pred_alpha;
+                cam_z = cl_predicted_ps.origin.z + cl_predicted_ps.velocity.z * QK_TICK_DT * pred_alpha;
+            }
+            cam_pitch = qk_input_get_pitch();
+            cam_yaw = qk_input_get_yaw();
+
+            /* Detect disconnect */
+            if (qk_net_client_get_state() == QK_CONN_DISCONNECTED) {
+                qk_console_print("Lost connection to server.");
+                qk_net_client_shutdown();
+                restore_loopback_netcode();
+                restore_local_gameplay();
+                local_client_id = s_local_client_id;
+            }
         } else {
-            /* ---- Normal game path ---- */
+            /* ---- Normal local game path ---- */
 
             /* 2. Client-side prediction at fixed tick rate */
             cl_pred_accumulator += real_dt;

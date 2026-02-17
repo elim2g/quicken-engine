@@ -114,6 +114,19 @@ bool qk_net_server_get_input(u8 client_id, qk_usercmd_t *out_cmd) {
     return true;
 }
 
+qk_conn_state_t qk_net_server_get_client_state(u8 client_id) {
+    if (!s_server) return QK_CONN_DISCONNECTED;
+    if (client_id >= s_server->max_clients) return QK_CONN_DISCONNECTED;
+    return (qk_conn_state_t)s_server->clients[client_id].state;
+}
+
+bool qk_net_server_is_client_map_ready(u8 client_id) {
+    if (!s_server) return false;
+    if (client_id >= s_server->max_clients) return false;
+    n_client_slot_t *cl = &s_server->clients[client_id];
+    return cl->state == N_CONN_CONNECTED && cl->map_ready;
+}
+
 /* ---- Client API ---- */
 
 qk_result_t qk_net_client_init(const qk_net_client_config_t *config) {
@@ -297,4 +310,81 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
     out->weapon = (qk_weapon_id_t)e->weapon;
 
     return true;
+}
+
+/* ---- Map handshake ---- */
+
+void qk_net_client_notify_map_loaded(const char *map_name) {
+    if (!s_client) return;
+    if (s_client->conn_state != N_CONN_CONNECTED) return;
+
+    /* For loopback, fast-track: both sides share the same process */
+    if (s_client->is_loopback) {
+        s_client->map_ready = true;
+        if (s_server) {
+            n_client_slot_t *slot = &s_server->clients[s_client->client_id];
+            slot->map_ready = true;
+            slot->last_acked_snapshot_tick = 0;
+        }
+        N_DBG("map_loaded: loopback fast-track (map=%s)", map_name ? map_name : "NULL");
+        return;
+    }
+
+    /* Remote: send N_MSG_MAP_LOADED to server */
+    u32 map_hash = n_hash_map_name(map_name);
+
+    u8 pkt[N_TRANSPORT_MTU];
+    n_packet_header_t hdr = {0};
+    hdr.sequence = s_client->outgoing_sequence++;
+    hdr.ack = s_client->incoming_sequence;
+    hdr.ack_bitfield = s_client->ack_bitfield;
+    n_packet_header_write(pkt, &hdr);
+
+    n_bitwriter_t w;
+    n_bitwriter_init(&w, pkt + N_PACKET_HEADER_SIZE,
+                     N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
+    n_msg_header_write(&w, N_MSG_MAP_LOADED, 4);
+    n_write_u32(&w, map_hash);
+    n_msg_header_write(&w, N_MSG_NOP, 0);
+
+    u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
+    n_transport_send(&s_client->transport, &s_client->server_address, pkt, total);
+    s_client->stats.packets_sent++;
+
+    N_DBG("map_loaded: sent hash=0x%08x (map=%s)", map_hash, map_name ? map_name : "NULL");
+}
+
+bool qk_net_client_is_map_ready(void) {
+    if (!s_client) return false;
+    return s_client->map_ready;
+}
+
+void qk_net_server_set_map(const char *map_name) {
+    if (!s_server) return;
+    s_server->map_name_hash = n_hash_map_name(map_name);
+
+    /* Store map name for CONNECT_ACCEPTED (tells joining clients which map to load) */
+    if (map_name) {
+        size_t len = strlen(map_name);
+        if (len >= sizeof(s_server->map_name)) len = sizeof(s_server->map_name) - 1;
+        memcpy(s_server->map_name, map_name, len);
+        s_server->map_name[len] = '\0';
+    } else {
+        s_server->map_name[0] = '\0';
+    }
+
+    N_DBG("server_set_map: hash=0x%08x (map=%s)",
+          s_server->map_name_hash, map_name ? map_name : "NULL");
+
+    /* Invalidate all clients' map_ready state (forces re-handshake on map change) */
+    for (u32 i = 0; i < s_server->max_clients; i++) {
+        s_server->clients[i].map_ready = false;
+    }
+}
+
+const char *qk_net_client_get_server_map(void) {
+    if (!s_client) return NULL;
+    if (s_client->conn_state != N_CONN_CONNECTED) return NULL;
+    if (s_client->server_map_name[0] == '\0') return NULL;
+    return s_client->server_map_name;
 }

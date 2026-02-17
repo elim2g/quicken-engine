@@ -5,6 +5,7 @@
  */
 
 #include "p_internal.h"
+#include "p_simd.h"
 #include <stdlib.h>
 
 /* ---- Compute tight AABB from brush plane intersections ---- */
@@ -62,6 +63,17 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
                 /* Verify this point is inside (or on boundary of) all planes.
                    A point is inside plane m if: nm . pt <= dm + epsilon */
                 bool inside = true;
+#if P_USE_SSE2
+                __m128 v_pt = p_simd_load_vec3(pt);
+                for (u32 m = 0; m < n; m++) {
+                    __m128 v_nm = p_simd_load_vec3(brush->planes[m].normal);
+                    f32 d = p_simd_dot3(v_pt, v_nm) - brush->planes[m].dist;
+                    if (d > 0.1f) {
+                        inside = false;
+                        break;
+                    }
+                }
+#else
                 for (u32 m = 0; m < n; m++) {
                     f32 d = vec3_dot(brush->planes[m].normal, pt)
                             - brush->planes[m].dist;
@@ -70,6 +82,7 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
                         break;
                     }
                 }
+#endif
 
                 if (!inside) continue;
 
@@ -175,10 +188,15 @@ void p_brush_add_bevels(qk_brush_t *brush) {
 
 bool p_aabb_overlap(vec3_t a_mins, vec3_t a_maxs,
                     vec3_t b_mins, vec3_t b_maxs) {
+#if P_USE_SSE2
+    return p_simd_aabb_overlap(p_simd_load_vec3(a_mins), p_simd_load_vec3(a_maxs),
+                               p_simd_load_vec3(b_mins), p_simd_load_vec3(b_maxs));
+#else
     if (a_maxs.x < b_mins.x || a_mins.x > b_maxs.x) return false;
     if (a_maxs.y < b_mins.y || a_mins.y > b_maxs.y) return false;
     if (a_maxs.z < b_mins.z || a_mins.z > b_maxs.z) return false;
     return true;
+#endif
 }
 
 /* ---- Compute swept AABB for a moving box ---- */
@@ -186,6 +204,16 @@ bool p_aabb_overlap(vec3_t a_mins, vec3_t a_maxs,
 void p_compute_swept_aabb(vec3_t start, vec3_t end,
                           vec3_t mins, vec3_t maxs,
                           vec3_t *out_mins, vec3_t *out_maxs) {
+#if P_USE_SSE2
+    __m128 v_start = p_simd_load_vec3(start);
+    __m128 v_end   = p_simd_load_vec3(end);
+    __m128 v_mins  = p_simd_load_vec3(mins);
+    __m128 v_maxs  = p_simd_load_vec3(maxs);
+    __m128 r_mins, r_maxs;
+    p_simd_swept_aabb(v_start, v_end, v_mins, v_maxs, &r_mins, &r_maxs);
+    *out_mins = p_simd_store_vec3(r_mins);
+    *out_maxs = p_simd_store_vec3(r_maxs);
+#else
     /* The swept AABB covers both the start and end positions,
        expanded by the box extents. */
     f32 sx0 = start.x + mins.x;
@@ -210,4 +238,5 @@ void p_compute_swept_aabb(vec3_t start, vec3_t end,
     out_maxs->x = (sx1 > ex1) ? sx1 : ex1;
     out_maxs->y = (sy1 > ey1) ? sy1 : ey1;
     out_maxs->z = (sz1 > ez1) ? sz1 : ez1;
+#endif
 }

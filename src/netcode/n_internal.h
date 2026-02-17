@@ -68,6 +68,8 @@ typedef enum {
     N_MSG_CONNECT_RESPONSE  = 8,
     N_MSG_CONNECT_ACCEPTED  = 9,
     N_MSG_CONNECT_REJECTED  = 10,
+    N_MSG_MAP_LOADED        = 11,   /* client -> server: map load complete */
+    N_MSG_MAP_CONFIRMED     = 12,   /* server -> client: map validated, snapshots will begin */
     N_MSG_COUNT
 } n_msg_type_t;
 
@@ -105,7 +107,10 @@ typedef struct {
 
 typedef struct {
     n_transport_type_t type;
-    int                socket_fd;
+    /* On Windows SOCKET is UINT_PTR (64-bit on x64).  Using intptr_t
+     * avoids silent truncation when storing the handle.  -1 means
+     * "no socket" on both platforms (INVALID_SOCKET == ~0). */
+    intptr_t           socket_fd;
     n_loopback_queue_t *send_queue;
     n_loopback_queue_t *recv_queue;
 } n_transport_t;
@@ -301,6 +306,9 @@ typedef struct {
 
     /* Disconnect linger */
     f64             disconnect_start_time;
+
+    /* Map handshake: true once client has confirmed map load */
+    bool            map_ready;
 } n_client_slot_t;
 
 /* ---- Server ---- */
@@ -322,6 +330,10 @@ typedef struct {
 
     /* Loopback queues (one pair per possible loopback client) */
     n_loopback_queue_t  loopback_queues[N_MAX_CLIENTS][2];
+
+    /* Map handshake */
+    u32                 map_name_hash;
+    char                map_name[128];  /* current map name (sent in connect-accepted) */
 } n_server_t;
 
 /* Server API */
@@ -335,11 +347,6 @@ i32  n_server_allocate_slot(n_server_t *srv);
 void n_server_disconnect_client(n_server_t *srv, u32 slot);
 void n_server_send_to_client(n_server_t *srv, u32 slot, const u8 *data, u32 len);
 void n_server_broadcast_snapshots(n_server_t *srv);
-void n_server_handle_connect_request(n_server_t *srv, u32 slot_or_new,
-                                     const u8 *payload, u32 payload_len,
-                                     const n_address_t *from, n_transport_t *via);
-int  n_server_connect_loopback(n_server_t *srv);
-
 /* ---- Client ---- */
 
 typedef struct {
@@ -394,6 +401,10 @@ typedef struct {
 
     /* Reference to server for loopback */
     n_server_t          *loopback_server;
+
+    /* Map handshake: true once server confirms map load */
+    bool                map_ready;
+    char                server_map_name[128]; /* map name received from server in connect-accepted */
 } n_client_t;
 
 /* Client API */
@@ -409,5 +420,8 @@ void n_client_process_packet(n_client_t *cl, const u8 *data, u32 len, f64 now);
 
 /* ---- Simple PRNG for challenge generation ---- */
 u32 n_random_u32(void);
+
+/* ---- Map name hash (FNV-1a 32-bit) ---- */
+u32 n_hash_map_name(const char *name);
 
 #endif /* N_INTERNAL_H */

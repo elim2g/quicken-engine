@@ -75,6 +75,10 @@ void        qk_net_server_set_entity(u8 entity_id,
 void        qk_net_server_remove_entity(u8 entity_id);
 bool        qk_net_server_get_input(u8 client_id, qk_usercmd_t *out_cmd);
 
+/* Per-client server queries (for detecting remote joins/disconnects) */
+qk_conn_state_t qk_net_server_get_client_state(u8 client_id);
+bool             qk_net_server_is_client_map_ready(u8 client_id);
+
 /* Client API */
 qk_result_t qk_net_client_init(const qk_net_client_config_t *config);
 qk_result_t qk_net_client_connect_remote(const char *address, u16 port);
@@ -96,6 +100,20 @@ u8              qk_net_client_get_id(void);
 u32             qk_net_client_get_input_sequence(void);
 u32             qk_net_client_get_server_cmd_ack(void);
 bool            qk_net_client_get_server_player_state(qk_player_state_t *out);
+
+/* Map-load handshake: client notifies server after loading a map.
+ * Server withholds snapshots until the handshake completes. */
+void            qk_net_client_notify_map_loaded(const char *map_name);
+bool            qk_net_client_is_map_ready(void);
+
+/* Server-side: set the current map name (for handshake validation).
+ * The map name is included in CONNECT_ACCEPTED so remote clients
+ * know which map to load. */
+void            qk_net_server_set_map(const char *map_name);
+
+/* Client-side: get the map name received from the server in CONNECT_ACCEPTED.
+ * Returns NULL if not connected or no map name was provided. */
+const char     *qk_net_client_get_server_map(void);
 
 /* Demo playback: inject a snapshot directly into the interp buffer */
 void            qk_net_client_inject_demo_snapshot(u32 tick, u32 entity_count,
