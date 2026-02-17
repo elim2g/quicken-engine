@@ -27,6 +27,9 @@ obj/
 Makefile
 *.make
 
+# AI agent config
+.claude/
+
 # OS files
 .DS_Store
 Thumbs.db
