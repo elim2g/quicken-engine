@@ -292,6 +292,12 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
 
     const n_entity_state_t *e = &snap->entities[eid];
 
+    /* Zero-init sets physics-internal fields (last_land_tick, skim_ticks,
+     * jump_buffer_ticks, etc.) to 0.  These are not transmitted on the wire;
+     * the physics engine reconstructs them during prediction input replay.
+     * For CPM double-jump: last_land_tick=0 means "no recent landing",
+     * which is the safe default -- a brief misprediction is corrected on the
+     * next server snapshot. */
     memset(out, 0, sizeof(*out));
     out->origin.x = (f32)e->pos_x * 0.5f;
     out->origin.y = (f32)e->pos_y * 0.5f;
@@ -299,8 +305,8 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
     out->velocity.x = (f32)e->vel_x;
     out->velocity.y = (f32)e->vel_y;
     out->velocity.z = (f32)e->vel_z;
-    out->on_ground = (e->flags & 0x01) != 0;
-    out->jump_held = (e->flags & 0x02) != 0;
+    out->on_ground = (e->flags & QK_ENT_FLAG_ON_GROUND) != 0;
+    out->jump_held = (e->flags & QK_ENT_FLAG_JUMP_HELD) != 0;
     out->mins = QK_PLAYER_MINS;
     out->maxs = QK_PLAYER_MAXS;
     out->max_speed = QK_PM_MAX_SPEED;
