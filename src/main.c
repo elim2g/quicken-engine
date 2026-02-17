@@ -362,6 +362,21 @@ typedef struct {
 
 static rocket_smoke_tracker_t s_rocket_trackers[MAX_TRACKED_ROCKETS];
 
+/* ---- Explosion Effects ---- */
+
+#define MAX_EXPLOSIONS        16
+#define EXPLOSION_LIFETIME    1.0f
+
+typedef struct {
+    f32  pos[3];
+    f32  radius;
+    f64  birth_time;
+    bool active;
+} explosion_t;
+
+static explosion_t s_explosions[MAX_EXPLOSIONS];
+static u32         s_explosion_next;
+
 /* ---- Diagnostic Trace ---- */
 
 static FILE *s_diag_file;
@@ -1057,6 +1072,8 @@ int main(int argc, char *argv[]) {
                     memset(s_smoke_pool, 0, sizeof(s_smoke_pool));
                     s_smoke_pool_head = 0;
                     memset(s_rocket_trackers, 0, sizeof(s_rocket_trackers));
+                    memset(s_explosions, 0, sizeof(s_explosions));
+                    s_explosion_next = 0;
 
                     /* Map handshake: notify netcode that map is loaded.
                      * For loopback this is fast-tracked (no round trip).
@@ -1175,6 +1192,8 @@ int main(int argc, char *argv[]) {
                             memset(s_smoke_pool, 0, sizeof(s_smoke_pool));
                             s_smoke_pool_head = 0;
                             memset(s_rocket_trackers, 0, sizeof(s_rocket_trackers));
+                            memset(s_explosions, 0, sizeof(s_explosions));
+                            s_explosion_next = 0;
 
                             /* Handshake: notify server that map is loaded */
                             qk_net_client_notify_map_loaded(rpath);
@@ -1490,12 +1509,22 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Expire rocket trackers (NOT the smoke — smoke lives independently) */
+            /* Expire rocket trackers -- spawn explosion when rocket disappears */
             for (u32 t = 0; t < MAX_TRACKED_ROCKETS; t++) {
                 if (!s_rocket_trackers[t].active) continue;
                 u32 eid = s_rocket_trackers[t].entity_id;
                 const qk_interp_entity_t *ie = &interp->entities[eid];
                 if (!ie->active || ie->entity_type != 2) {
+                    /* Rocket just disappeared -- spawn explosion at last known pos */
+                    explosion_t *ex = &s_explosions[s_explosion_next % MAX_EXPLOSIONS];
+                    s_explosion_next++;
+                    ex->active = true;
+                    ex->pos[0] = s_rocket_trackers[t].last_pos[0];
+                    ex->pos[1] = s_rocket_trackers[t].last_pos[1];
+                    ex->pos[2] = s_rocket_trackers[t].last_pos[2];
+                    ex->radius = 120.0f; /* rocket splash radius */
+                    ex->birth_time = now;
+
                     s_rocket_trackers[t].active = false;
                 }
             }
@@ -1523,6 +1552,21 @@ int main(int argc, char *argv[]) {
                                          half_size, color, p->angle);
         }
         qk_renderer_end_smoke();
+
+        /* ---- 9a2. Draw active explosions ---- */
+        for (u32 ex = 0; ex < MAX_EXPLOSIONS; ex++) {
+            explosion_t *e = &s_explosions[ex];
+            if (!e->active) continue;
+            f32 age = (f32)(now - e->birth_time);
+            if (age > EXPLOSION_LIFETIME) {
+                e->active = false;
+                continue;
+            }
+            f32 fade = 1.0f - (age / EXPLOSION_LIFETIME);
+            qk_renderer_draw_explosion(e->pos[0], e->pos[1], e->pos[2],
+                                        e->radius, age,
+                                        1.0f, 0.6f, 0.1f, fade);
+        }
 
         /* ---- 9b. Viewmodel (first-person weapon) ---- */
         if (cl_has_prediction && cl_predicted_ps.alive_state == QK_PSTATE_ALIVE) {
