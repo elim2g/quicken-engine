@@ -22,6 +22,7 @@ This is not a general-purpose game engine. Every feature exists solely to serve 
 
 - **premake5**: [Download here](https://premake.github.io/download)
 - **CMake**: [Download here](https://cmake.org/download/)
+- **Vulkan SDK**: [Download here](https://vulkan.lunarg.com/sdk/home)
 - **Compiler**:
   - Windows: Visual Studio 2019+ or Visual Studio Build Tools
   - Linux: GCC 9+ or Clang 10+
