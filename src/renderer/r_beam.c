@@ -699,6 +699,17 @@ void qk_renderer_end_smoke(void)
     draw->vertex_count = v_count;
 }
 
+/* ---- Explosion Effect (stub - renderer agent will implement) ---- */
+
+void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
+                                 f32 radius, f32 age_seconds,
+                                 f32 r, f32 g, f32 b, f32 a)
+{
+    (void)x; (void)y; (void)z;
+    (void)radius; (void)age_seconds;
+    (void)r; (void)g; (void)b; (void)a;
+}
+
 /* ---- Command Recording ---- */
 
 void r_beam_record_commands(VkCommandBuffer cmd, u32 frame_index)

@@ -126,6 +126,14 @@ void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
                                   f32 angle_rad);
 void qk_renderer_end_smoke(void);
 
+/* Rocket explosion: multi-billboard expanding fireball effect.
+ * radius = splash damage radius (visual scale reference).
+ * age_seconds = time since detonation (fizzles out over ~1 second).
+ * r,g,b,a = color tint (1.0 = full intensity). */
+void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
+                                 f32 radius, f32 age_seconds,
+                                 f32 r, f32 g, f32 b, f32 a);
+
 /* Debug */
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 

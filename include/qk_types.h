@@ -37,6 +37,15 @@
 #define QK_PM_SKIM_TICKS        25      /* ~195ms at 128Hz (Quake-style 200ms skim window) */
 #define QK_TRACE_EPSILON        0.03125f
 
+/* CPM (Challenge ProMode) movement parameters */
+#define QK_PM_CPM_AIR_ACCEL         70.0f   /* Air accel for A/D strafing (CPM-style) */
+#define QK_PM_CPM_WISH_SPEED        30.0f   /* Wish speed for CPM air control */
+#define QK_PM_CPM_STRAFE_ACCEL      70.0f   /* Strafe-only air acceleration */
+#define QK_PM_CPM_GROUND_ACCEL      15.0f   /* CPM ground acceleration (higher than VQ3) */
+#define QK_PM_CPM_GROUND_SPEED      320.0f  /* CPM ground speed */
+#define QK_PM_CPM_DOUBLE_JUMP_WINDOW  400   /* ms window for double-jump after landing */
+#define QK_PM_CPM_DOUBLE_JUMP_BOOST   1.2f  /* Multiplier on jump velocity for double-jump */
+
 /* ---- Player bounding box ---- */
 #define QK_PLAYER_MINS_X        (-15.0f)
 #define QK_PLAYER_MINS_Y        (-15.0f)
@@ -111,6 +120,7 @@ typedef struct {
     u8          jump_buffer_ticks;
     u8          splash_slick_ticks;
     u8          skim_ticks;         /* ground skim: slide along walls without velocity penalty */
+    u32         last_land_tick;     /* tick when player last landed (for CPM double-jump timing) */
     f32         max_speed;
     f32         gravity;
     u32         command_time;
