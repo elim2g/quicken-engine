@@ -3,9 +3,21 @@
  *
  * PM_Move: categorize position, jump check, friction, acceleration,
  * gravity, and slide/step-slide dispatch.
+ *
+ * CPM (Challenge ProMode) movement layered on top of VQ3 strafejumping:
+ *   - A/D-only air input: high air accel (70.0) for smooth air curves
+ *   - W/S-only air input: speed-clamped turning (no gain, no loss)
+ *   - Diagonal air input: standard VQ3 air accel (strafejumping)
+ *   - Double-jump: boosted jump velocity within a window after landing
+ *   - Higher ground acceleration (15.0 vs 10.0)
  */
 
 #include "p_internal.h"
+#include <math.h>
+
+/* Convert the double-jump window from ms to ticks at compile time */
+#define P_CPM_DOUBLE_JUMP_TICKS \
+    ((u32)(QK_PM_CPM_DOUBLE_JUMP_WINDOW * QK_TICK_RATE / 1000))
 
 /* ---- Categorize position (ground check) ---- */
 
@@ -34,7 +46,7 @@ void p_categorize_position(qk_player_state_t *ps,
     }
 }
 
-/* ---- Jump check (hold-to-jump with input buffer) ---- */
+/* ---- Jump check (hold-to-jump with input buffer + CPM double-jump) ---- */
 
 void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
     bool want_jump = (cmd->buttons & QK_BUTTON_JUMP) != 0;
@@ -62,7 +74,52 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
            is skipped on the jump frame, which is essential for consistent
            strafejump speeds. */
         ps->on_ground = false;
-        ps->velocity.z = QK_PM_JUMP_VELOCITY;
+
+        /* CPM double-jump: if jumping within the window after landing,
+           boost jump velocity. last_land_tick == 0 means never landed
+           (fresh spawn), so no boost in that case. */
+        u32 since_land = ps->command_time - ps->last_land_tick;
+        if (ps->last_land_tick > 0 && since_land <= P_CPM_DOUBLE_JUMP_TICKS) {
+            ps->velocity.z = QK_PM_JUMP_VELOCITY * QK_PM_CPM_DOUBLE_JUMP_BOOST;
+        } else {
+            ps->velocity.z = QK_PM_JUMP_VELOCITY;
+        }
+    }
+}
+
+/* ---- CPM air acceleration dispatch ---- */
+
+static void p_cpm_air_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
+                           vec3_t wish_dir, f32 wish_speed, f32 dt) {
+    bool has_forward = (cmd->forward_move > 0.0001f || cmd->forward_move < -0.0001f);
+    bool has_side    = (cmd->side_move > 0.0001f || cmd->side_move < -0.0001f);
+
+    if (!has_forward && has_side) {
+        /* A/D only: CPM air strafing -- high air accel for smooth curves */
+        p_air_accelerate(ps, wish_dir, wish_speed,
+                         QK_PM_CPM_AIR_ACCEL, dt);
+    } else if (has_forward && !has_side) {
+        /* W/S only: CPM W-turning -- allow turning but clamp speed.
+           Apply high air accel, then scale horizontal velocity back
+           to the pre-acceleration speed if it increased. */
+        f32 speed_before = sqrtf(ps->velocity.x * ps->velocity.x +
+                                 ps->velocity.y * ps->velocity.y);
+
+        p_air_accelerate(ps, wish_dir, wish_speed,
+                         QK_PM_CPM_AIR_ACCEL, dt);
+
+        f32 speed_after = sqrtf(ps->velocity.x * ps->velocity.x +
+                                ps->velocity.y * ps->velocity.y);
+
+        if (speed_after > speed_before && speed_before > 0.0001f) {
+            f32 scale = speed_before / speed_after;
+            ps->velocity.x *= scale;
+            ps->velocity.y *= scale;
+        }
+    } else {
+        /* Diagonal (W+A, W+D, etc.) or no input: standard VQ3 air accel.
+           This preserves classic strafejumping. */
+        p_air_accelerate(ps, wish_dir, wish_speed, QK_PM_AIR_ACCEL, dt);
     }
 }
 
@@ -72,6 +129,9 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
             const qk_phys_world_t *world) {
 
     f32 dt = QK_TICK_DT;
+
+    /* Advance the tick counter (used for double-jump timing) */
+    ps->command_time++;
 
     /* 1. Compute wish direction from yaw only (pitch must not affect
           movement speed -- looking up/down should not slow acceleration) */
@@ -97,7 +157,12 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     bool was_airborne = !ps->on_ground;
     p_categorize_position(ps, world);
 
-    /* 3. Jump check */
+    /* 2b. Track landing for CPM double-jump */
+    if (was_airborne && ps->on_ground) {
+        ps->last_land_tick = ps->command_time;
+    }
+
+    /* 3. Jump check (includes CPM double-jump boost) */
     p_check_jump(ps, cmd);
 
     /* 3b. Decrement jump buffer while airborne */
@@ -112,9 +177,11 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
 
     /* 5. Accelerate */
     if (ps->on_ground) {
-        p_accelerate(ps, wish_dir, wish_speed, QK_PM_GROUND_ACCEL, dt);
+        /* CPM: higher ground acceleration for snappier movement */
+        p_accelerate(ps, wish_dir, wish_speed, QK_PM_CPM_GROUND_ACCEL, dt);
     } else {
-        p_accelerate(ps, wish_dir, wish_speed, QK_PM_AIR_ACCEL, dt);
+        /* CPM air movement: dispatch based on input type */
+        p_cpm_air_move(ps, cmd, wish_dir, wish_speed, dt);
     }
 
     /* 6. Apply gravity (air only) */
