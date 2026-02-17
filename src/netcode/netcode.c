@@ -292,10 +292,10 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
 
     const n_entity_state_t *e = &snap->entities[eid];
 
-    /* Zero-init sets physics-internal fields (last_land_tick, skim_ticks,
+    /* Zero-init sets physics-internal fields (last_jump_tick, skim_ticks,
      * jump_buffer_ticks, etc.) to 0.  These are not transmitted on the wire;
      * the physics engine reconstructs them during prediction input replay.
-     * For CPM double-jump: last_land_tick=0 means "no recent landing",
+     * For CPM double-jump: last_jump_tick=0 means "no recent jump",
      * which is the safe default -- a brief misprediction is corrected on the
      * next server snapshot. */
     memset(out, 0, sizeof(*out));

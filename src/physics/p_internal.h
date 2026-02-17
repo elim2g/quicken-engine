@@ -54,8 +54,6 @@ qk_trace_result_t p_trace_world(const qk_phys_world_t *world,
 
 void    p_accelerate(qk_player_state_t *ps, vec3_t wish_dir,
                      f32 wish_speed, f32 accel, f32 dt);
-void    p_air_accelerate(qk_player_state_t *ps, vec3_t wish_dir,
-                         f32 wish_speed, f32 accel, f32 dt);
 void    p_apply_friction(qk_player_state_t *ps, f32 dt);
 
 /* ---- p_slide.c ---- */

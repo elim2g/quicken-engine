@@ -35,7 +35,7 @@ void g_player_spawn_ca(entity_t *ent, vec3_t spawn_origin, f32 spawn_yaw) {
     ps->ammo[QK_WEAPON_RAIL] = 10;
     ps->ammo[QK_WEAPON_LG] = 150;
 
-    ps->last_land_tick = 0;
+    ps->last_jump_tick = 0;
 
     ps->frags = 0;
     ps->deaths = 0;

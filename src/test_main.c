@@ -126,8 +126,12 @@ static void test_strafejump(void) {
     int strafe_dir = 1;
     bool prev_on_ground = true;
 
-    /* Continuous strafejump: jump on landing, strafe+turn while airborne */
-    for (int t = 0; t < 600; t++) {
+    /* Continuous strafejump with optimal yaw each tick.
+       Instead of a fixed turn rate, compute the yaw that places the wish
+       direction at the optimal strafe angle from the velocity vector.
+       This simulates "perfect" strafejumping to verify the physics.
+       2000 ticks = ~23 jumps, enough to exceed 120% of max_speed. */
+    for (int t = 0; t < 2000; t++) {
         qk_usercmd_t cmd;
         memset(&cmd, 0, sizeof(cmd));
         cmd.forward_move = 1.0f;
@@ -141,11 +145,20 @@ static void test_strafejump(void) {
                 cmd.side_move = (f32)strafe_dir;
             }
         }
-        /* else: no jump button → clears jump_held for next landing */
 
-        /* Turn in strafe direction while airborne */
-        if (!ps.on_ground) {
-            yaw += 2.5f * (f32)strafe_dir;
+        /* Compute optimal yaw: place wish_dir at the ideal angle from velocity.
+           Optimal projection: V*cos(theta) = air_speed - accel_per_tick
+           wish is 45 deg from facing (forward+strafe), so:
+           yaw = vel_angle + theta + 45*strafe_dir  (in degrees) */
+        f32 hspd = sqrtf(ps.velocity.x * ps.velocity.x +
+                         ps.velocity.y * ps.velocity.y);
+        if (hspd > 1.0f) {
+            f32 vel_angle = atan2f(ps.velocity.y, ps.velocity.x);
+            f32 accel_tick = QK_PM_AIR_ACCEL * QK_PM_AIR_SPEED * QK_TICK_DT;
+            f32 opt_cos = (QK_PM_AIR_SPEED - accel_tick) / hspd;
+            f32 theta = (opt_cos < 1.0f) ? acosf(opt_cos) : 0.0f;
+            yaw = (vel_angle + theta * (f32)strafe_dir) * (180.0f / 3.14159265f)
+                  + 45.0f * (f32)strafe_dir;
         }
         cmd.yaw = yaw;
 
@@ -333,7 +346,7 @@ static void test_physics_trace(void) {
 
     /* Trace toward +X wall from center */
     r = qk_physics_trace(world,
-        (vec3_t){0, 0, 128}, (vec3_t){2000, 0, 128}, zero, zero);
+        (vec3_t){0, 0, 128}, (vec3_t){16000, 0, 128}, zero, zero);
     TEST_CHECK(r.fraction < 1.0f, "Trace hits +X wall");
 
     /* Short trace in open space: should not hit */
@@ -343,7 +356,7 @@ static void test_physics_trace(void) {
 
     /* Trace toward -Y wall */
     r = qk_physics_trace(world,
-        (vec3_t){0, 0, 128}, (vec3_t){0, -2000, 128}, zero, zero);
+        (vec3_t){0, 0, 128}, (vec3_t){0, -16000, 128}, zero, zero);
     TEST_CHECK(r.fraction < 1.0f, "Trace hits -Y wall");
 
     qk_physics_world_destroy(world);

@@ -699,12 +699,50 @@ void qk_renderer_end_smoke(void)
     draw->vertex_count = v_count;
 }
 
+/* ---- Screen-facing billboard (fully camera-oriented) ---- */
+
+static u32 r_beam_emit_screen_facing_quad(r_beam_vertex_t *verts, u32 offset,
+                                            const f32 *center, f32 half_size,
+                                            const f32 *cam_right,
+                                            const f32 *cam_up,
+                                            const f32 *color)
+{
+    if (offset + 6 > R_BEAM_MAX_VERTICES) return 0;
+
+    f32 corners[4][3];
+    for (int i = 0; i < 3; i++) {
+        corners[0][i] = center[i] - cam_right[i] * half_size - cam_up[i] * half_size;
+        corners[1][i] = center[i] + cam_right[i] * half_size - cam_up[i] * half_size;
+        corners[2][i] = center[i] + cam_right[i] * half_size + cam_up[i] * half_size;
+        corners[3][i] = center[i] - cam_right[i] * half_size + cam_up[i] * half_size;
+    }
+
+    /* Two triangles: 0-1-2, 0-2-3 */
+    r_beam_vertex_t v;
+    v.color[0] = color[0]; v.color[1] = color[1];
+    v.color[2] = color[2]; v.color[3] = color[3];
+
+    #define SF_VERT(idx) \
+        v.position[0] = corners[idx][0]; \
+        v.position[1] = corners[idx][1]; \
+        v.position[2] = corners[idx][2]; \
+        verts[offset++] = v;
+
+    SF_VERT(0); SF_VERT(1); SF_VERT(2);
+    SF_VERT(0); SF_VERT(2); SF_VERT(3);
+    #undef SF_VERT
+
+    return 6;
+}
+
 /* ---- Explosion Effect ---- */
 
-#define EXPLOSION_PARTICLE_COUNT    24
-#define EXPLOSION_DURATION          1.0f
-#define EXPLOSION_DRIFT_SPEED       0.4f    /* fraction of radius per second */
-#define EXPLOSION_BASE_HALF_SIZE    6.0f
+#define EXPLOSION_OUTER_COUNT       60      /* outer sphere particles */
+#define EXPLOSION_CORE_COUNT        8       /* large center billboards for heft */
+#define EXPLOSION_DURATION          0.8f
+#define EXPLOSION_DRIFT_SPEED       0.6f    /* fraction of radius per second */
+#define EXPLOSION_OUTER_HALF_SIZE   5.0f    /* outer particle base size */
+#define EXPLOSION_CORE_HALF_SIZE    18.0f   /* center glow base size */
 #define EXPLOSION_GOLDEN_ANGLE      2.399963f  /* PI * (3 - sqrt(5)) */
 
 void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
@@ -720,27 +758,95 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
     f32 fade = (1.0f - t);
     fade = fade * fade;   /* quadratic falloff */
 
-    /* Camera position for billboarding */
+    /* Camera vectors for screen-facing billboards */
     u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
     r_view_uniforms_t *view = (r_view_uniforms_t *)g_r.frames[fi].view_ubo_mapped;
-    f32 cam_pos[3] = { 0.0f, 0.0f, 0.0f };
-    if (view) {
-        cam_pos[0] = view->camera_pos[0];
-        cam_pos[1] = view->camera_pos[1];
-        cam_pos[2] = view->camera_pos[2];
-    }
+    if (!view) return;
 
-    /* Use world-up as billboard axis for point explosions */
-    f32 up_axis[3] = { 0.0f, 0.0f, 1.0f };
+    f32 cam_pos[3] = { view->camera_pos[0], view->camera_pos[1], view->camera_pos[2] };
+
+    /* Compute camera right and up from camera-to-explosion direction.
+       All particles share the same billboard orientation since they're
+       close together relative to camera distance. */
+    f32 cam_fwd[3] = {
+        cam_pos[0] - x,
+        cam_pos[1] - y,
+        cam_pos[2] - z
+    };
+    r_beam_normalize(cam_fwd);
+
+    /* Right = cross(world_up, forward) */
+    f32 world_up[3] = { 0.0f, 0.0f, 1.0f };
+    /* Fallback if looking straight up/down */
+    if (fabsf(cam_fwd[2]) > 0.99f) {
+        world_up[0] = 1.0f; world_up[1] = 0.0f; world_up[2] = 0.0f;
+    }
+    f32 cam_right[3];
+    r_beam_cross(cam_right, world_up, cam_fwd);
+    r_beam_normalize(cam_right);
+
+    /* Up = cross(forward, right) */
+    f32 cam_up[3];
+    r_beam_cross(cam_up, cam_fwd, cam_right);
+    r_beam_normalize(cam_up);
 
     u32 v_start = g_r.beams.vertex_count;
     u32 v_count = 0;
     r_beam_vertex_t *verts = g_r.beams.vertices;
 
-    /* Distribute particles on a Fibonacci sphere */
-    for (u32 i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
-        /* Fibonacci sphere: even distribution on unit sphere */
-        f32 fi_y = 1.0f - (2.0f * (f32)i + 1.0f) / (f32)EXPLOSION_PARTICLE_COUNT;
+    /* --- Core billboards: 8 large overlapping quads at center for heft --- */
+    for (u32 i = 0; i < EXPLOSION_CORE_COUNT; i++) {
+        /* Slight offset per core particle so they don't z-fight */
+        f32 ox = 8.0f * (r_beam_hash(i * 137 + 7) - 0.5f);
+        f32 oy = 8.0f * (r_beam_hash(i * 251 + 13) - 0.5f);
+        f32 oz = 8.0f * (r_beam_hash(i * 379 + 29) - 0.5f);
+
+        f32 center[3] = { x + ox, y + oy, z + oz };
+
+        /* Core starts large and bright, fades and shrinks quickly */
+        f32 core_t = t * 1.5f;
+        if (core_t > 1.0f) core_t = 1.0f;
+        f32 core_fade = (1.0f - core_t);
+        core_fade = core_fade * core_fade;
+        f32 half_size = EXPLOSION_CORE_HALF_SIZE * (0.5f + 0.5f * r_beam_hash(i * 89 + 5))
+                        * (1.0f - core_t * 0.3f);
+
+        /* Random rotation per core particle: rotate cam_right/cam_up
+           by a stable random angle so overlapping quads don't align */
+        f32 rot_angle = r_beam_hash(i * 457 + 1993) * 2.0f * PI;
+        f32 rot_cos = cosf(rot_angle);
+        f32 rot_sin = sinf(rot_angle);
+        f32 rot_right[3] = {
+            cam_right[0] * rot_cos + cam_up[0] * rot_sin,
+            cam_right[1] * rot_cos + cam_up[1] * rot_sin,
+            cam_right[2] * rot_cos + cam_up[2] * rot_sin
+        };
+        f32 rot_up[3] = {
+            -cam_right[0] * rot_sin + cam_up[0] * rot_cos,
+            -cam_right[1] * rot_sin + cam_up[1] * rot_cos,
+            -cam_right[2] * rot_sin + cam_up[2] * rot_cos
+        };
+
+        /* Hot white-yellow center color */
+        f32 hue = r_beam_hash(i * 61 + 997);
+        f32 intensity = core_fade * a;
+        f32 color[4] = {
+            (0.95f + 0.05f * hue) * intensity,
+            (0.7f + 0.25f * hue) * intensity,
+            (0.15f + 0.2f * (1.0f - hue)) * intensity,
+            intensity
+        };
+
+        u32 emitted = r_beam_emit_screen_facing_quad(verts, v_start + v_count,
+                                                       center, half_size,
+                                                       rot_right, rot_up,
+                                                       color);
+        v_count += emitted;
+    }
+
+    /* --- Outer particles: Fibonacci sphere distribution --- */
+    for (u32 i = 0; i < EXPLOSION_OUTER_COUNT; i++) {
+        f32 fi_y = 1.0f - (2.0f * (f32)i + 1.0f) / (f32)EXPLOSION_OUTER_COUNT;
         f32 r_xz = sqrtf(1.0f - fi_y * fi_y);
         f32 theta = EXPLOSION_GOLDEN_ANGLE * (f32)i;
         f32 dir[3] = {
@@ -761,7 +867,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
 
         /* Per-particle size variation: shrink as age increases */
         f32 size_var = 0.6f + 0.8f * r_beam_hash(i * 311 + 7);
-        f32 half_size = EXPLOSION_BASE_HALF_SIZE * size_var * (1.0f - t * 0.5f);
+        f32 half_size = EXPLOSION_OUTER_HALF_SIZE * size_var * (1.0f - t * 0.5f);
 
         /* Fiery color variation per particle: shift between orange and yellow */
         f32 hue_shift = r_beam_hash(i * 73 + 1021);
@@ -784,10 +890,25 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
             intensity
         };
 
-        u32 emitted = r_beam_emit_billboard_quad(verts, v_start + v_count,
-                                                  center, half_size,
-                                                  cam_pos, up_axis,
-                                                  color);
+        /* Random rotation per outer particle */
+        f32 orot = r_beam_hash(i * 523 + 2741) * 2.0f * PI;
+        f32 oc = cosf(orot);
+        f32 os = sinf(orot);
+        f32 orot_right[3] = {
+            cam_right[0] * oc + cam_up[0] * os,
+            cam_right[1] * oc + cam_up[1] * os,
+            cam_right[2] * oc + cam_up[2] * os
+        };
+        f32 orot_up[3] = {
+            -cam_right[0] * os + cam_up[0] * oc,
+            -cam_right[1] * os + cam_up[1] * oc,
+            -cam_right[2] * os + cam_up[2] * oc
+        };
+
+        u32 emitted = r_beam_emit_screen_facing_quad(verts, v_start + v_count,
+                                                       center, half_size,
+                                                       orot_right, orot_up,
+                                                       color);
         v_count += emitted;
     }
 

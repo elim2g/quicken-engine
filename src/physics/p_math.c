@@ -14,6 +14,16 @@ f32 p_sinf(f32 x) {
     while (x >  P_PI) x -= P_2PI;
     while (x < -P_PI) x += P_2PI;
 
+    /* Reduce to [-PI/2, PI/2] using sin(x) = sin(PI - x) reflection.
+       The 7th-order polynomial is only accurate near zero; without this
+       step, values near +-PI produce catastrophic errors (wrong sign for
+       cosine of angles near 90 deg, which breaks strafejumping). */
+    if (x > P_PI * 0.5f) {
+        x = P_PI - x;
+    } else if (x < -P_PI * 0.5f) {
+        x = -P_PI - x;
+    }
+
     /* 7th-order minimax polynomial: sin(x) ~ x(1 - x^2/6 + x^4/120 - x^6/5040) */
     f32 x2 = x * x;
     return x * (1.0f - x2 * (1.0f / 6.0f - x2 * (1.0f / 120.0f -

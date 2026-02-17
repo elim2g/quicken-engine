@@ -4,10 +4,10 @@
  * PM_Move: categorize position, jump check, friction, acceleration,
  * gravity, and slide/step-slide dispatch.
  *
- * CPM (Challenge ProMode) movement layered on top of VQ3 strafejumping:
- *   - A/D-only air input: high air accel (70.0) for smooth air curves
- *   - W/S-only air input: speed-clamped turning (no gain, no loss)
- *   - Diagonal air input: standard VQ3 air accel (strafejumping)
+ * CPM (Challenge ProMode) movement with exclusive air-input branches:
+ *   - Diagonal (W+A/W+D/S+A/S+D): VQ3 strafejump (low accel, high wishspeed)
+ *   - A/D only: CPM air strafing (high accel, low wishspeed — tight curves)
+ *   - W/S only: CPM air control (velocity rotation, no speed change)
  *   - Double-jump: boosted jump velocity within a window after landing
  *   - Higher ground acceleration (15.0 vs 10.0)
  */
@@ -75,51 +75,127 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
            strafejump speeds. */
         ps->on_ground = false;
 
-        /* CPM double-jump: if jumping within the window after landing,
-           boost jump velocity. last_land_tick == 0 means never landed
-           (fresh spawn), so no boost in that case. */
-        u32 since_land = ps->command_time - ps->last_land_tick;
-        if (ps->last_land_tick > 0 && since_land <= P_CPM_DOUBLE_JUMP_TICKS) {
-            ps->velocity.z = QK_PM_JUMP_VELOCITY * QK_PM_CPM_DOUBLE_JUMP_BOOST;
-        } else {
-            ps->velocity.z = QK_PM_JUMP_VELOCITY;
-        }
+        /* CPM double-jump: if jumping within the window after the LAST jump,
+           boost the impulse. last_jump_tick == 0 means fresh spawn, no boost. */
+        u32 since_jump = ps->command_time - ps->last_jump_tick;
+        bool is_double = (ps->last_jump_tick > 0 &&
+                          since_jump <= P_CPM_DOUBLE_JUMP_TICKS);
+
+        f32 amount = is_double
+            ? QK_PM_JUMP_VELOCITY * QK_PM_CPM_DOUBLE_JUMP_BOOST
+            : QK_PM_JUMP_VELOCITY;
+
+        /* Additive impulse with floor: preserves upward momentum from
+           previous jumps (chain doublejumps), but never gives less than
+           a clean jump impulse. */
+        f32 added = ps->velocity.z + amount;
+        ps->velocity.z = (added > amount) ? added : amount;
+
+        /* Timer starts/restarts on every valid jump (enables chaining) */
+        ps->last_jump_tick = ps->command_time;
     }
 }
 
-/* ---- CPM air acceleration dispatch ---- */
+/* ---- CPM air control (velocity rotation toward wish direction) ---- */
+
+/*
+ * CPM air control: rotate velocity toward wish direction without
+ * changing speed.  Called whenever forward is held (W, W+A, W+D, etc.).
+ *
+ * Algorithm from CPMA (PM_CPMAirControl):
+ * 1. Strip vertical velocity
+ * 2. Normalize horizontal velocity, save speed
+ * 3. Dot velocity direction with wish direction
+ * 4. If dot > 0: rotate velocity toward wish by k = 32 * aircontrol * dot^2 * dt
+ * 5. Re-normalize, restore speed and Z velocity
+ *
+ * The dot^2 factor makes turning strongest when nearly aligned (small
+ * corrections) and weakest when perpendicular.  For W-only this is the
+ * entire air mechanic (subtle adjustments).  For W+A/W+D it supplements
+ * VQ3 strafejumping by helping maintain the optimal strafe angle.
+ */
+
+#define P_CPM_AIRCONTROL_MULT  150.0f  /* Strength of W-turning rotation. Affects how "wide"
+                                        * the angular range from the velocity direction one
+                                        * can aim while still experiencing Free Turns(TM) 
+                                        */
+#define P_CPM_W_ONLY_ACCEL      1.0f    /* PQL-style forward-accel if airborne speed is low */
+
+static void p_cpm_air_control(qk_player_state_t *ps, vec3_t wish_dir,
+                               f32 wish_speed, f32 dt) {
+    if (wish_speed < 0.0001f) return;
+
+    f32 saved_z = ps->velocity.z;
+    ps->velocity.z = 0.0f;
+
+    f32 speed = vec3_length(ps->velocity);
+    if (speed < 1.0f) speed = 1.0f;
+
+    vec3_t vel_dir = vec3_scale(ps->velocity, 1.0f / speed);
+    f32 dot = vec3_dot(vel_dir, wish_dir);
+
+    /* Only rotate toward wish direction (dot > 0), not away */
+    if (dot > 0.0f) {
+        f32 k = 32.0f * P_CPM_AIRCONTROL_MULT * dot * dot * dt;
+
+        /* Blend velocity direction toward wish direction, then normalize
+           to maintain constant speed (pure rotation, no acceleration) */
+        vec3_t blended = vec3_add(vec3_scale(vel_dir, speed),
+                                  vec3_scale(wish_dir, k));
+        vel_dir = vec3_normalize(blended);
+    }
+
+    ps->velocity = vec3_scale(vel_dir, speed);
+    ps->velocity.z = saved_z;
+}
+
+/* ---- CPM air movement (additive layers, matching real CPMA) ---- */
+
+/*
+ * CPM air movement: exclusive branches based on input combination.
+ *
+ * 1. W+A / W+D / S+A / S+D (diagonal): VQ3 strafejump
+ *    Low accel (1.0), high wish_speed (320).  The 30-cap inside
+ *    p_air_accelerate keeps the projection test tight while the full
+ *    wish_speed drives the accel magnitude — classic strafejumping.
+ *
+ * 2. A / D only (strafe, no forward): CPM air strafing
+ *    High accel (70), low wish_speed (30).  Tight responsive air
+ *    curves without exponential VQ3 speed gain.
+ *
+ * 3. W / S only (forward, no strafe): CPM air control (W-turn)
+ *    Rotates velocity toward wish direction without changing speed.
+ *    No acceleration — purely directional adjustment.
+ *
+ * 4. No input: VQ3 air accel fallback (effectively a no-op at speed).
+ */
 
 static void p_cpm_air_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
-                           vec3_t wish_dir, f32 wish_speed, f32 dt) {
+                           vec3_t wish_dir, f32 dt) {
     bool has_forward = (cmd->forward_move > 0.0001f || cmd->forward_move < -0.0001f);
     bool has_side    = (cmd->side_move > 0.0001f || cmd->side_move < -0.0001f);
 
-    if (!has_forward && has_side) {
-        /* A/D only: CPM air strafing -- high air accel for smooth curves */
-        p_air_accelerate(ps, wish_dir, wish_speed,
-                         QK_PM_CPM_AIR_ACCEL, dt);
+    if (has_forward && has_side) {
+        /* W+A / W+D / S+A / S+D: strafejump.
+           Uses QK_PM_AIR_SPEED (~0.84 * max_speed) as wish speed, giving
+           a wide strafe window (~32 deg at ground speed) that narrows as
+           speed increases.  Same accelerate function as ground — no
+           separate wishspeed cap. */
+        p_accelerate(ps, wish_dir, QK_PM_AIR_SPEED, QK_PM_AIR_ACCEL, dt);
+    } else if (!has_forward && has_side) {
+        /* A/D only: CPM air strafing.
+           High accel (70), low wish_speed (30) — gives tight, responsive
+           air curves without the exponential speed gain of strafejumping. */
+        p_accelerate(ps, wish_dir, QK_PM_CPM_WISH_SPEED,
+                     QK_PM_CPM_STRAFE_ACCEL, dt);
     } else if (has_forward && !has_side) {
-        /* W/S only: CPM W-turning -- allow turning but clamp speed.
-           Apply high air accel, then scale horizontal velocity back
-           to the pre-acceleration speed if it increased. */
-        f32 speed_before = sqrtf(ps->velocity.x * ps->velocity.x +
-                                 ps->velocity.y * ps->velocity.y);
-
-        p_air_accelerate(ps, wish_dir, wish_speed,
-                         QK_PM_CPM_AIR_ACCEL, dt);
-
-        f32 speed_after = sqrtf(ps->velocity.x * ps->velocity.x +
-                                ps->velocity.y * ps->velocity.y);
-
-        if (speed_after > speed_before && speed_before > 0.0001f) {
-            f32 scale = speed_before / speed_after;
-            ps->velocity.x *= scale;
-            ps->velocity.y *= scale;
-        }
+        /* W/S only: CPM air control (W-turn).
+           Rotates velocity toward wish direction without changing speed.
+           No acceleration — purely directional adjustment. */
+        p_cpm_air_control(ps, wish_dir, QK_PM_AIR_SPEED, dt);
     } else {
-        /* Diagonal (W+A, W+D, etc.) or no input: standard VQ3 air accel.
-           This preserves classic strafejumping. */
-        p_air_accelerate(ps, wish_dir, wish_speed, QK_PM_AIR_ACCEL, dt);
+        /* No movement input: air accel fallback */
+        p_accelerate(ps, wish_dir, QK_PM_AIR_SPEED, QK_PM_AIR_ACCEL, dt);
     }
 }
 
@@ -143,24 +219,21 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     wish_dir.y = forward.y * cmd->forward_move + right.y * cmd->side_move;
     wish_dir.z = 0.0f; /* no vertical component from input */
 
-    f32 wish_speed = vec3_length(wish_dir);
-    if (wish_speed > 0.0001f) {
-        wish_dir = vec3_scale(wish_dir, 1.0f / wish_speed);
-        wish_speed *= ps->max_speed;
-        if (wish_speed > ps->max_speed) wish_speed = ps->max_speed;
+    /* Normalize wish_dir to a pure direction; wish_speed is set per
+       movement context (ground vs air), NOT derived from the vector length.
+       This matches the reference model where direction and speed are
+       independent parameters to the accelerate function. */
+    f32 wish_len = vec3_length(wish_dir);
+    if (wish_len > 0.0001f) {
+        wish_dir = vec3_scale(wish_dir, 1.0f / wish_len);
     } else {
         wish_dir = (vec3_t){0.0f, 0.0f, 0.0f};
-        wish_speed = 0.0f;
     }
+    f32 wish_speed = (wish_len > 0.0001f) ? ps->max_speed : 0.0f;
 
     /* 2. Check ground */
     bool was_airborne = !ps->on_ground;
     p_categorize_position(ps, world);
-
-    /* 2b. Track landing for CPM double-jump */
-    if (was_airborne && ps->on_ground) {
-        ps->last_land_tick = ps->command_time;
-    }
 
     /* 3. Jump check (includes CPM double-jump boost) */
     p_check_jump(ps, cmd);
@@ -181,7 +254,7 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
         p_accelerate(ps, wish_dir, wish_speed, QK_PM_CPM_GROUND_ACCEL, dt);
     } else {
         /* CPM air movement: dispatch based on input type */
-        p_cpm_air_move(ps, cmd, wish_dir, wish_speed, dt);
+        p_cpm_air_move(ps, cmd, wish_dir, dt);
     }
 
     /* 6. Apply gravity (air only) */

@@ -55,13 +55,13 @@ static qk_brush_t p_make_box_brush(f32 lo_x, f32 lo_y, f32 lo_z,
 
 qk_phys_world_t *qk_physics_world_create_test_room(void) {
     /*
-     * 512x512x256 hollow room centered at origin.
-     * Interior spans: X [-256, 256], Y [-256, 256], Z [0, 256].
+     * 16384x16384x256 hollow room centered at origin.
+     * Interior spans: X [-8192, 8192], Y [-8192, 8192], Z [0, 256].
      * Wall thickness: 16 units.
      *
      * 6 slab brushes: floor, ceiling, +X wall, -X wall, +Y wall, -Y wall.
      */
-    #define ROOM_HALF   1024.0f
+    #define ROOM_HALF   8192.0f
     #define ROOM_TOP    256.0f
     #define WALL        16.0f
 
