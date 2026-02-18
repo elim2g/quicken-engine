@@ -134,6 +134,16 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
                                  f32 radius, f32 age_seconds,
                                  f32 r, f32 g, f32 b, f32 a);
 
+/* Railgun surface impact: buzzy electrical particles at hit point.
+ * normal_{x,y,z} = surface normal at impact (orients the particle burst).
+ * in_dir_{x,y,z} = incoming ray direction (sparks reflect off surface).
+ * age_seconds = time since impact (effect fades over ~1.5s).
+ * color_rgba = base color (RRGGBBAA packed u32). */
+void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
+                                   f32 normal_x, f32 normal_y, f32 normal_z,
+                                   f32 in_dir_x, f32 in_dir_y, f32 in_dir_z,
+                                   f32 age_seconds, u32 color_rgba);
+
 /* Debug */
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 

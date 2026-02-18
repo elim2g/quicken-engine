@@ -337,6 +337,21 @@ static rail_beam_t s_rail_beams[MAX_RAIL_BEAMS];
 static u8          s_prev_flags[QK_MAX_ENTITIES];
 static u32         s_rail_beam_next;
 
+#define MAX_RAIL_IMPACTS 16
+#define RAIL_IMPACT_LIFETIME 1.5
+
+typedef struct {
+    f32     pos[3];
+    f32     normal[3];
+    f32     in_dir[3];
+    f64     birth_time;
+    u32     color;
+    bool    active;
+} rail_impact_t;
+
+static rail_impact_t s_rail_impacts[MAX_RAIL_IMPACTS];
+static u32           s_rail_impact_next;
+
 /* ---- Rocket Smoke Particles ---- */
 
 #define SMOKE_POOL_SIZE       1024
@@ -465,6 +480,11 @@ static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
     f32 dy = server_state.origin.y - predicted->state.origin.y;
     f32 dz = server_state.origin.z - predicted->state.origin.z;
     f32 dist_sq = dx * dx + dy * dy + dz * dz;
+
+    /* Detect teleport: snap input angles to server-provided view direction */
+    if (server_state.teleport_bit != cl_predicted_ps.teleport_bit) {
+        qk_input_set_angles(server_state.pitch, server_state.yaw);
+    }
 
     if (dist_sq < 0.1f) return; /* Position matches, no replay needed */
 
@@ -1067,8 +1087,10 @@ int main(int argc, char *argv[]) {
                     cl_last_reconciled_ack = 0;
                     server_accumulator = 0.0f;
                     memset(s_rail_beams, 0, sizeof(s_rail_beams));
+                    memset(s_rail_impacts, 0, sizeof(s_rail_impacts));
                     memset(s_prev_flags, 0, sizeof(s_prev_flags));
                     s_rail_beam_next = 0;
+                    s_rail_impact_next = 0;
                     memset(s_smoke_pool, 0, sizeof(s_smoke_pool));
                     s_smoke_pool_head = 0;
                     memset(s_rocket_trackers, 0, sizeof(s_rocket_trackers));
@@ -1649,6 +1671,24 @@ int main(int argc, char *argv[]) {
                     rb->end[1] = tr.end_pos.y;
                     rb->end[2] = tr.end_pos.z;
                     rb->color = is_local ? 0x00FF00FF : 0xFF0000FF;
+
+                    /* Spawn impact particles at the wall hit point */
+                    if (tr.fraction < 1.0f) {
+                        rail_impact_t *ri = &s_rail_impacts[s_rail_impact_next % MAX_RAIL_IMPACTS];
+                        s_rail_impact_next++;
+                        ri->active = true;
+                        ri->birth_time = now;
+                        ri->pos[0] = tr.end_pos.x;
+                        ri->pos[1] = tr.end_pos.y;
+                        ri->pos[2] = tr.end_pos.z;
+                        ri->normal[0] = tr.hit_normal.x;
+                        ri->normal[1] = tr.hit_normal.y;
+                        ri->normal[2] = tr.hit_normal.z;
+                        ri->in_dir[0] = dx;
+                        ri->in_dir[1] = dy;
+                        ri->in_dir[2] = dz;
+                        ri->color = rb->color;
+                    }
                 }
 
                 /* LG beam: remote players only (local handled below) */
@@ -1691,6 +1731,23 @@ int main(int argc, char *argv[]) {
                 qk_renderer_draw_rail_beam(rb->start[0], rb->start[1], rb->start[2],
                                             rb->end[0], rb->end[1], rb->end[2],
                                             age, rb->color);
+            }
+
+            /* Draw active rail impact particles (persistent with decay) */
+            for (u32 i = 0; i < MAX_RAIL_IMPACTS; i++) {
+                rail_impact_t *ri = &s_rail_impacts[i];
+                if (!ri->active) continue;
+
+                f32 age = (f32)(now - ri->birth_time);
+                if (age > RAIL_IMPACT_LIFETIME) {
+                    ri->active = false;
+                    continue;
+                }
+
+                qk_renderer_draw_rail_impact(ri->pos[0], ri->pos[1], ri->pos[2],
+                                              ri->normal[0], ri->normal[1], ri->normal[2],
+                                              ri->in_dir[0], ri->in_dir[1], ri->in_dir[2],
+                                              age, ri->color);
             }
 
             /* Local player LG beam: input-driven, per-frame, muzzle offset */

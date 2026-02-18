@@ -276,12 +276,15 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     /* 8. Re-check ground after move */
     p_categorize_position(ps, world);
 
-    /* Zero vertical velocity while firmly grounded. The collision
-       response in p_slide_move clips velocity against the floor normal,
-       but floating-point residuals can cause micro-oscillation.
-       Only do this when NOT in skim (skim needs to preserve momentum). */
+    /* Clip velocity to ground plane while firmly grounded.
+       On flat ground (normal = 0,0,1) this zeroes Z as before.
+       On slopes, this projects velocity along the surface — landing
+       on a downslope converts vertical speed to horizontal, and
+       jumping off an upramp deflects velocity upward.  Q3 does this
+       via PM_ClipVelocity(vel, groundplane.normal, OVERCLIP). */
     if (ps->on_ground && ps->skim_ticks == 0) {
-        ps->velocity.z = 0.0f;
+        ps->velocity = p_clip_velocity(ps->velocity, ps->ground_normal,
+                                        QK_PM_OVERCLIP);
     }
 
     /* Skim velocity restore: preserve speed through wall clips.

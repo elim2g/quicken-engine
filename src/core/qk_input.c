@@ -233,6 +233,11 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
 f32 qk_input_get_pitch(void) { return s_pitch; }
 f32 qk_input_get_yaw(void) { return s_yaw; }
 
+void qk_input_set_angles(f32 pitch, f32 yaw) {
+    s_pitch = pitch;
+    s_yaw = yaw;
+}
+
 #else /* QK_HEADLESS */
 
 #include <string.h>
@@ -252,5 +257,6 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
 
 f32 qk_input_get_pitch(void) { return 0.0f; }
 f32 qk_input_get_yaw(void) { return 0.0f; }
+void qk_input_set_angles(f32 pitch, f32 yaw) { QK_UNUSED(pitch); QK_UNUSED(yaw); }
 
 #endif /* QK_HEADLESS */

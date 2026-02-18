@@ -162,7 +162,16 @@ void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
         if (e->id == skip_id) continue;
         if (e->data.player.alive_state != QK_PSTATE_ALIVE) continue;
 
-        vec3_t diff = vec3_sub(e->data.player.origin, origin);
+        /* Find nearest point on player AABB to explosion origin.
+           This ensures rockets at feet produce upward impulse (not horizontal). */
+        vec3_t pmin = vec3_add(e->data.player.origin, e->data.player.mins);
+        vec3_t pmax = vec3_add(e->data.player.origin, e->data.player.maxs);
+        vec3_t nearest = {
+            origin.x < pmin.x ? pmin.x : (origin.x > pmax.x ? pmax.x : origin.x),
+            origin.y < pmin.y ? pmin.y : (origin.y > pmax.y ? pmax.y : origin.y),
+            origin.z < pmin.z ? pmin.z : (origin.z > pmax.z ? pmax.z : origin.z),
+        };
+        vec3_t diff = vec3_sub(nearest, origin);
         f32 dist = vec3_length(diff);
         if (dist >= radius) continue;
 

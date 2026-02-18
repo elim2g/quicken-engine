@@ -920,6 +920,196 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
     g_r.beams.vertex_count = v_start + v_count;
 }
 
+/* ---- Railgun Impact Sparks ---- */
+
+#define RAIL_IMPACT_SPARK_COUNT     96      /* number of spark particles */
+#define RAIL_IMPACT_DURATION        1.5f    /* seconds until fully faded */
+#define RAIL_IMPACT_SPREAD          8.0f    /* hemisphere spread radius */
+#define RAIL_IMPACT_DRIFT_SPEED     30.0f   /* units/sec outward drift */
+#define RAIL_IMPACT_SPARK_SIZE      2.0f    /* half-size of each spark quad */
+#define RAIL_IMPACT_JITTER_FREQ     12.5f   /* Hz of positional jitter */
+#define RAIL_IMPACT_JITTER_AMP      2.5f    /* max jitter displacement */
+
+void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
+                                   f32 normal_x, f32 normal_y, f32 normal_z,
+                                   f32 in_dir_x, f32 in_dir_y, f32 in_dir_z,
+                                   f32 age_seconds, u32 color_rgba)
+{
+    if (!g_r.beams.initialized) return;
+    if (g_r.beams.draw_count >= R_BEAM_MAX_DRAWS) return;
+    if (age_seconds >= RAIL_IMPACT_DURATION) return;
+
+    f32 t = age_seconds / RAIL_IMPACT_DURATION;
+    f32 fade = (1.0f - t);
+    fade = fade * fade; /* quadratic falloff */
+
+    /* Surface normal (normalized) */
+    f32 nrm[3] = { normal_x, normal_y, normal_z };
+    r_beam_normalize(nrm);
+
+    /* Compute reflection: R = D - 2(D·N)N
+     * At perpendicular impact R ≈ N (full hemisphere off surface).
+     * At grazing angles R is nearly parallel to surface, biasing
+     * sparks to spray along the wall away from the shooter. */
+    f32 in_d[3] = { in_dir_x, in_dir_y, in_dir_z };
+    r_beam_normalize(in_d);
+    f32 d_dot_n = r_beam_dot(in_d, nrm);
+    f32 refl[3] = {
+        in_d[0] - 2.0f * d_dot_n * nrm[0],
+        in_d[1] - 2.0f * d_dot_n * nrm[1],
+        in_d[2] - 2.0f * d_dot_n * nrm[2]
+    };
+    r_beam_normalize(refl);
+
+    /* Build tangent frame from reflection vector */
+    f32 tangent[3], bitangent[3];
+    {
+        f32 up[3] = { 0.0f, 0.0f, 1.0f };
+        if (fabsf(r_beam_dot(refl, up)) > 0.9f) {
+            up[0] = 1.0f; up[1] = 0.0f; up[2] = 0.0f;
+        }
+        r_beam_cross(tangent, refl, up);
+        r_beam_normalize(tangent);
+        r_beam_cross(bitangent, refl, tangent);
+        r_beam_normalize(bitangent);
+    }
+
+    /* Base color from u32 RGBA */
+    f32 base_r = (f32)((color_rgba >> 24) & 0xFF) / 255.0f;
+    f32 base_g = (f32)((color_rgba >> 16) & 0xFF) / 255.0f;
+    f32 base_b = (f32)((color_rgba >>  8) & 0xFF) / 255.0f;
+
+    /* Camera vectors for screen-facing billboards */
+    u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
+    r_view_uniforms_t *view = (r_view_uniforms_t *)g_r.frames[fi].view_ubo_mapped;
+    if (!view) return;
+
+    f32 cam_pos[3] = { view->camera_pos[0], view->camera_pos[1], view->camera_pos[2] };
+
+    f32 cam_fwd[3] = {
+        cam_pos[0] - x,
+        cam_pos[1] - y,
+        cam_pos[2] - z
+    };
+    r_beam_normalize(cam_fwd);
+
+    f32 world_up[3] = { 0.0f, 0.0f, 1.0f };
+    if (fabsf(cam_fwd[2]) > 0.99f) {
+        world_up[0] = 1.0f; world_up[1] = 0.0f; world_up[2] = 0.0f;
+    }
+    f32 cam_right[3];
+    r_beam_cross(cam_right, world_up, cam_fwd);
+    r_beam_normalize(cam_right);
+    f32 cam_up[3];
+    r_beam_cross(cam_up, cam_fwd, cam_right);
+    r_beam_normalize(cam_up);
+
+    u32 v_start = g_r.beams.vertex_count;
+    u32 v_count = 0;
+    r_beam_vertex_t *verts = g_r.beams.vertices;
+
+    /* Position array for indexed access in loops */
+    f32 pos[3] = { x, y, z };
+
+    /* Seed from position for deterministic per-impact variation */
+    u32 impact_seed = (u32)(x * 7.0f) ^ (u32)(y * 13.0f) ^ (u32)(z * 19.0f);
+
+    for (u32 i = 0; i < RAIL_IMPACT_SPARK_COUNT; i++) {
+        /* Hemisphere distribution: each spark has a random direction in the
+         * hemisphere defined by the surface normal. Use hash-based random
+         * azimuth and elevation. */
+        f32 azimuth = r_beam_hash(i * 131 + impact_seed + 17) * 2.0f * PI;
+        f32 elev = r_beam_hash(i * 199 + impact_seed + 41); /* 0..1 */
+        elev = elev * elev; /* bias sparks closer to surface (grazing) */
+        f32 cos_elev = sqrtf(1.0f - elev);
+        f32 sin_elev = sqrtf(elev);
+
+        /* Direction in world space: hemisphere around reflection vector */
+        f32 dir[3];
+        for (int c = 0; c < 3; c++) {
+            dir[c] = refl[c] * sin_elev
+                   + tangent[c] * cos_elev * cosf(azimuth)
+                   + bitangent[c] * cos_elev * sinf(azimuth);
+        }
+
+        /* Per-spark speed variation */
+        f32 speed_var = 0.5f + r_beam_hash(i * 251 + impact_seed + 73) * 1.0f;
+        f32 dist = age_seconds * RAIL_IMPACT_DRIFT_SPEED * speed_var;
+
+        /* Spread: sparks fan out from the impact point */
+        f32 spread = RAIL_IMPACT_SPREAD * r_beam_hash(i * 307 + impact_seed + 97);
+
+        f32 center[3];
+        for (int c = 0; c < 3; c++) {
+            center[c] = pos[c] + dir[c] * (dist + spread);
+        }
+
+        /* Buzzy jitter: rapid, erratic positional noise.
+         * Each spark jitters at high frequency with a phase offset.
+         * The hash seed changes with time to create erratic movement. */
+        u32 jitter_seed = i * 173 + (u32)(age_seconds * RAIL_IMPACT_JITTER_FREQ);
+        f32 jx = (r_beam_hash(jitter_seed + 0) * 2.0f - 1.0f) * RAIL_IMPACT_JITTER_AMP;
+        f32 jy = (r_beam_hash(jitter_seed + 9973) * 2.0f - 1.0f) * RAIL_IMPACT_JITTER_AMP;
+        f32 jz = (r_beam_hash(jitter_seed + 4999) * 2.0f - 1.0f) * RAIL_IMPACT_JITTER_AMP;
+        /* Jitter decays as spark fades */
+        center[0] += jx * fade;
+        center[1] += jy * fade;
+        center[2] += jz * fade;
+
+        /* Spark size: small, shrinks as it fades */
+        f32 size_var = 0.6f + 0.8f * r_beam_hash(i * 89 + impact_seed + 113);
+        f32 half_size = RAIL_IMPACT_SPARK_SIZE * size_var * fade;
+
+        /* Electrical flickering: rapid on/off brightness changes */
+        f32 flicker = r_beam_hash(i * 61 + (u32)(age_seconds * 60.0f) + impact_seed);
+        flicker = flicker > 0.3f ? 1.0f : 0.15f; /* binary-ish flicker */
+
+        /* Hot white core with beam color tint.
+         * Early sparks are white-hot, then shift toward beam color as they cool. */
+        f32 white_mix = (1.0f - t) * 0.6f;
+        f32 pr = base_r * (1.0f - white_mix) + white_mix;
+        f32 pg = base_g * (1.0f - white_mix) + white_mix;
+        f32 pb = base_b * (1.0f - white_mix) + white_mix;
+
+        f32 intensity = fade * flicker;
+        f32 color[4] = {
+            pr * intensity,
+            pg * intensity,
+            pb * intensity,
+            intensity
+        };
+
+        /* Random rotation per spark (project rule: all new particles must
+         * spawn with random rotation, using deterministic hash for seed) */
+        f32 rot_angle = r_beam_hash(i * 457 + impact_seed + 1993) * 2.0f * PI;
+        f32 rot_cos = cosf(rot_angle);
+        f32 rot_sin = sinf(rot_angle);
+        f32 rot_right[3] = {
+            cam_right[0] * rot_cos + cam_up[0] * rot_sin,
+            cam_right[1] * rot_cos + cam_up[1] * rot_sin,
+            cam_right[2] * rot_cos + cam_up[2] * rot_sin
+        };
+        f32 rot_up[3] = {
+            -cam_right[0] * rot_sin + cam_up[0] * rot_cos,
+            -cam_right[1] * rot_sin + cam_up[1] * rot_cos,
+            -cam_right[2] * rot_sin + cam_up[2] * rot_cos
+        };
+
+        u32 emitted = r_beam_emit_screen_facing_quad(verts, v_start + v_count,
+                                                       center, half_size,
+                                                       rot_right, rot_up,
+                                                       color);
+        v_count += emitted;
+    }
+
+    if (v_count == 0) return;
+
+    r_beam_draw_t *draw = &g_r.beams.draws[g_r.beams.draw_count++];
+    draw->vertex_offset = v_start;
+    draw->vertex_count = v_count;
+    g_r.beams.vertex_count = v_start + v_count;
+}
+
 /* ---- Command Recording ---- */
 
 void r_beam_record_commands(VkCommandBuffer cmd, u32 frame_index)

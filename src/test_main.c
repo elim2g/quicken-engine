@@ -362,6 +362,87 @@ static void test_physics_trace(void) {
     qk_physics_world_destroy(world);
 }
 
+/* ---- Test 7: rail_impact_data ---- */
+
+static void test_rail_impact_data(void) {
+    printf("\n=== Test: rail_impact_data ===\n");
+    s_current_test = "rail_impact_data";
+
+    qk_phys_world_t *world = qk_physics_world_create_test_room();
+    vec3_t zero = {0, 0, 0};
+
+    /* Simulate a rail trace from center of room toward +X wall.
+       This mirrors exactly what main.c does when a rail fires:
+       ray trace with zero extents from eye position in the aim direction. */
+    vec3_t start = {0, 0, 128};
+    vec3_t end = {8192, 0, 128};  /* 8192 = rail max range */
+
+    qk_trace_result_t tr = qk_physics_trace(world, start, end, zero, zero);
+
+    printf("  [INFO] fraction=%.6f end_pos=(%.1f, %.1f, %.1f)\n",
+           (double)tr.fraction, (double)tr.end_pos.x,
+           (double)tr.end_pos.y, (double)tr.end_pos.z);
+    printf("  [INFO] hit_normal=(%.3f, %.3f, %.3f)\n",
+           (double)tr.hit_normal.x, (double)tr.hit_normal.y,
+           (double)tr.hit_normal.z);
+
+    TEST_CHECK(tr.fraction < 1.0f,
+               "Rail trace hits wall (fraction < 1.0)");
+
+    /* Verify the impact normal is non-zero and normalized */
+    f32 nrm_len = sqrtf(tr.hit_normal.x * tr.hit_normal.x +
+                         tr.hit_normal.y * tr.hit_normal.y +
+                         tr.hit_normal.z * tr.hit_normal.z);
+    printf("  [INFO] normal_length=%.6f\n", (double)nrm_len);
+
+    TEST_CHECK(nrm_len > 0.9f && nrm_len < 1.1f,
+               "Hit normal is unit length (not zero)");
+
+    /* For a +X wall, normal should point in -X direction */
+    TEST_CHECK(tr.hit_normal.x < -0.5f,
+               "Normal points back toward ray origin (-X)");
+
+    /* Impact position should be near the wall, not at the origin */
+    TEST_CHECK(tr.end_pos.x > 100.0f,
+               "Impact position is away from start (near wall)");
+
+    /* Verify the data that would feed into rail_impact_t is valid:
+       position finite, normal finite, all non-NaN */
+    bool pos_finite = (tr.end_pos.x == tr.end_pos.x) &&
+                      (tr.end_pos.y == tr.end_pos.y) &&
+                      (tr.end_pos.z == tr.end_pos.z);
+    bool nrm_finite = (tr.hit_normal.x == tr.hit_normal.x) &&
+                      (tr.hit_normal.y == tr.hit_normal.y) &&
+                      (tr.hit_normal.z == tr.hit_normal.z);
+    TEST_CHECK(pos_finite && nrm_finite,
+               "All impact data is finite (no NaN)");
+
+    /* Test multiple directions (simulate rail through players hitting wall) */
+    vec3_t dirs[] = {
+        {0, 8192, 128},     /* +Y wall */
+        {-8192, 0, 128},    /* -X wall */
+        {0, 0, -100},       /* floor */
+        {0, 0, 16000},      /* ceiling */
+    };
+
+    int walls_hit = 0;
+    for (int i = 0; i < 4; i++) {
+        qk_trace_result_t r = qk_physics_trace(world, start, dirs[i], zero, zero);
+        if (r.fraction < 1.0f) {
+            f32 len = sqrtf(r.hit_normal.x * r.hit_normal.x +
+                            r.hit_normal.y * r.hit_normal.y +
+                            r.hit_normal.z * r.hit_normal.z);
+            if (len > 0.9f) walls_hit++;
+        }
+    }
+
+    printf("  [INFO] walls hit with valid normals: %d/4\n", walls_hit);
+    TEST_CHECK(walls_hit == 4,
+               "All 4 direction traces hit walls with valid normals");
+
+    qk_physics_world_destroy(world);
+}
+
 /* ---- Test Registry ---- */
 
 typedef struct {
@@ -370,12 +451,13 @@ typedef struct {
 } test_entry_t;
 
 static const test_entry_t s_tests[] = {
-    { "forward_move",   test_forward_move },
-    { "strafejump",     test_strafejump },
-    { "rocket_jump",    test_rocket_jump },
-    { "rail_damage",    test_rail_damage },
-    { "ca_lifecycle",   test_ca_lifecycle },
-    { "physics_trace",  test_physics_trace },
+    { "forward_move",     test_forward_move },
+    { "strafejump",       test_strafejump },
+    { "rocket_jump",      test_rocket_jump },
+    { "rail_damage",      test_rail_damage },
+    { "ca_lifecycle",     test_ca_lifecycle },
+    { "physics_trace",    test_physics_trace },
+    { "rail_impact_data", test_rail_impact_data },
 };
 
 #define NUM_TESTS (sizeof(s_tests) / sizeof(s_tests[0]))

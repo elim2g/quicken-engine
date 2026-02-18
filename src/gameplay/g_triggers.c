@@ -108,16 +108,17 @@ static void g_check_teleporters(qk_game_state_t *gs) {
             /* Teleport: set origin to destination */
             ps->origin = tp->destination;
 
-            /* Set facing angle */
+            /* Snap view angles to destination facing */
             ps->yaw = tp->dest_yaw;
+            ps->pitch = 0.0f;
 
-            /* Preserve horizontal speed magnitude but redirect to new facing */
-            f32 horiz_speed = sqrtf(ps->velocity.x * ps->velocity.x +
-                                    ps->velocity.y * ps->velocity.y);
+            /* Q3-style: fixed exit velocity in destination's facing direction.
+               No momentum carry. */
+            #define TELEPORT_EXIT_SPEED 400.0f
             f32 yaw_rad = tp->dest_yaw * (3.14159265f / 180.0f);
-            ps->velocity.x = horiz_speed * cosf(yaw_rad);
-            ps->velocity.y = horiz_speed * sinf(yaw_rad);
-            /* Keep vertical velocity as-is */
+            ps->velocity.x = TELEPORT_EXIT_SPEED * cosf(yaw_rad);
+            ps->velocity.y = TELEPORT_EXIT_SPEED * sinf(yaw_rad);
+            ps->velocity.z = 0.0f;
 
             /* Toggle teleport bit — netcode detects via XOR between snapshots */
             ps->teleport_bit ^= 1;
