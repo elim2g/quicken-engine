@@ -1586,7 +1586,7 @@ int main(int argc, char *argv[]) {
             }
             f32 fade = 1.0f - (age / EXPLOSION_LIFETIME);
             qk_renderer_draw_explosion(e->pos[0], e->pos[1], e->pos[2],
-                                        e->radius, age,
+                                        /*e->radius*/e->radius*0.5f, age,
                                         1.0f, 0.6f, 0.1f, fade);
         }
 

@@ -485,15 +485,15 @@ qk_result_t r_pipeline_create_entity(void)
     return QK_SUCCESS;
 }
 
-/* ---- Beam Pipeline (additive blending, depth test ON, depth write OFF) ---- */
+/* ---- FX Pipeline (additive blending, depth test ON, depth write OFF) ---- */
 
-qk_result_t r_pipeline_create_beam(void)
+qk_result_t r_pipeline_create_fx(void)
 {
     VkShaderModule vert = r_pipeline_load_shader("src/renderer/shaders/compiled/beam.vert.spv");
     VkShaderModule frag = r_pipeline_load_shader("src/renderer/shaders/compiled/beam.frag.spv");
 
     if (!vert || !frag) {
-        fprintf(stderr, "[Renderer] Beam shader compilation required. Using stub pipeline.\n");
+        fprintf(stderr, "[Renderer] FX shader compilation required. Using stub pipeline.\n");
         if (vert) vkDestroyShaderModule(g_r.device.handle, vert, NULL);
         if (frag) vkDestroyShaderModule(g_r.device.handle, frag, NULL);
         return QK_SUCCESS;
@@ -516,15 +516,15 @@ qk_result_t r_pipeline_create_beam(void)
 
     VkVertexInputBindingDescription binding = {
         .binding   = 0,
-        .stride    = sizeof(r_beam_vertex_t),
+        .stride    = sizeof(r_fx_vertex_t),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
     };
 
     VkVertexInputAttributeDescription attrs[] = {
         { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
-          .offset = offsetof(r_beam_vertex_t, position) },
+          .offset = offsetof(r_fx_vertex_t, position) },
         { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-          .offset = offsetof(r_beam_vertex_t, color) }
+          .offset = offsetof(r_fx_vertex_t, color) }
     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
@@ -603,7 +603,7 @@ qk_result_t r_pipeline_create_beam(void)
         .pSetLayouts    = &g_r.view_set_layout
     };
 
-    vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL, &g_r.beam_pipeline.layout);
+    vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL, &g_r.fx_pipeline.layout);
 
     VkGraphicsPipelineCreateInfo pipeline_info = {
         .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -617,20 +617,20 @@ qk_result_t r_pipeline_create_beam(void)
         .pDepthStencilState  = &depth_stencil,
         .pColorBlendState    = &color_blend,
         .pDynamicState       = &dynamic_state,
-        .layout              = g_r.beam_pipeline.layout,
+        .layout              = g_r.fx_pipeline.layout,
         .renderPass          = g_r.world_target.render_pass,
         .subpass             = 0
     };
 
     VkResult vr = vkCreateGraphicsPipelines(g_r.device.handle, g_r.pipeline_cache_handle,
                                              1, &pipeline_info, NULL,
-                                             &g_r.beam_pipeline.handle);
+                                             &g_r.fx_pipeline.handle);
 
     vkDestroyShaderModule(g_r.device.handle, vert, NULL);
     vkDestroyShaderModule(g_r.device.handle, frag, NULL);
 
     if (vr != VK_SUCCESS) {
-        fprintf(stderr, "[Renderer] Failed to create beam pipeline\n");
+        fprintf(stderr, "[Renderer] Failed to create FX pipeline\n");
         return QK_ERROR_PIPELINE;
     }
 
@@ -941,9 +941,9 @@ void r_pipeline_destroy_all(void)
     if (g_r.entity_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.entity_pipeline.layout, NULL);
     memset(&g_r.entity_pipeline, 0, sizeof(g_r.entity_pipeline));
 
-    if (g_r.beam_pipeline.handle) vkDestroyPipeline(dev, g_r.beam_pipeline.handle, NULL);
-    if (g_r.beam_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.beam_pipeline.layout, NULL);
-    memset(&g_r.beam_pipeline, 0, sizeof(g_r.beam_pipeline));
+    if (g_r.fx_pipeline.handle) vkDestroyPipeline(dev, g_r.fx_pipeline.handle, NULL);
+    if (g_r.fx_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.fx_pipeline.layout, NULL);
+    memset(&g_r.fx_pipeline, 0, sizeof(g_r.fx_pipeline));
 
     if (g_r.ui_pipeline.handle) vkDestroyPipeline(dev, g_r.ui_pipeline.handle, NULL);
     if (g_r.ui_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.ui_pipeline.layout, NULL);
