@@ -360,7 +360,7 @@ static u32           s_rail_impact_next;
 /* ---- Rocket Smoke Particles ---- */
 
 #define SMOKE_POOL_SIZE       1024
-#define SMOKE_MAX_AGE         2.0f
+#define SMOKE_MAX_AGE         0.5f
 #define SMOKE_SPAWN_SPACING   8.0f
 #define MAX_TRACKED_ROCKETS   32
 
@@ -846,7 +846,7 @@ int main(int argc, char *argv[]) {
                                                   cb_fullscreen_changed);
     s_cvar_r_perflog = qk_cvar_register_bool("r_perflog", false, 0,
                                                cb_perflog_changed);
-    s_cvar_r_ambient = qk_cvar_register_float("r_ambient", 0.175f, 0.0f, 2.0f,
+    s_cvar_r_ambient = qk_cvar_register_float("r_ambient", 0.0125f, 0.0f, 2.0f,
                                                 QK_CVAR_ARCHIVE,
                                                 cb_ambient_changed);
 
