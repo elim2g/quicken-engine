@@ -49,7 +49,7 @@ void r_world_record_commands(VkCommandBuffer cmd, u32 frame_index)
     };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    /* Bind view UBO (set 0), bindless textures (set 1), light SSBOs (set 2) */
+    // Bind view UBO (set 0), bindless textures (set 1), light SSBOs (set 2)
     VkDescriptorSet sets[3] = {
         frame->view_descriptor_set,
         g_r.bindless_descriptor_set,
@@ -63,7 +63,7 @@ void r_world_record_commands(VkCommandBuffer cmd, u32 frame_index)
     vkCmdBindVertexBuffers(cmd, 0, 1, &g_r.world.vertex_buffer, &offset);
     vkCmdBindIndexBuffer(cmd, g_r.world.index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
-    /* Draw surfaces with push constants for texture index */
+    // Draw surfaces with push constants for texture index
     for (u32 i = 0; i < g_r.world.surface_count; i++) {
         r_draw_surface_t *surf = &g_r.world.surfaces[i];
 

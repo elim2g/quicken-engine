@@ -30,31 +30,31 @@
 #include "core/qk_demo.h"
 #include "ui/qk_console.h"
 
-/* ---- File-static state for demo system access ---- */
+// --- File-static state for demo system access ---
 static u8 s_local_client_id;
 static const char *s_map_path;
 static f64 s_demo_play_start_time;
 
-/* ---- Deferred map change ---- */
+// --- Deferred map change ---
 static char s_pending_map[256];
 static char s_loaded_map_path[512];
 
-/* ---- Remote client tracking (for mid-session join detection) ---- */
+// --- Remote client tracking (for mid-session join detection) ---
 static bool s_client_map_ready[QK_MAX_PLAYERS];
 
-/* ---- Connection mode ---- */
+// --- Connection mode ---
 typedef enum {
-    CONN_MODE_LOCAL,        /* loopback: hosting + playing locally */
-    CONN_MODE_CONNECTING,   /* UDP handshake in progress */
-    CONN_MODE_LOADING_MAP,  /* connected, loading server's map */
-    CONN_MODE_HANDSHAKING,  /* map loaded, waiting for server confirmation */
-    CONN_MODE_REMOTE        /* fully connected to remote server */
+    CONN_MODE_LOCAL,  // loopback: hosting + playing locally
+    CONN_MODE_CONNECTING,  // UDP handshake in progress
+    CONN_MODE_LOADING_MAP,  // connected, loading server's map
+    CONN_MODE_HANDSHAKING,  // map loaded, waiting for server confirmation
+    CONN_MODE_REMOTE  // fully connected to remote server
 } conn_mode_t;
 
 static conn_mode_t s_conn_mode = CONN_MODE_LOCAL;
 static f64         s_connect_start_time;
 
-/* ---- Cached cvar pointers (set during init, read each frame) ---- */
+// --- Cached cvar pointers (set during init, read each frame) ---
 
 static qk_cvar_t *s_cvar_fov;
 static qk_cvar_t *s_cvar_r_width;
@@ -66,10 +66,10 @@ static qk_cvar_t *s_cvar_r_fullscreen;
 static qk_cvar_t *s_cvar_r_perflog;
 static qk_cvar_t *s_cvar_r_ambient;
 
-/* Window pointer for cvar callbacks */
+// Window pointer for cvar callbacks
 static qk_window_t *s_window;
 
-/* ---- perflog callback ---- */
+// --- perflog callback ---
 
 static void cb_perflog_changed(qk_cvar_t *cvar) {
     qk_perf_set_enabled(cvar->value.b);
@@ -79,14 +79,14 @@ static void cb_ambient_changed(qk_cvar_t *cvar) {
     qk_renderer_set_ambient(cvar->value.f);
 }
 
-/* ---- vid_restart callback ---- */
+// --- vid_restart callback ---
 
 static void cb_render_cvar_changed(qk_cvar_t *cvar) {
     QK_UNUSED(cvar);
     qk_console_printf("Run 'vid_restart' to apply.");
 }
 
-/* ---- Window size callback (immediate, windowed mode only) ---- */
+// --- Window size callback (immediate, windowed mode only) ---
 
 static void cb_window_size_changed(qk_cvar_t *cvar) {
     QK_UNUSED(cvar);
@@ -99,7 +99,7 @@ static void cb_window_size_changed(qk_cvar_t *cvar) {
     qk_renderer_handle_window_resize(w, h);
 }
 
-/* ---- Fullscreen callback ---- */
+// --- Fullscreen callback ---
 
 static void cb_fullscreen_changed(qk_cvar_t *cvar) {
     if (!s_window) return;
@@ -127,7 +127,7 @@ static void cmd_vid_restart(i32 argc, const char **argv) {
     qk_console_print("Video restarted.");
 }
 
-/* ---- Camera Construction ---- */
+// --- Camera Construction ---
 
 static void build_perspective(f32 *out, f32 fov_deg, f32 aspect, f32 znear, f32 zfar) {
     memset(out, 0, 16 * sizeof(f32));
@@ -135,7 +135,7 @@ static void build_perspective(f32 *out, f32 fov_deg, f32 aspect, f32 znear, f32 
     f32 f = 1.0f / tanf(fov_rad * 0.5f);
 
     out[0]  = f / aspect;
-    out[5]  = -f;           /* Vulkan Y-down in clip space */
+    out[5]  = -f;  // Vulkan Y-down in clip space
     out[10] = zfar / (znear - zfar);
     out[11] = -1.0f;
     out[14] = (znear * zfar) / (znear - zfar);
@@ -149,22 +149,22 @@ static void build_view(f32 *out, f32 pos_x, f32 pos_y, f32 pos_z,
     f32 cp = cosf(p), sp = sinf(p);
     f32 cy = cosf(y), sy = sinf(y);
 
-    /* forward = direction the camera looks */
+    // forward = direction the camera looks
     f32 fx = cp * cy;
     f32 fy = cp * sy;
     f32 fz = sp;
 
-    /* right = cross(forward, world_up) */
+    // right = cross(forward, world_up)
     f32 rx = sy;
     f32 ry = -cy;
     f32 rz = 0.0f;
 
-    /* up = cross(right, forward) */
+    // up = cross(right, forward)
     f32 ux = ry * fz - rz * fy;
     f32 uy = rz * fx - rx * fz;
     f32 uz = rx * fy - ry * fx;
 
-    /* View matrix (column-major) */
+    // View matrix (column-major)
     memset(out, 0, 16 * sizeof(f32));
     out[0] = rx;  out[4] = ry;  out[8]  = rz;
     out[1] = ux;  out[5] = uy;  out[9]  = uz;
@@ -196,7 +196,7 @@ static qk_camera_t build_camera(f32 pos_x, f32 pos_y, f32 pos_z,
     f32 fov = (s_cvar_fov ? s_cvar_fov->value.f : 90.0f);
     build_perspective(proj, fov, aspect, 0.1f, 4096.0f);
 
-    /* Eye position is at player origin + eye height */
+    // Eye position is at player origin + eye height
     f32 eye_z = pos_z + 26.0f;
     build_view(view, pos_x, pos_y, eye_z, pitch, yaw);
 
@@ -208,12 +208,12 @@ static qk_camera_t build_camera(f32 pos_x, f32 pos_y, f32 pos_z,
     return cam;
 }
 
-/* ---- Grid Texture ---- */
+// --- Grid Texture ---
 
 static qk_texture_id_t create_grid_texture(void) {
     #define GRID_SIZE 256
-    #define GRID_LINE 4   /* line width in pixels */
-    #define GRID_CELL 64  /* cell size in pixels */
+    #define GRID_LINE 4  // line width in pixels
+    #define GRID_CELL 64  // cell size in pixels
 
     static u8 pixels[GRID_SIZE * GRID_SIZE * 4];
 
@@ -238,7 +238,7 @@ static qk_texture_id_t create_grid_texture(void) {
     return id;
 }
 
-/* ---- Test Room Render Geometry ---- */
+// --- Test Room Render Geometry ---
 
 static void upload_test_room_geometry(qk_texture_id_t tex_id) {
     /*
@@ -250,34 +250,34 @@ static void upload_test_room_geometry(qk_texture_id_t tex_id) {
     #define TR_UV_SCALE 128.0f
 
     static const struct { f32 p[3]; f32 n[3]; } face_data[6][4] = {
-        /* Floor (Z=0, normal up) */
+        // Floor (Z=0, normal up)
         { {{-TR_HALF,-TR_HALF,0}, {0,0,1}},  {{ TR_HALF,-TR_HALF,0}, {0,0,1}},
           {{ TR_HALF, TR_HALF,0}, {0,0,1}},  {{-TR_HALF, TR_HALF,0}, {0,0,1}} },
-        /* Ceiling (Z=256, normal down) */
+        // Ceiling (Z=256, normal down)
         { {{-TR_HALF,-TR_HALF,TR_TOP}, {0,0,-1}},  {{-TR_HALF, TR_HALF,TR_TOP}, {0,0,-1}},
           {{ TR_HALF, TR_HALF,TR_TOP}, {0,0,-1}},  {{ TR_HALF,-TR_HALF,TR_TOP}, {0,0,-1}} },
-        /* +X wall (normal inward -X) */
+        // +X wall (normal inward -X)
         { {{ TR_HALF, TR_HALF,0}, {-1,0,0}},  {{ TR_HALF,-TR_HALF,0}, {-1,0,0}},
           {{ TR_HALF,-TR_HALF,TR_TOP}, {-1,0,0}},  {{ TR_HALF, TR_HALF,TR_TOP}, {-1,0,0}} },
-        /* -X wall (normal inward +X) */
+        // -X wall (normal inward +X)
         { {{-TR_HALF,-TR_HALF,0}, {1,0,0}},  {{-TR_HALF, TR_HALF,0}, {1,0,0}},
           {{-TR_HALF, TR_HALF,TR_TOP}, {1,0,0}},  {{-TR_HALF,-TR_HALF,TR_TOP}, {1,0,0}} },
-        /* +Y wall (normal inward -Y) */
+        // +Y wall (normal inward -Y)
         { {{-TR_HALF, TR_HALF,0}, {0,-1,0}},  {{ TR_HALF, TR_HALF,0}, {0,-1,0}},
           {{ TR_HALF, TR_HALF,TR_TOP}, {0,-1,0}},  {{-TR_HALF, TR_HALF,TR_TOP}, {0,-1,0}} },
-        /* -Y wall (normal inward +Y) */
+        // -Y wall (normal inward +Y)
         { {{ TR_HALF,-TR_HALF,0}, {0,1,0}},  {{-TR_HALF,-TR_HALF,0}, {0,1,0}},
           {{-TR_HALF,-TR_HALF,TR_TOP}, {0,1,0}},  {{ TR_HALF,-TR_HALF,TR_TOP}, {0,1,0}} },
     };
 
-    /* UV axis indices per face: floor/ceiling use XY, X-walls use YZ, Y-walls use XZ */
+    // UV axis indices per face: floor/ceiling use XY, X-walls use YZ, Y-walls use XZ
     static const u32 uv_axis[6][2] = {
-        {0, 1}, /* floor:    X, Y */
-        {0, 1}, /* ceiling:  X, Y */
-        {1, 2}, /* +X wall:  Y, Z */
-        {1, 2}, /* -X wall:  Y, Z */
-        {0, 2}, /* +Y wall:  X, Z */
-        {0, 2}, /* -Y wall:  X, Z */
+        {0, 1},  // floor:    X, Y
+        {0, 1},  // ceiling:  X, Y
+        {1, 2},  // +X wall:  Y, Z
+        {1, 2},  // -X wall:  Y, Z
+        {0, 2},  // +Y wall:  X, Z
+        {0, 2},  // -Y wall:  X, Z
     };
 
     qk_world_vertex_t verts[24];
@@ -325,10 +325,10 @@ static void upload_test_room_geometry(qk_texture_id_t tex_id) {
     #undef TR_UV_SCALE
 }
 
-/* ---- Beam Effect State ---- */
+// --- Beam Effect State ---
 
 #define MAX_RAIL_BEAMS 16
-#define RAIL_BEAM_LIFETIME 1.5
+static const f64 RAIL_BEAM_LIFETIME = 1.5;
 
 typedef struct {
     f32     start[3];
@@ -343,7 +343,7 @@ static u8          s_prev_flags[QK_MAX_ENTITIES];
 static u32         s_rail_beam_next;
 
 #define MAX_RAIL_IMPACTS 16
-#define RAIL_IMPACT_LIFETIME 1.5
+static const f64 RAIL_IMPACT_LIFETIME = 1.5;
 
 typedef struct {
     f32     pos[3];
@@ -357,17 +357,17 @@ typedef struct {
 static rail_impact_t s_rail_impacts[MAX_RAIL_IMPACTS];
 static u32           s_rail_impact_next;
 
-/* ---- Rocket Smoke Particles ---- */
+// --- Rocket Smoke Particles ---
 
 #define SMOKE_POOL_SIZE       1024
-#define SMOKE_MAX_AGE         0.5f
-#define SMOKE_SPAWN_SPACING   8.0f
+static const f32 SMOKE_MAX_AGE       = 0.5f;
+static const f32 SMOKE_SPAWN_SPACING = 8.0f;
 #define MAX_TRACKED_ROCKETS   32
 
 typedef struct {
     f32 pos[3];
     f64 birth_time;
-    f32 angle;      /* random billboard rotation (radians) */
+    f32 angle;  // random billboard rotation (radians)
 } smoke_particle_t;
 
 static smoke_particle_t s_smoke_pool[SMOKE_POOL_SIZE];
@@ -377,20 +377,20 @@ typedef struct {
     u32  entity_id;
     bool active;
     f32  last_pos[3];
-    f32  last_dir[3];   /* normalized travel direction (for explosion offset) */
+    f32  last_dir[3];  // normalized travel direction (for explosion offset)
     u32  last_tick;
 } rocket_smoke_tracker_t;
 
 static rocket_smoke_tracker_t s_rocket_trackers[MAX_TRACKED_ROCKETS];
 
-/* ---- Explosion Effects ---- */
+// --- Explosion Effects ---
 
 #define MAX_EXPLOSIONS        16
-#define EXPLOSION_LIFETIME    1.0f
+static const f32 EXPLOSION_LIFETIME = 1.0f;
 
 typedef struct {
     f32  pos[3];
-    f32  dir[3];    /* normalized travel direction at impact */
+    f32  dir[3];  // normalized travel direction at impact
     f32  radius;
     f64  birth_time;
     bool active;
@@ -399,7 +399,7 @@ typedef struct {
 static explosion_t s_explosions[MAX_EXPLOSIONS];
 static u32         s_explosion_next;
 
-/* ---- Diagnostic Trace ---- */
+// --- Diagnostic Trace ---
 
 static FILE *s_diag_file;
 static u32   s_diag_frame;
@@ -433,7 +433,7 @@ static void cmd_diag(i32 argc, const char **argv) {
     }
 }
 
-/* ---- Client Prediction State ---- */
+// --- Client Prediction State ---
 
 #define CL_CMD_BUFFER_SIZE 128
 
@@ -455,13 +455,13 @@ static bool                 cl_has_prediction;
 static f32                  cl_pred_accumulator;
 static u32                  cl_last_reconciled_ack;
 
-/* ---- Reconciliation ---- */
+// --- Reconciliation ---
 
 static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
     qk_player_state_t server_state;
     if (!qk_net_client_get_server_player_state(&server_state)) return;
 
-    /* Find predicted state for ack_sequence */
+    // Find predicted state for ack_sequence
     u32 ack_idx = ack_sequence % CL_CMD_BUFFER_SIZE;
     cl_predicted_state_t *predicted = &cl_pred_history[ack_idx];
     if (predicted->sequence != ack_sequence) return;
@@ -483,20 +483,20 @@ static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
     cl_predicted_ps.damage_taken    = server_state.damage_taken;
     cl_predicted_ps.respawn_time    = server_state.respawn_time;
 
-    /* Compare positions (epsilon = 0.1 units squared) */
+    // Compare positions (epsilon = 0.1 units squared)
     f32 dx = server_state.origin.x - predicted->state.origin.x;
     f32 dy = server_state.origin.y - predicted->state.origin.y;
     f32 dz = server_state.origin.z - predicted->state.origin.z;
     f32 dist_sq = dx * dx + dy * dy + dz * dz;
 
-    /* Detect teleport: snap input angles to server-provided view direction */
+    // Detect teleport: snap input angles to server-provided view direction
     if (server_state.teleport_bit != cl_predicted_ps.teleport_bit) {
         qk_input_set_angles(server_state.pitch, server_state.yaw);
     }
 
-    if (dist_sq < 0.1f) return; /* Position matches, no replay needed */
+    if (dist_sq < 0.1f) return;  // Position matches, no replay needed
 
-    /* Position misprediction: snap to server state and replay */
+    // Position misprediction: snap to server state and replay
     cl_predicted_ps = server_state;
 
     for (u32 seq = ack_sequence + 1; seq < cl_cmd_sequence; seq++) {
@@ -511,10 +511,10 @@ static void cl_reconcile(u32 ack_sequence, qk_phys_world_t *world) {
     }
 }
 
-/* ---- Server Tick ---- */
+// --- Server Tick ---
 
 static void server_tick(qk_phys_world_t *phys_world) {
-    /* 0. Detect remote client connects and disconnects */
+    // 0. Detect remote client connects and disconnects
     for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
         bool was_ready = s_client_map_ready[i];
         bool is_ready = qk_net_server_is_client_map_ready(i);
@@ -525,13 +525,13 @@ static void server_tick(qk_phys_world_t *phys_world) {
             qk_game_player_connect(i, "Remote", QK_TEAM_ALPHA);
             s_client_map_ready[i] = true;
         } else if (!is_ready && was_ready) {
-            /* Client disconnected or lost map-ready: remove from gameplay */
+            // Client disconnected or lost map-ready: remove from gameplay
             qk_game_player_disconnect(i);
             s_client_map_ready[i] = false;
         }
     }
 
-    /* 1. Read inputs from all connected clients */
+    // 1. Read inputs from all connected clients
     for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
         qk_usercmd_t cmd;
         if (qk_net_server_get_input(i, &cmd)) {
@@ -539,7 +539,7 @@ static void server_tick(qk_phys_world_t *phys_world) {
         }
     }
 
-    /* 2. Run gameplay tick (mode logic, weapons, physics, combat) */
+    // 2. Run gameplay tick (mode logic, weapons, physics, combat)
     qk_game_tick(phys_world, QK_TICK_DT);
 
     /* 2b. Read explosion events from gameplay (covers ALL rocket deaths,
@@ -562,7 +562,7 @@ static void server_tick(qk_phys_world_t *phys_world) {
         }
     }
 
-    /* 3. Pack entity states for netcode snapshot */
+    // 3. Pack entity states for netcode snapshot
     for (u32 i = 0; i < qk_game_get_entity_count(); i++) {
         n_entity_state_t net_state;
         qk_game_pack_entity((u8)i, &net_state);
@@ -573,11 +573,11 @@ static void server_tick(qk_phys_world_t *phys_world) {
         }
     }
 
-    /* 4. Netcode broadcasts snapshots to all clients */
+    // 4. Netcode broadcasts snapshots to all clients
     qk_net_server_tick();
 }
 
-/* ---- Map Console Command ---- */
+// --- Map Console Command ---
 
 static void cmd_map(i32 argc, const char **argv) {
     if (argc < 2) {
@@ -591,7 +591,7 @@ static void cmd_map(i32 argc, const char **argv) {
     snprintf(s_pending_map, sizeof(s_pending_map), "%s", argv[1]);
 }
 
-/* ---- Demo Console Commands ---- */
+// --- Demo Console Commands ---
 
 static void cmd_demo_record(i32 argc, const char **argv) {
     if (argc < 2) {
@@ -634,19 +634,21 @@ static void cmd_demo_play(i32 argc, const char **argv) {
     }
 }
 
-/* ---- Loopback Restoration Helpers ---- */
+// --- Loopback Restoration Helpers ---
 
 /* Restore loopback netcode (server + client). Caller must have already
  * shut down the previous client (and server if applicable). */
 static void restore_loopback_netcode(void) {
-    qk_net_server_config_t nsc = {0};
-    nsc.server_port = 0;
-    nsc.max_clients = QK_MAX_PLAYERS;
-    nsc.tick_rate = (f64)QK_TICK_RATE;
+    qk_net_server_config_t nsc = {
+        .server_port = 0,
+        .max_clients = QK_MAX_PLAYERS,
+        .tick_rate = (f64)QK_TICK_RATE,
+    };
     qk_net_server_init(&nsc);
 
-    qk_net_client_config_t ncc = {0};
-    ncc.interp_delay = 0.0;
+    qk_net_client_config_t ncc = {
+        .interp_delay = 0.0,
+    };
     qk_net_client_init(&ncc);
     qk_net_client_connect_local();
 
@@ -688,7 +690,7 @@ static void restore_local_gameplay(void) {
     cl_last_reconciled_ack = 0;
 }
 
-/* ---- Connect / Disconnect Console Commands ---- */
+// --- Connect / Disconnect Console Commands ---
 
 static void cmd_connect(i32 argc, const char **argv) {
     if (argc < 2) {
@@ -700,7 +702,7 @@ static void cmd_connect(i32 argc, const char **argv) {
         return;
     }
 
-    /* Parse address:port */
+    // Parse address:port
     char addr_buf[256];
     snprintf(addr_buf, sizeof(addr_buf), "%s", argv[1]);
     char *colon = strrchr(addr_buf, ':');
@@ -717,14 +719,15 @@ static void cmd_connect(i32 argc, const char **argv) {
 
     qk_console_printf("Connecting to %s:%u...", addr_buf, (u32)port);
 
-    /* Tear down loopback server + client */
+    // Tear down loopback server + client
     qk_net_client_disconnect();
     qk_net_client_shutdown();
     qk_net_server_shutdown();
 
-    /* Init fresh client for remote connection */
-    qk_net_client_config_t ncc = {0};
-    ncc.interp_delay = 0.020;  /* 20ms interpolation delay for remote */
+    // Init fresh client for remote connection
+    qk_net_client_config_t ncc = {
+        .interp_delay = 0.020,  // 20ms interpolation delay for remote
+    };
     qk_net_client_init(&ncc);
 
     qk_result_t res = qk_net_client_connect_remote(addr_buf, port);
@@ -758,7 +761,7 @@ static void cmd_disconnect(i32 argc, const char **argv) {
     qk_console_print("Disconnected. Returned to local server.");
 }
 
-/* ---- Main ---- */
+// --- Main ---
 
 int main(int argc, char *argv[]) {
     QK_UNUSED(argc);
@@ -772,7 +775,7 @@ int main(int argc, char *argv[]) {
 #endif
     printf("\n");
 
-    /* ---- Parse arguments ---- */
+    // --- Parse arguments ---
     const char *map_path = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-map") == 0 && i + 1 < argc) {
@@ -781,12 +784,13 @@ int main(int argc, char *argv[]) {
     }
     s_map_path = map_path;
 
-    /* ---- Create window ---- */
+    // --- Create window ---
     qk_window_t *window = NULL;
-    qk_window_config_t wc = {0};
-    wc.width = 1280;
-    wc.height = 720;
-    wc.title = "QUICKEN Engine";
+    qk_window_config_t wc = {
+        .width = 1280,
+        .height = 720,
+        .title = "QUICKEN Engine",
+    };
 
     qk_result_t res = qk_window_create(&wc, &window);
     if (res != QK_SUCCESS) {
@@ -798,15 +802,16 @@ int main(int argc, char *argv[]) {
     u32 win_w, win_h;
     qk_window_get_size(window, &win_w, &win_h);
 
-    /* ---- Init renderer ---- */
-    qk_renderer_config_t rc = {0};
-    rc.sdl_window = qk_window_get_native_handle(window);
-    rc.render_width = 1920;
-    rc.render_height = 1080;
-    rc.window_width = win_w;
-    rc.window_height = win_h;
-    rc.aspect_fit = true;
-    rc.vsync = false;
+    // --- Init renderer ---
+    qk_renderer_config_t rc = {
+        .sdl_window = qk_window_get_native_handle(window),
+        .render_width = 1920,
+        .render_height = 1080,
+        .window_width = win_w,
+        .window_height = win_h,
+        .aspect_fit = true,
+        .vsync = false,
+    };
 
     res = qk_renderer_init(&rc);
     if (res != QK_SUCCESS) {
@@ -815,11 +820,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* ---- Init cvar + console ---- */
+    // --- Init cvar + console ---
     qk_cvar_init();
     qk_console_init();
 
-    /* Register game cvars */
+    // Register game cvars
     qk_cvar_register_float("sensitivity", 0.022f, 0.001f, 10.0f,
                             QK_CVAR_ARCHIVE, NULL);
     s_cvar_fov = qk_cvar_register_float("fov", 90.0f, 60.0f, 140.0f,
@@ -870,19 +875,18 @@ int main(int argc, char *argv[]) {
     qk_console_register_cmd("disconnect", cmd_disconnect,
                              "Disconnect from remote server");
     
-    /* Manually fire off the r_ambient callback since the renderer is already init */
+    // Manually fire off the r_ambient callback since the renderer is already init
     cb_ambient_changed(s_cvar_r_ambient);
 
-    /* ---- Initial world (test room as baseline) ---- */
-    qk_map_data_t map_data;
-    memset(&map_data, 0, sizeof(map_data));
+    // --- Initial world (test room as baseline) ---
+    qk_map_data_t map_data = {0};
     bool map_loaded = false;
 
     qk_phys_world_t *phys_world = qk_physics_world_create_test_room();
     qk_texture_id_t grid_tex = create_grid_texture();
     upload_test_room_geometry(grid_tex);
 
-    /* ---- Init gameplay ---- */
+    // --- Init gameplay ---
     qk_game_config_t gc = {0};
     res = qk_game_init(&gc);
     if (res != QK_SUCCESS) {
@@ -890,11 +894,12 @@ int main(int argc, char *argv[]) {
         goto shutdown;
     }
 
-    /* ---- Init netcode (server + client, loopback) ---- */
-    qk_net_server_config_t nsc = {0};
-    nsc.server_port = 0;
-    nsc.max_clients = QK_MAX_PLAYERS;
-    nsc.tick_rate = (f64)QK_TICK_RATE;
+    // --- Init netcode (server + client, loopback) ---
+    qk_net_server_config_t nsc = {
+        .server_port = 0,
+        .max_clients = QK_MAX_PLAYERS,
+        .tick_rate = (f64)QK_TICK_RATE,
+    };
 
     res = qk_net_server_init(&nsc);
     if (res != QK_SUCCESS) {
@@ -902,8 +907,9 @@ int main(int argc, char *argv[]) {
         goto shutdown;
     }
 
-    qk_net_client_config_t ncc = {0};
-    ncc.interp_delay = 0.0;     /* loopback: zero interpolation delay */
+    qk_net_client_config_t ncc = {
+        .interp_delay = 0.0,  // loopback: zero interpolation delay
+    };
 
     res = qk_net_client_init(&ncc);
     if (res != QK_SUCCESS) {
@@ -921,7 +927,7 @@ int main(int argc, char *argv[]) {
     s_local_client_id = local_client_id;
     printf("Connected as client %u (loopback)\n", local_client_id);
 
-    /* ---- Connect local player to game ---- */
+    // --- Connect local player to game ---
     res = qk_game_player_connect(local_client_id, "Player", QK_TEAM_ALPHA);
     if (res != QK_SUCCESS) {
         fprintf(stderr, "FATAL: Failed to connect player (%d)\n", res);
@@ -929,7 +935,7 @@ int main(int argc, char *argv[]) {
     }
     s_client_map_ready[local_client_id] = true;
 
-    /* Spawn the player at default position (map load will respawn) */
+    // Spawn the player at default position (map load will respawn)
     qk_player_state_t *ps = qk_game_get_player_state_mut(local_client_id);
     if (ps) {
         ps->alive_state = QK_PSTATE_ALIVE;
@@ -942,7 +948,7 @@ int main(int argc, char *argv[]) {
         qk_physics_player_init(ps, (vec3_t){0.0f, 0.0f, 24.0f});
     }
 
-    /* ---- Init prediction state ---- */
+    // --- Init prediction state ---
     memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
     memset(cl_pred_history, 0, sizeof(cl_pred_history));
     memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
@@ -951,12 +957,12 @@ int main(int argc, char *argv[]) {
     cl_pred_accumulator = 0.0f;
     cl_last_reconciled_ack = 0;
 
-    /* ---- Queue command-line map for deferred loading (same path as console) ---- */
+    // --- Queue command-line map for deferred loading (same path as console) ---
     if (map_path) {
         snprintf(s_pending_map, sizeof(s_pending_map), "%s", map_path);
     }
 
-    /* ---- Main loop ---- */
+    // --- Main loop ---
     printf("Entering main loop...\n");
 
     f64 prev_time = qk_platform_time_now();
@@ -974,11 +980,11 @@ int main(int argc, char *argv[]) {
         f32 real_dt = (f32)(now - prev_time);
         prev_time = now;
 
-        /* Clamp dt to avoid spiral of death */
+        // Clamp dt to avoid spiral of death
         if (real_dt > 0.1f) real_dt = 0.1f;
         if (real_dt < 0.0f) real_dt = 0.0f;
 
-        /* FPS counter */
+        // FPS counter
         fps_timer += (f64)real_dt;
         frame_count++;
         if (fps_timer >= 1.0) {
@@ -987,26 +993,26 @@ int main(int argc, char *argv[]) {
             fps_timer -= 1.0;
         }
 
-        /* ---- 1. Poll input FIRST for minimum latency ---- */
+        // --- 1. Poll input FIRST for minimum latency ---
         qk_input_poll(&input_state);
         if (input_state.quit_requested) {
             running = false;
             break;
         }
 
-        /* Sync local_client_id from file-static (console commands may change it) */
+        // Sync local_client_id from file-static (console commands may change it)
         local_client_id = s_local_client_id;
 
-        /* ---- Handle deferred map change (local mode only) ---- */
+        // --- Handle deferred map change (local mode only) ---
         if (s_pending_map[0] != '\0' && s_conn_mode == CONN_MODE_LOCAL) {
             char path[512];
             bool found = false;
 
-            /* Try exact name in assets/maps/ first (handles "asylum.bsp") */
+            // Try exact name in assets/maps/ first (handles "asylum.bsp")
             snprintf(path, sizeof(path), "assets/maps/%s", s_pending_map);
             { FILE *mf = fopen(path, "rb"); if (mf) { fclose(mf); found = true; } }
 
-            /* Then try appending extensions (handles bare "asylum") */
+            // Then try appending extensions (handles bare "asylum")
             if (!found) {
                 const char *exts[] = { ".bsp", ".map" };
                 for (int e = 0; e < 2 && !found; e++) {
@@ -1016,7 +1022,7 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Try as raw path (absolute or relative) */
+            // Try as raw path (absolute or relative)
             if (!found) {
                 snprintf(path, sizeof(path), "%s", s_pending_map);
                 FILE *mf = fopen(path, "rb");
@@ -1026,14 +1032,13 @@ int main(int argc, char *argv[]) {
             if (!found) {
                 qk_console_printf("Map not found: %s", s_pending_map);
             } else {
-                /* Load new map data first (before tearing anything down) */
-                qk_map_data_t new_map;
-                memset(&new_map, 0, sizeof(new_map));
+                // Load new map data first (before tearing anything down)
+                qk_map_data_t new_map = {0};
                 res = qk_map_load(path, &new_map);
                 if (res != QK_SUCCESS) {
                     qk_console_printf("Failed to load map '%s' (%d)", s_pending_map, res);
                 } else {
-                    /* === CLEAN SLATE: tear down everything === */
+                    // === CLEAN SLATE: tear down everything ===
                     qk_net_client_disconnect();
                     qk_net_client_shutdown();
                     qk_net_server_shutdown();
@@ -1043,20 +1048,20 @@ int main(int argc, char *argv[]) {
                     phys_world = NULL;
                     qk_map_free(&map_data);
 
-                    /* === REBUILD: fresh state from scratch === */
+                    // === REBUILD: fresh state from scratch ===
                     map_data = new_map;
                     map_loaded = true;
                     strncpy(s_loaded_map_path, path, sizeof(s_loaded_map_path) - 1);
                     s_loaded_map_path[sizeof(s_loaded_map_path) - 1] = '\0';
                     s_map_path = s_loaded_map_path;
 
-                    /* Physics world */
+                    // Physics world
                     if (map_data.collision.brush_count > 0)
                         phys_world = qk_physics_world_create(&map_data.collision);
                     if (!phys_world)
                         phys_world = qk_physics_world_create_test_room();
 
-                    /* Render geometry */
+                    // Render geometry
                     if (map_data.vertex_count > 0) {
                         for (u32 si = 0; si < map_data.surface_count; si++)
                             map_data.surfaces[si].texture_index = grid_tex;
@@ -1065,7 +1070,7 @@ int main(int argc, char *argv[]) {
                                                   map_data.surfaces, map_data.surface_count);
                     }
 
-                    /* Lightmap atlas */
+                    // Lightmap atlas
                     if (map_data.lightmap_atlas) {
                         qk_renderer_upload_lightmap_atlas(
                             map_data.lightmap_atlas,
@@ -1073,27 +1078,29 @@ int main(int argc, char *argv[]) {
                             map_data.lightmap_atlas_height);
                     }
 
-                    /* Game state (clean init) */
+                    // Game state (clean init)
                     qk_game_config_t gc = {0};
                     qk_game_init(&gc);
 
-                    /* Netcode (full reinit) */
-                    qk_net_server_config_t nsc = {0};
-                    nsc.server_port = 0;
-                    nsc.max_clients = QK_MAX_PLAYERS;
-                    nsc.tick_rate = (f64)QK_TICK_RATE;
+                    // Netcode (full reinit)
+                    qk_net_server_config_t nsc = {
+                        .server_port = 0,
+                        .max_clients = QK_MAX_PLAYERS,
+                        .tick_rate = (f64)QK_TICK_RATE,
+                    };
                     qk_net_server_init(&nsc);
                     qk_net_server_set_map(path);
 
-                    qk_net_client_config_t ncc = {0};
-                    ncc.interp_delay = 0.0;
+                    qk_net_client_config_t ncc = {
+                        .interp_delay = 0.0,
+                    };
                     qk_net_client_init(&ncc);
                     qk_net_client_connect_local();
 
                     local_client_id = qk_net_client_get_id();
                     s_local_client_id = local_client_id;
 
-                    /* Player (connect + spawn) */
+                    // Player (connect + spawn)
                     memset(s_client_map_ready, 0, sizeof(s_client_map_ready));
                     qk_game_player_connect(local_client_id, "Player", QK_TEAM_ALPHA);
                     s_client_map_ready[local_client_id] = true;
@@ -1115,11 +1122,11 @@ int main(int argc, char *argv[]) {
                         qk_physics_player_init(mps, spawn);
                     }
 
-                    /* Load trigger volumes (teleporters + jump pads) */
+                    // Load trigger volumes (teleporters + jump pads)
                     qk_game_load_triggers(map_data.teleporters, map_data.teleporter_count,
                                            map_data.jump_pads, map_data.jump_pad_count);
 
-                    /* Prediction + beam state (clean slate) */
+                    // Prediction + beam state (clean slate)
                     memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
                     memset(cl_pred_history, 0, sizeof(cl_pred_history));
                     memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
@@ -1157,9 +1164,9 @@ int main(int argc, char *argv[]) {
             s_pending_map[0] = '\0';
         }
 
-        /* ---- Remote connection state machine ---- */
+        // --- Remote connection state machine ---
         if (s_conn_mode == CONN_MODE_CONNECTING) {
-            qk_net_client_tick();  /* drive the UDP handshake */
+            qk_net_client_tick();  // drive the UDP handshake
             qk_conn_state_t cs = qk_net_client_get_state();
             if (cs == QK_CONN_CONNECTED) {
                 const char *server_map = qk_net_client_get_server_map();
@@ -1167,7 +1174,7 @@ int main(int argc, char *argv[]) {
                     qk_console_printf("Connected! Server map: %s", server_map);
                     s_conn_mode = CONN_MODE_LOADING_MAP;
 
-                    /* Load map for remote play (no netcode teardown) */
+                    // Load map for remote play (no netcode teardown)
                     char rpath[512];
                     bool rfound = false;
                     snprintf(rpath, sizeof(rpath), "assets/maps/%s", server_map);
@@ -1193,8 +1200,7 @@ int main(int argc, char *argv[]) {
                         qk_net_client_shutdown();
                         restore_loopback_netcode();
                     } else {
-                        qk_map_data_t new_map;
-                        memset(&new_map, 0, sizeof(new_map));
+                        qk_map_data_t new_map = {0};
                         res = qk_map_load(rpath, &new_map);
                         if (res != QK_SUCCESS) {
                             qk_console_printf("Failed to load map '%s' (%d)", server_map, res);
@@ -1202,14 +1208,14 @@ int main(int argc, char *argv[]) {
                             qk_net_client_shutdown();
                             restore_loopback_netcode();
                         } else {
-                            /* Tear down old game state (but NOT netcode) */
+                            // Tear down old game state (but NOT netcode)
                             qk_game_shutdown();
                             qk_renderer_free_world();
                             qk_physics_world_destroy(phys_world);
                             phys_world = NULL;
                             qk_map_free(&map_data);
 
-                            /* Rebuild world */
+                            // Rebuild world
                             map_data = new_map;
                             map_loaded = true;
                             strncpy(s_loaded_map_path, rpath, sizeof(s_loaded_map_path) - 1);
@@ -1229,7 +1235,7 @@ int main(int argc, char *argv[]) {
                                                           map_data.surfaces, map_data.surface_count);
                             }
 
-                            /* Lightmap atlas */
+                            // Lightmap atlas
                             if (map_data.lightmap_atlas) {
                                 qk_renderer_upload_lightmap_atlas(
                                     map_data.lightmap_atlas,
@@ -1237,7 +1243,7 @@ int main(int argc, char *argv[]) {
                                     map_data.lightmap_atlas_height);
                             }
 
-                            /* Game state */
+                            // Game state
                             qk_game_config_t gc2 = {0};
                             qk_game_init(&gc2);
 
@@ -1250,7 +1256,7 @@ int main(int argc, char *argv[]) {
                             qk_game_load_triggers(map_data.teleporters, map_data.teleporter_count,
                                                    map_data.jump_pads, map_data.jump_pad_count);
 
-                            /* Reset prediction + effect state */
+                            // Reset prediction + effect state
                             memset(cl_cmd_buffer, 0, sizeof(cl_cmd_buffer));
                             memset(cl_pred_history, 0, sizeof(cl_pred_history));
                             memset(&cl_predicted_ps, 0, sizeof(cl_predicted_ps));
@@ -1267,7 +1273,7 @@ int main(int argc, char *argv[]) {
                             memset(s_explosions, 0, sizeof(s_explosions));
                             s_explosion_next = 0;
 
-                            /* Handshake: notify server that map is loaded */
+                            // Handshake: notify server that map is loaded
                             qk_net_client_notify_map_loaded(rpath);
                             s_conn_mode = CONN_MODE_HANDSHAKING;
                             s_connect_start_time = qk_platform_time_now();
@@ -1305,12 +1311,12 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* ---- Game/Demo branch ---- */
+        // --- Game/Demo branch ---
         f32 cam_x = 0, cam_y = 0, cam_z = 24;
         f32 cam_pitch = 0, cam_yaw = 0;
 
         if (qk_demo_is_playing()) {
-            /* ---- Demo playback path ---- */
+            // --- Demo playback path ---
             f64 elapsed = now - s_demo_play_start_time;
             u32 playback_tick = qk_demo_get_start_tick() +
                                 (u32)(elapsed * (f64)QK_TICK_RATE);
@@ -1323,7 +1329,7 @@ int main(int argc, char *argv[]) {
             f64 render_time = (f64)playback_tick / (f64)QK_TICK_RATE - QK_TICK_DT_F64;
             qk_net_client_interpolate(render_time);
 
-            /* Camera from POV entity */
+            // Camera from POV entity
             u8 pov_id = qk_demo_get_pov_client_id();
             const qk_interp_state_t *pov = qk_net_client_get_interp_state();
             if (pov && pov->entities[pov_id].active) {
@@ -1337,13 +1343,13 @@ int main(int argc, char *argv[]) {
         } else if (s_conn_mode == CONN_MODE_CONNECTING ||
                    s_conn_mode == CONN_MODE_LOADING_MAP ||
                    s_conn_mode == CONN_MODE_HANDSHAKING) {
-            /* Waiting for remote connection -- just show current view */
+            // Waiting for remote connection -- just show current view
             cam_pitch = qk_input_get_pitch();
             cam_yaw = qk_input_get_yaw();
         } else if (s_conn_mode == CONN_MODE_REMOTE) {
-            /* ---- Remote play path (no local server) ---- */
+            // --- Remote play path (no local server) ---
 
-            /* Client-side prediction at fixed tick rate */
+            // Client-side prediction at fixed tick rate
             cl_pred_accumulator += real_dt;
             while (cl_pred_accumulator >= QK_TICK_DT) {
                 u32 server_time = cl_cmd_sequence * QK_TICK_DT_MS_NOM;
@@ -1373,12 +1379,12 @@ int main(int argc, char *argv[]) {
                 cl_pred_accumulator -= QK_TICK_DT;
             }
 
-            /* No local server tick -- server runs remotely */
+            // No local server tick -- server runs remotely
 
-            /* Client tick (processes received snapshots from remote server) */
+            // Client tick (processes received snapshots from remote server)
             qk_net_client_tick();
 
-            /* Reconciliation check */
+            // Reconciliation check
             u32 ack = qk_net_client_get_server_cmd_ack();
             if (ack > cl_last_reconciled_ack && cl_has_prediction) {
                 cl_reconcile(ack, phys_world);
@@ -1397,7 +1403,7 @@ int main(int argc, char *argv[]) {
                 qk_net_client_interpolate(render_time);
             }
 
-            /* Build camera from predicted state */
+            // Build camera from predicted state
             if (cl_has_prediction) {
                 f32 pred_alpha = cl_pred_accumulator / QK_TICK_DT;
                 cam_x = cl_predicted_ps.origin.x + cl_predicted_ps.velocity.x * QK_TICK_DT * pred_alpha;
@@ -1407,7 +1413,7 @@ int main(int argc, char *argv[]) {
             cam_pitch = qk_input_get_pitch();
             cam_yaw = qk_input_get_yaw();
 
-            /* Detect disconnect */
+            // Detect disconnect
             if (qk_net_client_get_state() == QK_CONN_DISCONNECTED) {
                 qk_console_print("Lost connection to server.");
                 qk_net_client_shutdown();
@@ -1416,9 +1422,9 @@ int main(int argc, char *argv[]) {
                 local_client_id = s_local_client_id;
             }
         } else {
-            /* ---- Normal local game path ---- */
+            // --- Normal local game path ---
 
-            /* 2. Client-side prediction at fixed tick rate */
+            // 2. Client-side prediction at fixed tick rate
             cl_pred_accumulator += real_dt;
             while (cl_pred_accumulator >= QK_TICK_DT) {
                 u32 server_time = qk_net_server_get_tick() * QK_TICK_DT_MS_NOM;
@@ -1448,17 +1454,17 @@ int main(int argc, char *argv[]) {
                 cl_pred_accumulator -= QK_TICK_DT;
             }
 
-            /* 3. Server-side (loopback, runs in same process) */
+            // 3. Server-side (loopback, runs in same process)
             server_accumulator += real_dt;
             while (server_accumulator >= QK_TICK_DT) {
                 server_tick(phys_world);
                 server_accumulator -= QK_TICK_DT;
             }
 
-            /* 4. Client tick (processes received snapshots) */
+            // 4. Client tick (processes received snapshots)
             qk_net_client_tick();
 
-            /* 5. Reconciliation check */
+            // 5. Reconciliation check
             u32 ack = qk_net_client_get_server_cmd_ack();
             if (ack > cl_last_reconciled_ack && cl_has_prediction) {
                 cl_reconcile(ack, phys_world);
@@ -1479,7 +1485,7 @@ int main(int argc, char *argv[]) {
                 qk_net_client_interpolate(render_time);
             }
 
-            /* 7. Build camera from predicted state */
+            // 7. Build camera from predicted state
             if (cl_has_prediction) {
                 f32 pred_alpha = cl_pred_accumulator / QK_TICK_DT;
                 cam_x = cl_predicted_ps.origin.x + cl_predicted_ps.velocity.x * QK_TICK_DT * pred_alpha;
@@ -1490,7 +1496,7 @@ int main(int argc, char *argv[]) {
             cam_yaw = qk_input_get_yaw();
         }
 
-        /* Handle window resize */
+        // Handle window resize
         qk_window_get_size(window, &win_w, &win_h);
         if (win_w > 0 && win_h > 0) {
             qk_renderer_handle_window_resize(win_w, win_h);
@@ -1501,18 +1507,18 @@ int main(int argc, char *argv[]) {
         qk_camera_t camera = build_camera(cam_x, cam_y, cam_z,
                                             cam_pitch, cam_yaw, aspect);
 
-        /* ---- 8. Render world ---- */
+        // --- 8. Render world ---
         qk_renderer_begin_frame(&camera);
         qk_renderer_draw_world();
 
-        /* ---- 9. Draw entities (skip local player) ---- */
+        // --- 9. Draw entities (skip local player) ---
         const qk_interp_state_t *interp = qk_net_client_get_interp_state();
         if (interp) {
             for (u32 i = 0; i < QK_MAX_ENTITIES; i++) {
                 const qk_interp_entity_t *ie = &interp->entities[i];
                 if (!ie->active) continue;
 
-                /* Skip local player capsule (first person) */
+                // Skip local player capsule (first person)
                 if (i == (u32)local_client_id && ie->entity_type == 1) continue;
 
                 if (ie->entity_type == 1) {
@@ -1523,7 +1529,7 @@ int main(int argc, char *argv[]) {
                     qk_renderer_draw_sphere(ie->pos_x, ie->pos_y, ie->pos_z,
                                              4.0f, 0xFF8800FF);
 
-                    /* Rocket projectile emits an orange point light */
+                    // Rocket projectile emits an orange point light
                     qk_dynamic_light_t rocket_light = {
                         .position  = { ie->pos_x, ie->pos_y, ie->pos_z },
                         .radius    = 200.0f,
@@ -1532,7 +1538,7 @@ int main(int argc, char *argv[]) {
                     };
                     qk_renderer_submit_light(&rocket_light);
 
-                    /* Smoke trail: spawn particles when tick advances */
+                    // Smoke trail: spawn particles when tick advances
                     u32 cur_tick = qk_net_server_get_tick();
                     rocket_smoke_tracker_t *tracker = NULL;
                     for (u32 t = 0; t < MAX_TRACKED_ROCKETS; t++) {
@@ -1584,7 +1590,7 @@ int main(int argc, char *argv[]) {
                             puff->pos[1] = tracker->last_pos[1] + dy * frac;
                             puff->pos[2] = tracker->last_pos[2] + dz * frac;
                             puff->birth_time = now;
-                            /* Random rotation: hash the slot index */
+                            // Random rotation: hash the slot index
                             u32 h = slot * 0x45d9f3bu;
                             h = ((h >> 16) ^ h) * 0x45d9f3bu;
                             h = (h >> 16) ^ h;
@@ -1612,7 +1618,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* ---- 9a. Draw smoke particles (independent of rocket lifetime) ---- */
+        // --- 9a. Draw smoke particles (independent of rocket lifetime) ---
         qk_renderer_begin_smoke();
         for (u32 s = 0; s < SMOKE_POOL_SIZE; s++) {
             smoke_particle_t *p = &s_smoke_pool[s];
@@ -1624,7 +1630,7 @@ int main(int argc, char *argv[]) {
             }
             f32 frac = age / SMOKE_MAX_AGE;
             f32 fade = 1.0f - frac;
-            fade = fade * fade; /* quadratic falloff */
+            fade = fade * fade;  // quadratic falloff
             f32 half_size = 1.5f + frac * 5.0f;
             u8 grey = (u8)(80.0f * fade);
             u8 alpha = (u8)(180.0f * fade);
@@ -1635,7 +1641,7 @@ int main(int argc, char *argv[]) {
         }
         qk_renderer_end_smoke();
 
-        /* ---- 9a2. Draw active explosions ---- */
+        // --- 9a2. Draw active explosions ---
         for (u32 ex = 0; ex < MAX_EXPLOSIONS; ex++) {
             explosion_t *e = &s_explosions[ex];
             if (!e->active) continue;
@@ -1652,11 +1658,11 @@ int main(int argc, char *argv[]) {
             f32 ex_y = e->pos[1] - e->dir[1] * EX_OFFSET;
             f32 ex_z = e->pos[2] - e->dir[2] * EX_OFFSET;
             qk_renderer_draw_explosion(ex_x, ex_y, ex_z,
-                                        /*e->radius*/e->radius*0.5f, age,
+                                        e->radius * 0.5f, age,
                                         1.0f, 0.6f, 0.1f, fade);
         }
 
-        /* ---- 9b. Viewmodel (first-person weapon) ---- */
+        // --- 9b. Viewmodel (first-person weapon) ---
         if (cl_has_prediction && cl_predicted_ps.alive_state == QK_PSTATE_ALIVE) {
             qk_renderer_draw_viewmodel(
                 cl_predicted_ps.weapon,
@@ -1665,7 +1671,7 @@ int main(int argc, char *argv[]) {
                 input_state.mouse_buttons[0] && !input_state.console_active);
         }
 
-        /* ---- 9c. Beam effects ---- */
+        // --- 9c. Beam effects ---
         if (interp) {
             vec3_t zero_ext = {0, 0, 0};
 
@@ -1681,12 +1687,12 @@ int main(int argc, char *argv[]) {
                 bool firing_now = (cur_flags & QK_ENT_FLAG_FIRING) != 0;
                 bool firing_prev = (prev & QK_ENT_FLAG_FIRING) != 0;
 
-                /* Determine eye position and forward direction */
+                // Determine eye position and forward direction
                 f32 eye_x, eye_y, eye_z, fwd_pitch, fwd_yaw;
                 bool is_local = (i == (u32)local_client_id);
 
                 if (is_local && cl_has_prediction) {
-                    /* Local player: camera position + raw input angles */
+                    // Local player: camera position + raw input angles
                     eye_x = camera.position[0];
                     eye_y = camera.position[1];
                     eye_z = camera.position[2];
@@ -1700,7 +1706,7 @@ int main(int argc, char *argv[]) {
                     fwd_yaw = ie->yaw;
                 }
 
-                /* Rail beam: detect rising edge of FIRING flag */
+                // Rail beam: detect rising edge of FIRING flag
                 if (ie->weapon == QK_WEAPON_RAIL && firing_now && !firing_prev) {
                     f32 pr = fwd_pitch * (3.14159265f / 180.0f);
                     f32 yr = fwd_yaw * (3.14159265f / 180.0f);
@@ -1738,7 +1744,7 @@ int main(int argc, char *argv[]) {
                     rb->end[2] = tr.end_pos.z;
                     rb->color = is_local ? 0x00FF00FF : 0xFF0000FF;
 
-                    /* Spawn impact particles at the wall hit point */
+                    // Spawn impact particles at the wall hit point
                     if (tr.fraction < 1.0f) {
                         rail_impact_t *ri = &s_rail_impacts[s_rail_impact_next % MAX_RAIL_IMPACTS];
                         s_rail_impact_next++;
@@ -1757,7 +1763,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                /* LG beam: remote players only (local handled below) */
+                // LG beam: remote players only (local handled below)
                 if (ie->weapon == QK_WEAPON_LG && firing_now && !is_local) {
                     f32 pr = fwd_pitch * (3.14159265f / 180.0f);
                     f32 yr = fwd_yaw * (3.14159265f / 180.0f);
@@ -1783,7 +1789,7 @@ int main(int argc, char *argv[]) {
                 s_prev_flags[i] = cur_flags;
             }
 
-            /* Draw active rail beams (persistent with decay) */
+            // Draw active rail beams (persistent with decay)
             for (u32 i = 0; i < MAX_RAIL_BEAMS; i++) {
                 rail_beam_t *rb = &s_rail_beams[i];
                 if (!rb->active) continue;
@@ -1799,7 +1805,7 @@ int main(int argc, char *argv[]) {
                                             age, rb->color);
             }
 
-            /* Draw active rail impact particles (persistent with decay) */
+            // Draw active rail impact particles (persistent with decay)
             for (u32 i = 0; i < MAX_RAIL_IMPACTS; i++) {
                 rail_impact_t *ri = &s_rail_impacts[i];
                 if (!ri->active) continue;
@@ -1816,7 +1822,7 @@ int main(int argc, char *argv[]) {
                                               age, ri->color);
             }
 
-            /* Local player LG beam: input-driven, per-frame, muzzle offset */
+            // Local player LG beam: input-driven, per-frame, muzzle offset
             if (cl_has_prediction &&
                 cl_predicted_ps.weapon == QK_WEAPON_LG &&
                 cl_predicted_ps.alive_state == QK_PSTATE_ALIVE &&
@@ -1854,11 +1860,11 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* ---- 9c. Diagnostic trace ---- */
+        // --- 9c. Diagnostic trace ---
         if (s_diag_file) {
             const qk_interp_diag_t *idiag = qk_net_client_get_interp_diag();
 
-            /* Frame header */
+            // Frame header
             fprintf(s_diag_file,
                 "FRAME %u now=%.6f dt=%.6f srv_tick=%u srv_acc=%.6f cl_acc=%.6f"
                 " interp=[%s a=%u b=%u t=%.4f rt=%.2f cnt=%u]\n",
@@ -1872,7 +1878,7 @@ int main(int argc, char *argv[]) {
                 idiag ? idiag->render_tick : 0.0,
                 idiag ? idiag->interp_count : 0);
 
-            /* Projectile entities: server f32 vs packed i16 vs interp f32 */
+            // Projectile entities: server f32 vs packed i16 vs interp f32
             for (u32 di = 0; di < qk_game_get_entity_count(); di++) {
                 n_entity_state_t packed;
                 qk_game_pack_entity((u8)di, &packed);
@@ -1895,7 +1901,7 @@ int main(int argc, char *argv[]) {
                     packed.vel_x, packed.vel_y, packed.vel_z);
             }
 
-            /* Local player weapon/beam state */
+            // Local player weapon/beam state
             {
                 const qk_player_state_t *dps =
                     qk_game_get_player_state(local_client_id);
@@ -1913,7 +1919,7 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Movement physics state (from client prediction, one line per physics tick) */
+            // Movement physics state (from client prediction, one line per physics tick)
             if (cl_has_prediction && cl_predicted_ps.command_time != s_diag_last_phys_tick) {
                 s_diag_last_phys_tick = cl_predicted_ps.command_time;
                 f32 hspeed = sqrtf(cl_predicted_ps.velocity.x * cl_predicted_ps.velocity.x +
@@ -1948,7 +1954,7 @@ int main(int argc, char *argv[]) {
             if (s_diag_frame % 128 == 0) fflush(s_diag_file);
         }
 
-        /* ---- 10. HUD (health/armor from server state, speed from prediction) ---- */
+        // --- 10. HUD (health/armor from server state, speed from prediction) ---
         const qk_player_state_t *local_ps = qk_game_get_player_state(local_client_id);
         if (local_ps) {
             const qk_ca_state_t *ca = qk_game_get_ca_state();
@@ -1956,14 +1962,14 @@ int main(int argc, char *argv[]) {
                             (f32)rc.render_width, (f32)rc.render_height);
         }
 
-        /* FPS display */
+        // FPS display
         {
             char fps_buf[16];
             snprintf(fps_buf, sizeof(fps_buf), "%u fps", fps_display);
             qk_ui_draw_text(10.0f, 10.0f, fps_buf, 16.0f, 0x00FF00FF);
         }
 
-        /* Speed display (from predicted state for responsiveness) */
+        // Speed display (from predicted state for responsiveness)
         if (cl_has_prediction) {
             f32 speed = sqrtf(cl_predicted_ps.velocity.x * cl_predicted_ps.velocity.x +
                               cl_predicted_ps.velocity.y * cl_predicted_ps.velocity.y);
@@ -1976,16 +1982,16 @@ int main(int argc, char *argv[]) {
             qk_ui_draw_text(10.0f, 48.0f, vz_buf, 16.0f, 0x00FFFFFF);
         }
 
-        /* ---- 11. Console overlay ---- */
+        // --- 11. Console overlay ---
         qk_console_draw((f32)rc.render_width, (f32)rc.render_height, real_dt);
 
-        /* ---- 12. UI tick (fade timers) ---- */
+        // --- 12. UI tick (fade timers) ---
         qk_ui_tick((u32)(real_dt * 1000.0f));
 
-        /* ---- 13. Present ---- */
+        // --- 13. Present ---
         qk_renderer_end_frame();
 
-        /* ---- 14. Profiler data ---- */
+        // --- 14. Profiler data ---
         {
             qk_gpu_stats_t stats;
             qk_renderer_get_stats(&stats);
@@ -2004,7 +2010,7 @@ int main(int argc, char *argv[]) {
 
     printf("Exiting main loop.\n");
 
-    /* ---- Shutdown ---- */
+    // --- Shutdown ---
 shutdown:
     if (s_diag_file) { fclose(s_diag_file); s_diag_file = NULL; }
     qk_demo_shutdown();

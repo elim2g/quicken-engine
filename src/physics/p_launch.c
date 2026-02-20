@@ -16,15 +16,15 @@ vec3_t p_calc_launch_velocity(vec3_t start, vec3_t target, f32 gravity) {
     f32 dz = delta.z;
     f32 horiz_dist = sqrtf(dx * dx + dy * dy);
 
-    /* Choose flight time based on horizontal distance, clamped to
-       a reasonable range. Q3 uses a fixed time of ~1s for short pads
-       and scales up for long distances. We use:
-         t = sqrt(2 * horiz_dist / gravity)
-       clamped to [0.5, 2.5] seconds. This gives a natural parabolic
-       arc that scales with distance. */
+    // Choose flight time based on horizontal distance, clamped to
+    // a reasonable range. Q3 uses a fixed time of ~1s for short pads
+    // and scales up for long distances. We use:
+    //   t = sqrt(2 * horiz_dist / gravity)
+    // clamped to [0.5, 2.5] seconds. This gives a natural parabolic
+    // arc that scales with distance.
     f32 t;
     if (horiz_dist < 1.0f) {
-        /* Vertical jump pad (straight up) */
+        // Vertical jump pad (straight up)
         t = 1.0f;
     } else {
         t = sqrtf(2.0f * horiz_dist / gravity);
@@ -32,11 +32,11 @@ vec3_t p_calc_launch_velocity(vec3_t start, vec3_t target, f32 gravity) {
         if (t > 2.5f) t = 2.5f;
     }
 
-    /* Kinematic equation: dz = vz*t - 0.5*g*t^2
-       Solve for vz: vz = dz/t + 0.5*g*t */
+    // Kinematic equation: dz = vz*t - 0.5*g*t^2
+    // Solve for vz: vz = dz/t + 0.5*g*t
     f32 vz = dz / t + 0.5f * gravity * t;
 
-    /* Horizontal velocity: constant speed to cover horiz_dist in time t */
+    // Horizontal velocity: constant speed to cover horiz_dist in time t
     vec3_t result;
     if (horiz_dist > 1.0f) {
         f32 horiz_speed = horiz_dist / t;

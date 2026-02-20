@@ -11,28 +11,34 @@
 
 #include "quicken.h"
 
-/* Entity state for network transmission (22 bytes, quantized) */
+// Entity state for network transmission (22 bytes, quantized)
 typedef struct {
-    i16     pos_x, pos_y, pos_z;    /* fixed-point 15.1: +/-16383 at 0.5 precision */
-    i16     vel_x, vel_y, vel_z;    /* 1 unit/sec precision */
-    u16     yaw;                     /* 0..65535 -> 0..360 degrees */
-    u16     pitch;                   /* 0..65535 -> 0..360 degrees */
+    i16     pos_x, pos_y, pos_z;    // fixed-point 15.1: +/-16383 at 0.5 precision
+    i16     vel_x, vel_y, vel_z;    // 1 unit/sec precision
+    u16     yaw;                     // 0..65535 -> 0..360 degrees
+    u16     pitch;                   // 0..65535 -> 0..360 degrees
     u8      entity_type;
-    u8      flags;                   /* QK_ENT_FLAG_* bits (see qk_types.h) */
-    u8      health;                  /* 0..255, clamped from i16 */
-    u8      armor;                   /* 0..255 */
+    u8      flags;                   // QK_ENT_FLAG_* bits (see qk_types.h)
+    u8      health;                  // 0..255, clamped from i16
+    u8      armor;                   // 0..255
     u8      weapon;
-    u8      ammo;                    /* current weapon ammo only */
+    u8      ammo;                    // current weapon ammo only
 } n_entity_state_t;
 
-/* Input for network transmission (compact) */
+_Static_assert(sizeof(n_entity_state_t) == 22,
+               "entity state must be exactly 22 bytes for wire format");
+
+// Input for network transmission (compact)
 typedef struct {
-    i8      forward_move;            /* -127..127 */
-    i8      side_move;               /* -127..127 */
-    u16     yaw;                     /* quantized angle */
-    u16     pitch;                   /* quantized angle */
+    i8      forward_move;            // -127..127
+    i8      side_move;               // -127..127
+    u16     yaw;                     // quantized angle
+    u16     pitch;                   // quantized angle
     u16     buttons;
     u8      weapon_select;
 } n_input_t;
+
+_Static_assert(sizeof(n_input_t) == 10,
+               "input struct size changed — update wire format");
 
 #endif /* N_TYPES_H */

@@ -9,10 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Global renderer state */
+// Global renderer state
 r_state_t g_r;
 
-/* ---- Debug Callback ---- */
+// --- Debug Callback ---
 
 #ifdef QUICKEN_DEBUG
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
@@ -31,11 +31,11 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
 }
 #endif
 
-/* ---- Instance ---- */
+// --- Instance ---
 
 qk_result_t r_vulkan_create_instance(void)
 {
-    /* Check Vulkan version */
+    // Check Vulkan version
     u32 api_version = 0;
     vkEnumerateInstanceVersion(&api_version);
     if (api_version < VK_API_VERSION_1_2) {
@@ -53,11 +53,11 @@ qk_result_t r_vulkan_create_instance(void)
         .apiVersion         = VK_API_VERSION_1_2
     };
 
-    /* Get SDL-required instance extensions */
+    // Get SDL-required instance extensions
     u32 sdl_ext_count = 0;
     const char * const *sdl_exts = SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count);
 
-    /* Build extension list */
+    // Build extension list
     const char *extensions[16];
     u32 ext_count = 0;
 
@@ -69,7 +69,7 @@ qk_result_t r_vulkan_create_instance(void)
     extensions[ext_count++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 #endif
 
-    /* Layers */
+    // Layers
     u32 layer_count = 0;
     const char *layers[2];
 
@@ -92,7 +92,7 @@ qk_result_t r_vulkan_create_instance(void)
         return QK_ERROR_VULKAN_INIT;
     }
 
-    /* Debug messenger */
+    // Debug messenger
 #ifdef QUICKEN_DEBUG
     {
         VkDebugUtilsMessengerCreateInfoEXT dbg_info = {
@@ -117,7 +117,7 @@ qk_result_t r_vulkan_create_instance(void)
     return QK_SUCCESS;
 }
 
-/* ---- Physical Device Selection ---- */
+// --- Physical Device Selection ---
 
 static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
                                  r_queue_families_t *out_families)
@@ -125,10 +125,10 @@ static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(device, &props);
 
-    /* Require Vulkan 1.2 */
+    // Require Vulkan 1.2
     if (props.apiVersion < VK_API_VERSION_1_2) return -1;
 
-    /* Require descriptor indexing (bindless textures) */
+    // Require descriptor indexing (bindless textures)
     VkPhysicalDeviceDescriptorIndexingFeatures idx_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES
     };
@@ -145,7 +145,7 @@ static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
         return -1;
     }
 
-    /* Check for swapchain extension */
+    // Check for swapchain extension
     u32 ext_count = 0;
     vkEnumerateDeviceExtensionProperties(device, NULL, &ext_count, NULL);
     VkExtensionProperties *exts = malloc(ext_count * sizeof(VkExtensionProperties));
@@ -162,7 +162,7 @@ static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
     free(exts);
     if (!has_swapchain) return -1;
 
-    /* Find queue families */
+    // Find queue families
     u32 family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &family_count, NULL);
     VkQueueFamilyProperties *families = malloc(family_count * sizeof(VkQueueFamilyProperties));
@@ -180,7 +180,7 @@ static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
             graphics_family = (i32)i;
         }
 
-        /* Prefer a dedicated transfer queue */
+        // Prefer a dedicated transfer queue
         if ((families[i].queueFlags & VK_QUEUE_TRANSFER_BIT) &&
             !(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
             transfer_family = (i32)i;
@@ -200,7 +200,7 @@ static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
         out_families->has_dedicated_transfer = false;
     }
 
-    /* Score */
+    // Score
     i32 score = 0;
     if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
         score += 1000;
@@ -262,7 +262,7 @@ qk_result_t r_vulkan_pick_physical_device(void)
     return QK_SUCCESS;
 }
 
-/* ---- Logical Device ---- */
+// --- Logical Device ---
 
 qk_result_t r_vulkan_create_device(void)
 {
@@ -272,7 +272,7 @@ qk_result_t r_vulkan_create_device(void)
     VkDeviceQueueCreateInfo queue_infos[2];
     u32 queue_info_count = 0;
 
-    /* Graphics queue */
+    // Graphics queue
     queue_infos[queue_info_count++] = (VkDeviceQueueCreateInfo){
         .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = g_r.device.families.graphics,
@@ -280,7 +280,7 @@ qk_result_t r_vulkan_create_device(void)
         .pQueuePriorities = &priority_high
     };
 
-    /* Transfer queue (only add if different family) */
+    // Transfer queue (only add if different family)
     if (g_r.device.families.has_dedicated_transfer) {
         queue_infos[queue_info_count++] = (VkDeviceQueueCreateInfo){
             .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -294,7 +294,7 @@ qk_result_t r_vulkan_create_device(void)
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
-    /* Enable descriptor indexing features via pNext chain */
+    // Enable descriptor indexing features via pNext chain
     VkPhysicalDeviceDescriptorIndexingFeatures idx_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
         .shaderSampledImageArrayNonUniformIndexing    = VK_TRUE,
@@ -335,7 +335,7 @@ qk_result_t r_vulkan_create_device(void)
     return QK_SUCCESS;
 }
 
-/* ---- Surface ---- */
+// --- Surface ---
 
 qk_result_t r_vulkan_create_surface(void *sdl_window)
 {
@@ -346,7 +346,7 @@ qk_result_t r_vulkan_create_surface(void *sdl_window)
     return QK_SUCCESS;
 }
 
-/* ---- Swapchain ---- */
+// --- Swapchain ---
 
 static VkSurfaceFormatKHR choose_surface_format(VkSurfaceFormatKHR *formats, u32 count)
 {
@@ -412,7 +412,7 @@ static qk_result_t r_vulkan_create_swapchain_internal(VkSwapchainKHR old_swapcha
     free(formats);
     free(modes);
 
-    /* Extent */
+    // Extent
     VkExtent2D extent;
     if (caps.currentExtent.width != 0xFFFFFFFF) {
         extent = caps.currentExtent;
@@ -462,14 +462,14 @@ static qk_result_t r_vulkan_create_swapchain_internal(VkSwapchainKHR old_swapcha
     qk_perf_log_event("swapchain created: %ux%u images=%u present_mode=%d",
                        extent.width, extent.height, image_count, (int)present_mode);
 
-    /* Get swapchain images */
+    // Get swapchain images
     vkGetSwapchainImagesKHR(g_r.device.handle, g_r.swapchain.handle, &g_r.swapchain.image_count, NULL);
     if (g_r.swapchain.image_count > R_MAX_SWAPCHAIN_IMAGES) {
         g_r.swapchain.image_count = R_MAX_SWAPCHAIN_IMAGES;
     }
     vkGetSwapchainImagesKHR(g_r.device.handle, g_r.swapchain.handle, &g_r.swapchain.image_count, g_r.swapchain.images);
 
-    /* Create image views */
+    // Create image views
     for (u32 i = 0; i < g_r.swapchain.image_count; i++) {
         VkImageViewCreateInfo view_info = {
             .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -524,7 +524,7 @@ qk_result_t r_vulkan_recreate_swapchain(void)
 {
     vkDeviceWaitIdle(g_r.device.handle);
 
-    /* Destroy old compose framebuffers */
+    // Destroy old compose framebuffers
     for (u32 i = 0; i < R_MAX_SWAPCHAIN_IMAGES; i++) {
         if (g_r.compose_framebuffers[i]) {
             vkDestroyFramebuffer(g_r.device.handle, g_r.compose_framebuffers[i], NULL);
@@ -532,7 +532,7 @@ qk_result_t r_vulkan_recreate_swapchain(void)
         }
     }
 
-    /* Destroy old image views (they reference old swapchain images) */
+    // Destroy old image views (they reference old swapchain images)
     for (u32 i = 0; i < g_r.swapchain.image_count; i++) {
         if (g_r.swapchain.views[i]) {
             vkDestroyImageView(g_r.device.handle, g_r.swapchain.views[i], NULL);
@@ -553,7 +553,7 @@ qk_result_t r_vulkan_recreate_swapchain(void)
 
     if (res != QK_SUCCESS) return res;
 
-    /* Recreate compose framebuffers */
+    // Recreate compose framebuffers
     for (u32 i = 0; i < g_r.swapchain.image_count; i++) {
         VkFramebufferCreateInfo fb_info = {
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -572,7 +572,7 @@ qk_result_t r_vulkan_recreate_swapchain(void)
     return QK_SUCCESS;
 }
 
-/* ---- Render Targets ---- */
+// --- Render Targets ---
 
 static VkFormat find_depth_format(void)
 {
@@ -612,14 +612,14 @@ static qk_result_t create_image(u32 width, u32 height, VkFormat format,
     VkMemoryRequirements mem_req;
     vkGetImageMemoryRequirements(g_r.device.handle, *out_image, &mem_req);
 
-    /* Try pool suballocation for device-local images */
+    // Try pool suballocation for device-local images
     r_memory_pool_t *pool = &g_r.pools[R_MEMORY_POOL_DEVICE_LOCAL];
     if (pool->memory && (mem_req.memoryTypeBits & (1u << pool->memory_type))) {
         VkDeviceSize offset;
         if (r_memory_pool_alloc(R_MEMORY_POOL_DEVICE_LOCAL, mem_req.size,
                                  mem_req.alignment, &offset) == QK_SUCCESS) {
             vkBindImageMemory(g_r.device.handle, *out_image, pool->memory, offset);
-            *out_memory = VK_NULL_HANDLE; /* Pool-owned */
+            *out_memory = VK_NULL_HANDLE; // Pool-owned
             goto create_view;
         }
     }
@@ -667,7 +667,7 @@ create_view:
 static qk_result_t create_render_pass_world(VkRenderPass *out_pass, VkFormat depth_format)
 {
     VkAttachmentDescription attachments[2] = {
-        /* Color (HDR float16 for overbright lightmaps + bloom) */
+        // Color (HDR float16 for overbright lightmaps + bloom)
         {
             .format         = VK_FORMAT_R16G16B16A16_SFLOAT,
             .samples        = VK_SAMPLE_COUNT_1_BIT,
@@ -678,7 +678,7 @@ static qk_result_t create_render_pass_world(VkRenderPass *out_pass, VkFormat dep
             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         },
-        /* Depth (loaded from depth pre-pass, written by world geometry) */
+        // Depth (loaded from depth pre-pass, written by world geometry)
         {
             .format         = depth_format,
             .samples        = VK_SAMPLE_COUNT_1_BIT,
@@ -834,11 +834,11 @@ qk_result_t r_create_render_targets(void)
 
     VkFormat depth_format = find_depth_format();
 
-    /* World render pass */
+    // World render pass
     qk_result_t res = create_render_pass_world(&g_r.world_target.render_pass, depth_format);
     if (res != QK_SUCCESS) return res;
 
-    /* World color (HDR float16) */
+    // World color (HDR float16)
     res = create_image(rw, rh, VK_FORMAT_R16G16B16A16_SFLOAT,
                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                        VK_IMAGE_ASPECT_COLOR_BIT,
@@ -846,7 +846,7 @@ qk_result_t r_create_render_targets(void)
                        &g_r.world_target.color_view);
     if (res != QK_SUCCESS) return res;
 
-    /* World depth (sampled by light cull compute shader) */
+    // World depth (sampled by light cull compute shader)
     res = create_image(rw, rh, depth_format,
                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                        VK_IMAGE_ASPECT_DEPTH_BIT,
@@ -856,7 +856,7 @@ qk_result_t r_create_render_targets(void)
 
     g_r.world_target.extent = (VkExtent2D){ rw, rh };
 
-    /* World framebuffer */
+    // World framebuffer
     VkImageView world_attachments[2] = { g_r.world_target.color_view, g_r.world_target.depth_view };
     VkFramebufferCreateInfo fb_info = {
         .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -870,13 +870,13 @@ qk_result_t r_create_render_targets(void)
     VkResult vr = vkCreateFramebuffer(g_r.device.handle, &fb_info, NULL, &g_r.world_target.framebuffer);
     if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
 
-    /* UI is drawn directly in the world render pass (no separate target needed) */
+    // UI is drawn directly in the world render pass (no separate target needed)
 
-    /* Compose render pass */
+    // Compose render pass
     res = create_render_pass_compose(&g_r.compose_render_pass);
     if (res != QK_SUCCESS) return res;
 
-    /* Compose framebuffers (one per swapchain image) */
+    // Compose framebuffers (one per swapchain image)
     for (u32 i = 0; i < g_r.swapchain.image_count; i++) {
         VkFramebufferCreateInfo cfb_info = {
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -898,7 +898,7 @@ void r_destroy_render_targets(void)
 {
     VkDevice dev = g_r.device.handle;
 
-    /* Compose framebuffers */
+    // Compose framebuffers
     for (u32 i = 0; i < R_MAX_SWAPCHAIN_IMAGES; i++) {
         if (g_r.compose_framebuffers[i]) {
             vkDestroyFramebuffer(dev, g_r.compose_framebuffers[i], NULL);
@@ -910,7 +910,7 @@ void r_destroy_render_targets(void)
         g_r.compose_render_pass = VK_NULL_HANDLE;
     }
 
-    /* World target */
+    // World target
     if (g_r.world_target.framebuffer) vkDestroyFramebuffer(dev, g_r.world_target.framebuffer, NULL);
     if (g_r.world_target.color_view) vkDestroyImageView(dev, g_r.world_target.color_view, NULL);
     if (g_r.world_target.color_image) vkDestroyImage(dev, g_r.world_target.color_image, NULL);
@@ -921,7 +921,7 @@ void r_destroy_render_targets(void)
     if (g_r.world_target.render_pass) vkDestroyRenderPass(dev, g_r.world_target.render_pass, NULL);
     memset(&g_r.world_target, 0, sizeof(g_r.world_target));
 
-    /* UI target */
+    // UI target
     if (g_r.ui_target.framebuffer) vkDestroyFramebuffer(dev, g_r.ui_target.framebuffer, NULL);
     if (g_r.ui_target.color_view) vkDestroyImageView(dev, g_r.ui_target.color_view, NULL);
     if (g_r.ui_target.color_image) vkDestroyImage(dev, g_r.ui_target.color_image, NULL);
@@ -930,11 +930,11 @@ void r_destroy_render_targets(void)
     memset(&g_r.ui_target, 0, sizeof(g_r.ui_target));
 }
 
-/* ---- Descriptor Setup ---- */
+// --- Descriptor Setup ---
 
 qk_result_t r_descriptors_init(void)
 {
-    /* View set layout (set 0 for world pipeline) */
+    // View set layout (set 0 for world pipeline)
     {
         VkDescriptorSetLayoutBinding binding = {
             .binding         = 0,
@@ -950,7 +950,7 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.view_set_layout);
     }
 
-    /* Texture set layout (set 1 for world, set 0 for UI) */
+    // Texture set layout (set 1 for world, set 0 for UI)
     {
         VkDescriptorSetLayoutBinding binding = {
             .binding         = 0,
@@ -966,7 +966,7 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.texture_set_layout);
     }
 
-    /* Bindless texture array set layout (set 1 for world pipeline) */
+    // Bindless texture array set layout (set 1 for world pipeline)
     {
         VkDescriptorSetLayoutBinding binding = {
             .binding         = 0,
@@ -992,7 +992,7 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.bindless_set_layout);
     }
 
-    /* Compose set layout */
+    // Compose set layout
     {
         VkDescriptorSetLayoutBinding bindings[2] = {
             {
@@ -1016,14 +1016,14 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.compose_set_layout);
     }
 
-    /* Descriptor pool (UPDATE_AFTER_BIND for bindless set) */
+    // Descriptor pool (UPDATE_AFTER_BIND for bindless set)
     {
         VkDescriptorPoolSize sizes[] = {
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         16 },
             { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, R_MAX_TEXTURES * 2 + 32 },
             { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         8 }
         };
-        /* Note: 3 pool sizes now (UBO, sampler, SSBO) */
+        // Note: 3 pool sizes now (UBO, sampler, SSBO)
         VkDescriptorPoolCreateInfo pool_info = {
             .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             .flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT |
@@ -1035,7 +1035,7 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorPool(g_r.device.handle, &pool_info, NULL, &g_r.descriptor_pool);
     }
 
-    /* Compose sampler */
+    // Compose sampler
     {
         VkSamplerCreateInfo sampler_info = {
             .sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1050,7 +1050,7 @@ qk_result_t r_descriptors_init(void)
         vkCreateSampler(g_r.device.handle, &sampler_info, NULL, &g_r.compose_sampler);
     }
 
-    /* Allocate compose descriptor set */
+    // Allocate compose descriptor set
     {
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1061,7 +1061,7 @@ qk_result_t r_descriptors_init(void)
         vkAllocateDescriptorSets(g_r.device.handle, &alloc_info, &g_r.compose_descriptor_set);
     }
 
-    /* Allocate bindless texture array descriptor set */
+    // Allocate bindless texture array descriptor set
     {
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1072,7 +1072,7 @@ qk_result_t r_descriptors_init(void)
         vkAllocateDescriptorSets(g_r.device.handle, &alloc_info, &g_r.bindless_descriptor_set);
     }
 
-    /* Allocate per-frame view descriptor sets */
+    // Allocate per-frame view descriptor sets
     for (u32 i = 0; i < R_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,

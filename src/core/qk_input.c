@@ -15,7 +15,7 @@
 #include <string.h>
 #include <math.h>
 
-/* Persistent state between polls */
+// Persistent state between polls
 static bool    s_keys[512];
 static bool    s_mouse_buttons[5];
 static i32     s_mouse_dx;
@@ -25,11 +25,11 @@ static bool    s_mouse_captured;
 static f32     s_yaw;
 static f32     s_pitch;
 
-/* Cached cvar pointer for zero-overhead reads */
+// Cached cvar pointer for zero-overhead reads
 static qk_cvar_t *s_cvar_sensitivity;
 
-#define QK_PITCH_MIN           -89.0f
-#define QK_PITCH_MAX            89.0f
+static const f32 QK_PITCH_MIN = -89.0f;
+static const f32 QK_PITCH_MAX =  89.0f;
 
 void qk_input_poll(qk_input_state_t *state) {
     s_mouse_dx = 0;
@@ -45,13 +45,13 @@ void qk_input_poll(qk_input_state_t *state) {
             break;
 
         case SDL_EVENT_KEY_DOWN:
-            /* Tilde toggle (non-repeat) */
+            // Tilde toggle (non-repeat)
             if (event.key.scancode == SDL_SCANCODE_GRAVE && !event.key.repeat) {
                 qk_console_toggle();
                 console_open = qk_console_is_open();
 
                 if (console_open) {
-                    /* Release mouse, start text input */
+                    // Release mouse, start text input
                     SDL_Window *win = SDL_GetKeyboardFocus();
                     if (win) {
                         SDL_SetWindowRelativeMouseMode(win, false);
@@ -59,7 +59,7 @@ void qk_input_poll(qk_input_state_t *state) {
                     }
                     s_mouse_captured = false;
                 } else {
-                    /* Stop text input; mouse re-captures on next click */
+                    // Stop text input; mouse re-captures on next click
                     SDL_Window *win = SDL_GetKeyboardFocus();
                     if (win) {
                         SDL_StopTextInput(win);
@@ -69,10 +69,10 @@ void qk_input_poll(qk_input_state_t *state) {
             }
 
             if (console_open) {
-                /* Route key events to console */
+                // Route key events to console
                 qk_console_key_event(event.key.scancode, true);
 
-                /* If console closed via Escape, manage mouse/text */
+                // If console closed via Escape, manage mouse/text
                 if (!qk_console_is_open()) {
                     console_open = false;
                     SDL_Window *win = SDL_GetKeyboardFocus();
@@ -83,7 +83,7 @@ void qk_input_poll(qk_input_state_t *state) {
                 break;
             }
 
-            /* Normal game key handling */
+            // Normal game key handling
             if (event.key.scancode < 512) {
                 s_keys[event.key.scancode] = true;
             }
@@ -112,7 +112,7 @@ void qk_input_poll(qk_input_state_t *state) {
             break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            if (console_open) break; /* ignore clicks when console open */
+            if (console_open) break;  // ignore clicks when console open
 
             if (event.button.button <= 5) {
                 s_mouse_buttons[event.button.button - 1] = true;
@@ -145,9 +145,9 @@ void qk_input_poll(qk_input_state_t *state) {
         }
     }
 
-    /* Update view angles from mouse (only when not in console) */
+    // Update view angles from mouse (only when not in console)
     if (s_mouse_captured && !console_open) {
-        /* Lazy-cache the sensitivity cvar pointer */
+        // Lazy-cache the sensitivity cvar pointer
         if (!s_cvar_sensitivity) {
             s_cvar_sensitivity = qk_cvar_find("sensitivity");
         }
@@ -182,14 +182,14 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
 
     if (!state) return cmd;
 
-    /* No game input while console is open */
+    // No game input while console is open
     if (state->console_active) {
         cmd.pitch = s_pitch;
         cmd.yaw = s_yaw;
         return cmd;
     }
 
-    /* Movement from WASD */
+    // Movement from WASD
     f32 forward = 0.0f;
     f32 side = 0.0f;
 
@@ -198,7 +198,7 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
     if (state->keys[SDL_SCANCODE_D]) side += 1.0f;
     if (state->keys[SDL_SCANCODE_A]) side -= 1.0f;
 
-    /* Normalize diagonal movement */
+    // Normalize diagonal movement
     f32 len = sqrtf(forward * forward + side * side);
     if (len > 1.0f) {
         forward /= len;
@@ -208,11 +208,11 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
     cmd.forward_move = forward;
     cmd.side_move = side;
 
-    /* View angles */
+    // View angles
     cmd.pitch = s_pitch;
     cmd.yaw = s_yaw;
 
-    /* Buttons */
+    // Buttons
     if (state->mouse_buttons[0]) cmd.buttons |= QK_BUTTON_ATTACK;
     if (state->keys[SDL_SCANCODE_SPACE]) cmd.buttons |= QK_BUTTON_JUMP;
     if (state->keys[SDL_SCANCODE_LCTRL] || state->keys[SDL_SCANCODE_C]) {
@@ -222,7 +222,7 @@ qk_usercmd_t qk_input_build_usercmd(const qk_input_state_t *state, u32 server_ti
         cmd.buttons |= QK_BUTTON_USE;
     }
 
-    /* Weapon select (number keys) */
+    // Weapon select (number keys)
     if (state->keys[SDL_SCANCODE_1]) cmd.weapon_select = QK_WEAPON_ROCKET;
     if (state->keys[SDL_SCANCODE_2]) cmd.weapon_select = QK_WEAPON_RAIL;
     if (state->keys[SDL_SCANCODE_3]) cmd.weapon_select = QK_WEAPON_LG;
@@ -238,7 +238,7 @@ void qk_input_set_angles(f32 pitch, f32 yaw) {
     s_yaw = yaw;
 }
 
-#else /* QK_HEADLESS */
+#else  // QK_HEADLESS
 
 #include <string.h>
 
@@ -259,4 +259,4 @@ f32 qk_input_get_pitch(void) { return 0.0f; }
 f32 qk_input_get_yaw(void) { return 0.0f; }
 void qk_input_set_angles(f32 pitch, f32 yaw) { QK_UNUSED(pitch); QK_UNUSED(yaw); }
 
-#endif /* QK_HEADLESS */
+#endif  // QK_HEADLESS

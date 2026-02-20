@@ -13,30 +13,34 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ---- Mesh generation parameters ---- */
+// --- Mesh generation parameters ---
 
-#define PI_F 3.14159265358979f
+static const f32 PI_F = 3.14159265358979f;
 #define SPHERE_SLICES   16
 #define SPHERE_STACKS   12
 #define CAPSULE_SLICES  16
-#define CAPSULE_STACKS  6   /* stacks per hemisphere */
+#define CAPSULE_STACKS  6   // stacks per hemisphere
 #define VIEWMODEL_CYL_SLICES  12
 #define VIEWMODEL_HEX_SIDES    6
 
-/* ---- Helpers ---- */
+// --- Helpers ---
 
 static void build_model_matrix(f32 *out, f32 px, f32 py, f32 pz,
                                 f32 sx, f32 sy, f32 sz, f32 yaw_deg)
 {
-    /* Column-major 4x4: scale * rotate_y * translate */
-    f32 rad = yaw_deg * (3.14159265358979f / 180.0f);
-    f32 cy = cosf(rad);
-    f32 sy_val = sinf(rad);
+    // Column-major 4x4: scale * rotate_y * translate
+    f32 rad = yaw_deg * (PI_F / 180.0f);
+    f32 cos_yaw = cosf(rad);
+    f32 sin_yaw = sinf(rad);
 
-    /* col 0 */ out[ 0] = sx * cy;  out[ 1] = 0.0f;    out[ 2] = sx * sy_val; out[ 3] = 0.0f;
-    /* col 1 */ out[ 4] = 0.0f;     out[ 5] = sy;       out[ 6] = 0.0f;        out[ 7] = 0.0f;
-    /* col 2 */ out[ 8] = -sz * sy_val; out[ 9] = 0.0f; out[10] = sz * cy;     out[11] = 0.0f;
-    /* col 3 */ out[12] = px;        out[13] = py;       out[14] = pz;          out[15] = 1.0f;
+    // col 0
+    out[ 0] = sx * cos_yaw;      out[ 1] = 0.0f;  out[ 2] = sx * sin_yaw;  out[ 3] = 0.0f;
+    // col 1
+    out[ 4] = 0.0f;              out[ 5] = sy;     out[ 6] = 0.0f;          out[ 7] = 0.0f;
+    // col 2
+    out[ 8] = -sz * sin_yaw;     out[ 9] = 0.0f;  out[10] = sz * cos_yaw;  out[11] = 0.0f;
+    // col 3
+    out[12] = px;                 out[13] = py;     out[14] = pz;            out[15] = 1.0f;
 }
 
 static void color_u32_to_f32(u32 rgba, f32 *out)
@@ -47,7 +51,7 @@ static void color_u32_to_f32(u32 rgba, f32 *out)
     out[3] = (f32)((rgba      ) & 0xFF) / 255.0f;
 }
 
-/* ---- Sphere mesh generation ---- */
+// --- Sphere mesh generation ---
 
 static void generate_sphere(r_entity_vertex_t **out_verts, u32 *out_vert_count,
                              u32 **out_indices, u32 *out_index_count)
@@ -63,18 +67,18 @@ static void generate_sphere(r_entity_vertex_t **out_verts, u32 *out_vert_count,
 
     u32 vi = 0;
     for (u32 st = 0; st <= stacks; st++) {
-        f32 phi = 3.14159265358979f * (f32)st / (f32)stacks;
-        f32 sp = sinf(phi);
-        f32 cp = cosf(phi);
+        f32 phi = PI_F * (f32)st / (f32)stacks;
+        f32 sin_phi = sinf(phi);
+        f32 cos_phi = cosf(phi);
 
         for (u32 sl = 0; sl <= slices; sl++) {
-            f32 theta = 2.0f * 3.14159265358979f * (f32)sl / (f32)slices;
-            f32 st_val = sinf(theta);
-            f32 ct = cosf(theta);
+            f32 theta = 2.0f * PI_F * (f32)sl / (f32)slices;
+            f32 sin_theta = sinf(theta);
+            f32 cos_theta = cosf(theta);
 
-            f32 nx = sp * ct;
-            f32 ny = cp;
-            f32 nz = sp * st_val;
+            f32 nx = sin_phi * cos_theta;
+            f32 ny = cos_phi;
+            f32 nz = sin_phi * sin_theta;
 
             verts[vi].position[0] = nx;
             verts[vi].position[1] = ny;
@@ -108,7 +112,7 @@ static void generate_sphere(r_entity_vertex_t **out_verts, u32 *out_vert_count,
     *out_index_count = index_count;
 }
 
-/* ---- Capsule mesh generation ---- */
+// --- Capsule mesh generation ---
 /* Unit capsule: radius 1.0, total height 2.0 (half_height 1.0 from center to
  * end of cylinder, plus 1.0 hemisphere radius at each end = total 4.0 height).
  * Actually: half_height = distance from center to hemisphere center.
@@ -120,13 +124,13 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
     u32 slices = CAPSULE_SLICES;
     u32 hemi_stacks = CAPSULE_STACKS;
 
-    /* Top hemisphere + cylinder ring + bottom hemisphere */
-    /* Top hemisphere: (hemi_stacks+1) rings, bottom: (hemi_stacks+1) rings,
+    /* Top hemisphere + cylinder ring + bottom hemisphere.
+     * Top hemisphere: (hemi_stacks+1) rings, bottom: (hemi_stacks+1) rings,
      * cylinder: 2 rings (top and bottom of cylinder section).
      * Total unique rings = hemi_stacks + 1 (top) + 1 (middle shared) + hemi_stacks (bottom) + 1
      * Simplified: top hemi has (hemi_stacks+1) rows, bottom has (hemi_stacks+1) rows,
      * they share the equator row. */
-    u32 total_rows = 2 * hemi_stacks + 1; /* +1 for equator shared once */
+    u32 total_rows = 2 * hemi_stacks + 1; // +1 for equator shared once
     u32 vert_count = (total_rows + 1) * (slices + 1);
     u32 face_count = (total_rows) * slices * 2;
     u32 index_count = face_count * 3;
@@ -139,22 +143,22 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
     /* Top hemisphere: from north pole (z = +2) down to equator (z = +1)
      * phi goes from 0 to PI/2 */
     for (u32 st = 0; st <= hemi_stacks; st++) {
-        f32 phi = (3.14159265358979f * 0.5f) * (f32)st / (f32)hemi_stacks;
-        f32 sp = sinf(phi);
-        f32 cp = cosf(phi);
+        f32 phi = (PI_F * 0.5f) * (f32)st / (f32)hemi_stacks;
+        f32 sin_phi = sinf(phi);
+        f32 cos_phi = cosf(phi);
 
         for (u32 sl = 0; sl <= slices; sl++) {
-            f32 theta = 2.0f * 3.14159265358979f * (f32)sl / (f32)slices;
-            f32 st_val = sinf(theta);
-            f32 ct = cosf(theta);
+            f32 theta = 2.0f * PI_F * (f32)sl / (f32)slices;
+            f32 sin_theta = sinf(theta);
+            f32 cos_theta = cosf(theta);
 
-            f32 nx = sp * ct;
-            f32 nz = cp;
-            f32 ny = sp * st_val;
+            f32 nx = sin_phi * cos_theta;
+            f32 nz = cos_phi;
+            f32 ny = sin_phi * sin_theta;
 
-            verts[vi].position[0] = nx;         /* radius = 1 */
+            verts[vi].position[0] = nx;              // radius = 1
             verts[vi].position[1] = ny;
-            verts[vi].position[2] = 1.0f + cp;  /* hemisphere center at z=+1 */
+            verts[vi].position[2] = 1.0f + cos_phi;  // hemisphere center at z=+1
             verts[vi].normal[0] = nx;
             verts[vi].normal[1] = ny;
             verts[vi].normal[2] = nz;
@@ -165,22 +169,22 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
     /* Bottom hemisphere: from equator (z = -1) down to south pole (z = -2)
      * phi goes from PI/2 to PI */
     for (u32 st = 1; st <= hemi_stacks; st++) {
-        f32 phi = (3.14159265358979f * 0.5f) + (3.14159265358979f * 0.5f) * (f32)st / (f32)hemi_stacks;
-        f32 sp = sinf(phi);
-        f32 cp = cosf(phi);
+        f32 phi = (PI_F * 0.5f) + (PI_F * 0.5f) * (f32)st / (f32)hemi_stacks;
+        f32 sin_phi = sinf(phi);
+        f32 cos_phi = cosf(phi);
 
         for (u32 sl = 0; sl <= slices; sl++) {
-            f32 theta = 2.0f * 3.14159265358979f * (f32)sl / (f32)slices;
-            f32 st_val = sinf(theta);
-            f32 ct = cosf(theta);
+            f32 theta = 2.0f * PI_F * (f32)sl / (f32)slices;
+            f32 sin_theta = sinf(theta);
+            f32 cos_theta = cosf(theta);
 
-            f32 nx = sp * ct;
-            f32 nz = cp;
-            f32 ny = sp * st_val;
+            f32 nx = sin_phi * cos_theta;
+            f32 nz = cos_phi;
+            f32 ny = sin_phi * sin_theta;
 
             verts[vi].position[0] = nx;
             verts[vi].position[1] = ny;
-            verts[vi].position[2] = -1.0f + cp;  /* hemisphere center at z=-1 */
+            verts[vi].position[2] = -1.0f + cos_phi;  // hemisphere center at z=-1
             verts[vi].normal[0] = nx;
             verts[vi].normal[1] = ny;
             verts[vi].normal[2] = nz;
@@ -215,7 +219,7 @@ static void generate_capsule(r_entity_vertex_t **out_verts, u32 *out_vert_count,
     *out_index_count = ii;
 }
 
-/* ---- Viewmodel mesh helper: emit a cylinder along +X ---- */
+// --- Viewmodel mesh helper: emit a cylinder along +X ---
 
 /* Appends a cylinder from x0 to x1 with given radius, using `slices` segments.
  * Returns the number of vertices written (all triangles, no index buffer needed
@@ -230,7 +234,7 @@ static void emit_cylinder(r_entity_vertex_t **verts, u32 *vi,
     r_entity_vertex_t *v = *verts;
     u32 *idx = *indices;
 
-    /* Two rings of vertices: ring0 at x0, ring1 at x1 */
+    // Two rings of vertices: ring0 at x0, ring1 at x1
     for (u32 ring = 0; ring < 2; ring++) {
         f32 x = (ring == 0) ? x0 : x1;
         for (u32 s = 0; s <= slices; s++) {
@@ -250,7 +254,7 @@ static void emit_cylinder(r_entity_vertex_t **verts, u32 *vi,
         }
     }
 
-    /* Indices: quads between ring0 and ring1 */
+    // Indices: quads between ring0 and ring1
     u32 ring_verts = slices + 1;
     for (u32 s = 0; s < slices; s++) {
         u32 a = base + s;
@@ -262,8 +266,8 @@ static void emit_cylinder(r_entity_vertex_t **verts, u32 *vi,
         idx[(*ii)++] = b; idx[(*ii)++] = c; idx[(*ii)++] = d;
     }
 
-    /* End caps */
-    /* Front cap (at x1): fan from center vertex */
+    // End caps
+    // Front cap (at x1): fan from center vertex
     u32 front_center = *vi;
     v[*vi].position[0] = x1; v[*vi].position[1] = 0.0f; v[*vi].position[2] = 0.0f;
     v[*vi].normal[0] = 1.0f; v[*vi].normal[1] = 0.0f; v[*vi].normal[2] = 0.0f;
@@ -274,7 +278,7 @@ static void emit_cylinder(r_entity_vertex_t **verts, u32 *vi,
         idx[(*ii)++] = base + ring_verts + s + 1;
     }
 
-    /* Back cap (at x0): fan from center vertex */
+    // Back cap (at x0): fan from center vertex
     u32 back_center = *vi;
     v[*vi].position[0] = x0; v[*vi].position[1] = 0.0f; v[*vi].position[2] = 0.0f;
     v[*vi].normal[0] = -1.0f; v[*vi].normal[1] = 0.0f; v[*vi].normal[2] = 0.0f;
@@ -286,7 +290,7 @@ static void emit_cylinder(r_entity_vertex_t **verts, u32 *vi,
     }
 }
 
-/* Emit an axis-aligned box with given bounds */
+// Emit an axis-aligned box with given bounds
 static void emit_box(r_entity_vertex_t **verts, u32 *vi,
                       u32 **indices, u32 *ii,
                       f32 x0, f32 y0, f32 z0,
@@ -296,20 +300,20 @@ static void emit_box(r_entity_vertex_t **verts, u32 *vi,
     r_entity_vertex_t *v = *verts;
     u32 *idx = *indices;
 
-    /* 8 unique positions, but we need 24 verts (4 per face) for correct normals */
+    // 8 unique positions, but we need 24 verts (4 per face) for correct normals
     f32 corners[8][3] = {
         {x0,y0,z0}, {x1,y0,z0}, {x1,y1,z0}, {x0,y1,z0},
         {x0,y0,z1}, {x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}
     };
 
-    /* 6 faces: {4 corner indices, normal} */
+    // 6 faces: {4 corner indices, normal}
     struct { u32 c[4]; f32 n[3]; } faces[6] = {
-        {{ 1,5,6,2 }, { 1, 0, 0}},  /* +X */
-        {{ 0,3,7,4 }, {-1, 0, 0}},  /* -X */
-        {{ 3,2,6,7 }, { 0, 1, 0}},  /* +Y */
-        {{ 0,4,5,1 }, { 0,-1, 0}},  /* -Y */
-        {{ 4,7,6,5 }, { 0, 0, 1}},  /* +Z */
-        {{ 0,1,2,3 }, { 0, 0,-1}}   /* -Z */
+        {{ 1,5,6,2 }, { 1, 0, 0}},  // +X
+        {{ 0,3,7,4 }, {-1, 0, 0}},  // -X
+        {{ 3,2,6,7 }, { 0, 1, 0}},  // +Y
+        {{ 0,4,5,1 }, { 0,-1, 0}},  // -Y
+        {{ 4,7,6,5 }, { 0, 0, 1}},  // +Z
+        {{ 0,1,2,3 }, { 0, 0,-1}}   // -Z
     };
 
     for (u32 f = 0; f < 6; f++) {
@@ -330,7 +334,7 @@ static void emit_box(r_entity_vertex_t **verts, u32 *vi,
     (void)base;
 }
 
-/* ---- Viewmodel: Rocket Launcher ---- */
+// --- Viewmodel: Rocket Launcher ---
 /* Thick barrel cylinder + box body. ~28 units total along +X.
  * Origin near grip area (around x=0). */
 
@@ -345,16 +349,16 @@ static void generate_viewmodel_rl(r_entity_vertex_t **out_verts, u32 *out_vert_c
     u32 *indices = malloc(max_indices * sizeof(u32));
     u32 vi = 0, ii = 0;
 
-    /* Body box: x from -12 to 0, y from -2.5 to 2.5, z from -3 to 3 */
+    // Body box: x from -12 to 0, y from -2.5 to 2.5, z from -3 to 3
     emit_box(&verts, &vi, &indices, &ii,
              -12.0f, -2.5f, -3.0f,
                0.0f,  2.5f,  3.0f);
 
-    /* Barrel cylinder: x from -2 to 16, radius 2.0 */
+    // Barrel cylinder: x from -2 to 16, radius 2.0
     emit_cylinder(&verts, &vi, &indices, &ii,
                   -2.0f, 16.0f, 2.0f, VIEWMODEL_CYL_SLICES);
 
-    /* Magazine box underneath: x from -10 to -4, y from -5 to -2.5, z from -1.5 to 1.5 */
+    // Magazine box underneath: x from -10 to -4, y from -5 to -2.5, z from -1.5 to 1.5
     emit_box(&verts, &vi, &indices, &ii,
              -10.0f, -5.0f, -1.5f,
               -4.0f, -2.5f,  1.5f);
@@ -365,7 +369,7 @@ static void generate_viewmodel_rl(r_entity_vertex_t **out_verts, u32 *out_vert_c
     *out_index_count = ii;
 }
 
-/* ---- Viewmodel: Railgun ---- */
+// --- Viewmodel: Railgun ---
 /* Long thin barrel + scope on top + wider rear body. ~30 units along +X. */
 
 static void generate_viewmodel_rg(r_entity_vertex_t **out_verts, u32 *out_vert_count,
@@ -377,21 +381,21 @@ static void generate_viewmodel_rg(r_entity_vertex_t **out_verts, u32 *out_vert_c
     u32 *indices = malloc(max_indices * sizeof(u32));
     u32 vi = 0, ii = 0;
 
-    /* Main barrel: long thin cylinder x from -5 to 25, radius 1.0 */
+    // Main barrel: long thin cylinder x from -5 to 25, radius 1.0
     emit_cylinder(&verts, &vi, &indices, &ii,
                   -5.0f, 25.0f, 1.0f, VIEWMODEL_CYL_SLICES);
 
-    /* Rear body: wider box x from -12 to -2, y from -2.5 to 2.5, z from -2.5 to 2.5 */
+    // Rear body: wider box x from -12 to -2, y from -2.5 to 2.5, z from -2.5 to 2.5
     emit_box(&verts, &vi, &indices, &ii,
              -12.0f, -2.5f, -2.5f,
               -2.0f,  2.5f,  2.5f);
 
-    /* Scope on top: small box x from -2 to 8, y from 1.0 to 3.5, z from -1.0 to 1.0 */
+    // Scope on top: small box x from -2 to 8, y from 1.0 to 3.5, z from -1.0 to 1.0
     emit_box(&verts, &vi, &indices, &ii,
              -2.0f, 1.0f, -1.0f,
               8.0f, 3.5f,  1.0f);
 
-    /* Grip/handle: x from -8 to -4, y from -5 to -2.5, z from -1 to 1 */
+    // Grip/handle: x from -8 to -4, y from -5 to -2.5, z from -1 to 1
     emit_box(&verts, &vi, &indices, &ii,
              -8.0f, -5.0f, -1.0f,
              -4.0f, -2.5f,  1.0f);
@@ -402,14 +406,14 @@ static void generate_viewmodel_rg(r_entity_vertex_t **out_verts, u32 *out_vert_c
     *out_index_count = ii;
 }
 
-/* ---- Viewmodel: Lightning Gun ---- */
+// --- Viewmodel: Lightning Gun ---
 /* Hexagonal barrel + two prongs at muzzle + chunky body. ~24 units along +X. */
 
 static void emit_hex_prism(r_entity_vertex_t **verts, u32 *vi,
                             u32 **indices, u32 *ii,
                             f32 x0, f32 x1, f32 radius)
 {
-    /* Hexagonal prism = cylinder with 6 sides */
+    // Hexagonal prism = cylinder with 6 sides
     emit_cylinder(verts, vi, indices, ii, x0, x1, radius, VIEWMODEL_HEX_SIDES);
 }
 
@@ -422,26 +426,26 @@ static void generate_viewmodel_lg(r_entity_vertex_t **out_verts, u32 *out_vert_c
     u32 *indices = malloc(max_indices * sizeof(u32));
     u32 vi = 0, ii = 0;
 
-    /* Main hexagonal barrel: x from -4 to 16, radius 1.8 */
+    // Main hexagonal barrel: x from -4 to 16, radius 1.8
     emit_hex_prism(&verts, &vi, &indices, &ii,
                    -4.0f, 16.0f, 1.8f);
 
-    /* Chunky body box: x from -12 to -2, y from -3 to 3, z from -3.5 to 3.5 */
+    // Chunky body box: x from -12 to -2, y from -3 to 3, z from -3.5 to 3.5
     emit_box(&verts, &vi, &indices, &ii,
              -12.0f, -3.0f, -3.5f,
               -2.0f,  3.0f,  3.5f);
 
-    /* Top prong: thin box extending from muzzle */
+    // Top prong: thin box extending from muzzle
     emit_box(&verts, &vi, &indices, &ii,
              14.0f, 1.5f, -0.5f,
              22.0f, 2.5f,  0.5f);
 
-    /* Bottom prong: thin box extending from muzzle */
+    // Bottom prong: thin box extending from muzzle
     emit_box(&verts, &vi, &indices, &ii,
              14.0f, -2.5f, -0.5f,
              22.0f, -1.5f,  0.5f);
 
-    /* Power cell on side: small box */
+    // Power cell on side: small box
     emit_box(&verts, &vi, &indices, &ii,
              -8.0f, -3.0f, 3.5f,
              -3.0f, -0.5f, 5.0f);
@@ -452,7 +456,7 @@ static void generate_viewmodel_lg(r_entity_vertex_t **out_verts, u32 *out_vert_c
     *out_index_count = ii;
 }
 
-/* ---- GPU upload ---- */
+// --- GPU upload ---
 
 static qk_result_t upload_mesh(r_entity_vertex_t *verts, u32 vert_count,
                                 u32 *indices, u32 index_count,
@@ -460,7 +464,7 @@ static qk_result_t upload_mesh(r_entity_vertex_t *verts, u32 vert_count,
 {
     r_staging_reset();
 
-    /* Vertices */
+    // Vertices
     VkDeviceSize vb_size = vert_count * sizeof(r_entity_vertex_t);
     VkDeviceSize staging_offset;
     void *staging_ptr = r_staging_alloc(vb_size, &staging_offset);
@@ -479,7 +483,7 @@ static qk_result_t upload_mesh(r_entity_vertex_t *verts, u32 vert_count,
     vkCmdCopyBuffer(cmd, g_r.staging.buffer, mesh->vertex_buffer, 1, &vb_copy);
     r_commands_end_single(cmd);
 
-    /* Indices */
+    // Indices
     VkDeviceSize ib_size = index_count * sizeof(u32);
     staging_ptr = r_staging_alloc(ib_size, &staging_offset);
     if (!staging_ptr) return QK_ERROR_OUT_OF_MEMORY;
@@ -502,13 +506,13 @@ static qk_result_t upload_mesh(r_entity_vertex_t *verts, u32 vert_count,
     return QK_SUCCESS;
 }
 
-/* ---- Public API ---- */
+// --- Public API ---
 
 qk_result_t r_entity_init(void)
 {
     memset(&g_r.entities, 0, sizeof(g_r.entities));
 
-    /* Generate and upload capsule mesh */
+    // Generate and upload capsule mesh
     {
         r_entity_vertex_t *verts;
         u32 *indices;
@@ -522,7 +526,7 @@ qk_result_t r_entity_init(void)
         if (res != QK_SUCCESS) return res;
     }
 
-    /* Generate and upload sphere mesh */
+    // Generate and upload sphere mesh
     {
         r_entity_vertex_t *verts;
         u32 *indices;
@@ -536,7 +540,7 @@ qk_result_t r_entity_init(void)
         if (res != QK_SUCCESS) return res;
     }
 
-    /* Generate and upload viewmodel meshes */
+    // Generate and upload viewmodel meshes
     {
         typedef void (*gen_fn)(r_entity_vertex_t**, u32*, u32**, u32*);
         gen_fn generators[3] = { generate_viewmodel_rl, generate_viewmodel_rg, generate_viewmodel_lg };
@@ -605,7 +609,7 @@ void r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index)
     };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    /* Bind view UBO (set 0) and light SSBOs (set 1) */
+    // Bind view UBO (set 0) and light SSBOs (set 1)
     VkDescriptorSet entity_sets[2] = {
         frame->view_descriptor_set,
         g_r.lights.light_descriptor_set
@@ -616,7 +620,7 @@ void r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index)
 
     r_entity_mesh_type_t current_mesh = (r_entity_mesh_type_t)-1;
 
-    /* Pass 1: draw non-viewmodel entities (normal depth range) */
+    // Pass 1: draw non-viewmodel entities (normal depth range)
     for (u32 i = 0; i < g_r.entities.draw_count; i++) {
         r_entity_draw_t *draw = &g_r.entities.draws[i];
         if (draw->mesh_type >= R_ENTITY_MESH_VIEWMODEL_RL) continue;
@@ -688,7 +692,7 @@ void r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index)
     }
 }
 
-/* ---- Public draw functions (called between begin_frame and end_frame) ---- */
+// --- Public draw functions (called between begin_frame and end_frame) ---
 
 void qk_renderer_draw_capsule(f32 pos_x, f32 pos_y, f32 pos_z,
                                f32 radius, f32 half_height,
@@ -739,46 +743,46 @@ void qk_renderer_draw_sphere(f32 pos_x, f32 pos_y, f32 pos_z,
     color_u32_to_f32(color_rgba, draw->push.color);
 }
 
-/* ---- Viewmodel rendering ---- */
+// --- Viewmodel rendering ---
 
 void qk_renderer_draw_viewmodel(u32 weapon_id, f32 pitch_deg, f32 yaw_deg,
                                  f32 time_seconds, bool firing)
 {
     if (!g_r.entities.initialized) return;
     if (g_r.entities.draw_count >= R_ENTITY_MAX_DRAWS) return;
-    if (weapon_id == 0 || weapon_id >= 4) return; /* QK_WEAPON_NONE or invalid */
+    if (weapon_id == 0 || weapon_id >= 4) return; // QK_WEAPON_NONE or invalid
 
-    /* Map weapon_id -> mesh type and color */
+    // Map weapon_id -> mesh type and color
     r_entity_mesh_type_t mesh;
     u32 base_color;
     switch (weapon_id) {
-        case 1: mesh = R_ENTITY_MESH_VIEWMODEL_RL; base_color = 0x882200FF; break; /* Rocket */
-        case 2: mesh = R_ENTITY_MESH_VIEWMODEL_RG; base_color = 0x008888FF; break; /* Rail */
-        case 3: mesh = R_ENTITY_MESH_VIEWMODEL_LG; base_color = 0x6688FFFF; break; /* LG */
+        case 1: mesh = R_ENTITY_MESH_VIEWMODEL_RL; base_color = 0x882200FF; break; // Rocket
+        case 2: mesh = R_ENTITY_MESH_VIEWMODEL_RG; base_color = 0x008888FF; break; // Rail
+        case 3: mesh = R_ENTITY_MESH_VIEWMODEL_LG; base_color = 0x6688FFFF; break; // LG
         default: return;
     }
 
-    /* Get camera position from view UBO */
+    // Get camera position from view UBO
     u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
     r_view_uniforms_t *view = (r_view_uniforms_t *)g_r.frames[fi].view_ubo_mapped;
     if (!view) return;
 
     f32 cam_pos[3] = { view->camera_pos[0], view->camera_pos[1], view->camera_pos[2] };
 
-    /* Compute camera basis vectors from pitch/yaw */
+    // Compute camera basis vectors from pitch/yaw
     f32 pitch_rad = pitch_deg * (PI_F / 180.0f);
     f32 yaw_rad = yaw_deg * (PI_F / 180.0f);
 
-    f32 cp = cosf(pitch_rad);
-    f32 sp = sinf(pitch_rad);
-    f32 cy = cosf(yaw_rad);
-    f32 sy = sinf(yaw_rad);
+    f32 cos_pitch = cosf(pitch_rad);
+    f32 sin_pitch = sinf(pitch_rad);
+    f32 cos_yaw = cosf(yaw_rad);
+    f32 sin_yaw = sinf(yaw_rad);
 
-    /* Forward = direction camera is looking (QUAKE convention: yaw around Z, pitch tilts) */
-    f32 fwd[3] = { cp * cy, cp * sy, sp };
+    // Forward = direction camera is looking (QUAKE convention: yaw around Z, pitch tilts)
+    f32 fwd[3] = { cos_pitch * cos_yaw, cos_pitch * sin_yaw, sin_pitch };
     f32 world_up[3] = { 0.0f, 0.0f, 1.0f };
 
-    /* Right = cross(forward, world_up) normalized */
+    // Right = cross(forward, world_up) normalized
     f32 right[3] = {
         fwd[1] * world_up[2] - fwd[2] * world_up[1],
         fwd[2] * world_up[0] - fwd[0] * world_up[2],
@@ -792,14 +796,14 @@ void qk_renderer_draw_viewmodel(u32 weapon_id, f32 pitch_deg, f32 yaw_deg,
         }
     }
 
-    /* Up = cross(right, forward) */
+    // Up = cross(right, forward)
     f32 up[3] = {
         right[1] * fwd[2] - right[2] * fwd[1],
         right[2] * fwd[0] - right[0] * fwd[2],
         right[0] * fwd[1] - right[1] * fwd[0]
     };
 
-    /* Weapon bob */
+    // Weapon bob
     f32 bob_x = sinf(time_seconds * 4.0f) * 0.3f;
     f32 bob_y = sinf(time_seconds * 8.0f) * 0.15f;
 
@@ -834,16 +838,16 @@ void qk_renderer_draw_viewmodel(u32 weapon_id, f32 pitch_deg, f32 yaw_deg,
 
     f32 vm_scale = 0.65f;
     f32 *m = draw->push.model;
-    /* col 0: forward (where mesh +X goes) -- scaled */
+    // col 0: forward (where mesh +X goes) -- scaled
     m[ 0] = fwd[0] * vm_scale;    m[ 1] = fwd[1] * vm_scale;    m[ 2] = fwd[2] * vm_scale;    m[ 3] = 0.0f;
-    /* col 1: right (where mesh +Y goes) -- scaled */
+    // col 1: right (where mesh +Y goes) -- scaled
     m[ 4] = right[0] * vm_scale;  m[ 5] = right[1] * vm_scale;  m[ 6] = right[2] * vm_scale;  m[ 7] = 0.0f;
-    /* col 2: up (where mesh +Z goes) -- scaled */
+    // col 2: up (where mesh +Z goes) -- scaled
     m[ 8] = up[0] * vm_scale;     m[ 9] = up[1] * vm_scale;     m[10] = up[2] * vm_scale;     m[11] = 0.0f;
-    /* col 3: translation */
+    // col 3: translation
     m[12] = pos[0];    m[13] = pos[1];    m[14] = pos[2];    m[15] = 1.0f;
 
-    /* Color with optional firing brightness */
+    // Color with optional firing brightness
     f32 color[4];
     color_u32_to_f32(base_color, color);
     if (firing) {

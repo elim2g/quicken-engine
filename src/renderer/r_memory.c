@@ -49,19 +49,19 @@ qk_result_t r_memory_create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
 
     if (pool_index >= 0) {
         r_memory_pool_t *pool = &g_r.pools[pool_index];
-        /* Verify the pool's memory type is compatible */
+        // Verify the pool's memory type is compatible
         if (mem_req.memoryTypeBits & (1u << pool->memory_type)) {
             VkDeviceSize offset;
             if (r_memory_pool_alloc((u32)pool_index, mem_req.size,
                                      mem_req.alignment, &offset) == QK_SUCCESS) {
                 vkBindBufferMemory(g_r.device.handle, *out_buffer, pool->memory, offset);
-                *out_memory = VK_NULL_HANDLE; /* Pool-owned; caller must not free */
+                *out_memory = VK_NULL_HANDLE; // Pool-owned; caller must not free
                 return QK_SUCCESS;
             }
         }
     }
 
-    /* Fallback: individual allocation */
+    // Fallback: individual allocation
     u32 mem_type;
     if (!r_memory_find_type((u32)mem_req.memoryTypeBits, properties, &mem_type)) {
         vkDestroyBuffer(g_r.device.handle, *out_buffer, NULL);
@@ -112,7 +112,7 @@ static qk_result_t r_memory_pool_create(u32 pool_index, VkDeviceSize size,
 {
     r_memory_pool_t *pool = &g_r.pools[pool_index];
 
-    /* Find a suitable memory type for a generic buffer */
+    // Find a suitable memory type for a generic buffer
     VkBufferCreateInfo dummy_info = {
         .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size        = 256,
@@ -179,7 +179,7 @@ void r_memory_shutdown(void)
     }
 }
 
-/* ---- Staging Buffer ---- */
+// --- Staging Buffer ---
 
 qk_result_t r_staging_init(void)
 {
@@ -219,7 +219,7 @@ void r_staging_reset(void)
 
 void *r_staging_alloc(VkDeviceSize size, VkDeviceSize *out_offset)
 {
-    /* Align to 16 bytes */
+    // Align to 16 bytes
     VkDeviceSize aligned = (g_r.staging.offset + 15) & ~((VkDeviceSize)15);
 
     if (aligned + size > g_r.staging.size) {

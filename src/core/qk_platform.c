@@ -9,7 +9,7 @@
 
 #ifdef QK_HEADLESS
 
-/* ---- Headless (no SDL3) ---- */
+// --- Headless (no SDL3) ---
 
 #ifdef QK_PLATFORM_WINDOWS
     #ifndef WIN32_LEAN_AND_MEAN
@@ -37,7 +37,7 @@
         Sleep(ms);
     }
 
-#else /* Linux */
+#else // Linux
     #include <time.h>
 
     static struct timespec s_start = {0, 0};
@@ -59,9 +59,9 @@
         nanosleep(&ts, NULL);
     }
 
-#endif /* QK_PLATFORM_WINDOWS */
+#endif // QK_PLATFORM_WINDOWS
 
-#else /* !QK_HEADLESS -- use SDL3 */
+#else // !QK_HEADLESS -- use SDL3
 
 #include <SDL3/SDL_timer.h>
 
@@ -79,4 +79,4 @@ void qk_platform_sleep(u32 ms) {
     SDL_Delay(ms);
 }
 
-#endif /* QK_HEADLESS */
+#endif // QK_HEADLESS

@@ -51,4 +51,4 @@ static inline vec3_t vec3_normalize(vec3_t v) {
     return (vec3_t){ 0.0f, 0.0f, 0.0f };
 }
 
-#endif /* QK_MATH_H */
+#endif // QK_MATH_H

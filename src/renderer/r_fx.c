@@ -15,9 +15,9 @@
 #include <stdio.h>
 #include <string.h>
 
-/* ---- Constants ---- */
+// --- Constants ---
 
-#define PI 3.14159265358979f
+static const f32 PI = 3.14159265358979f;
 
 /* Hash channel offsets for r_fx_hash().
  *
@@ -31,32 +31,32 @@
  * `stride` is any small prime that spreads sequential particles apart.
  * `FX_CH_xxx` separates properties so (e.g.) X-jitter and Y-jitter
  * don't produce the same value for the same particle. */
-#define FX_CH_X         31      /* spatial X / primary displacement */
-#define FX_CH_Y         4999    /* spatial Y / secondary displacement */
-#define FX_CH_Z         9973    /* spatial Z / tertiary displacement */
-#define FX_CH_SIZE      113     /* per-particle size variation */
-#define FX_CH_ROTATION  1993    /* billboard rotation angle */
-#define FX_CH_SPEED     73      /* velocity / speed variation */
-#define FX_CH_HUE       997     /* color / hue shift */
-#define FX_CH_SPREAD    97      /* directional spread */
-#define FX_CH_SPARKLE   7777    /* time-varying brightness */
-#define FX_CH_WISP      3331    /* per-particle fade rate */
-#define FX_CH_DRIFT     53      /* drift rate variation */
-#define FX_CH_AZIMUTH   17      /* angular distribution */
-#define FX_CH_ELEV      41      /* elevation / polar angle */
+#define FX_CH_X         31      // spatial X / primary displacement
+#define FX_CH_Y         4999    // spatial Y / secondary displacement
+#define FX_CH_Z         9973    // spatial Z / tertiary displacement
+#define FX_CH_SIZE      113     // per-particle size variation
+#define FX_CH_ROTATION  1993    // billboard rotation angle
+#define FX_CH_SPEED     73      // velocity / speed variation
+#define FX_CH_HUE       997     // color / hue shift
+#define FX_CH_SPREAD    97      // directional spread
+#define FX_CH_SPARKLE   7777    // time-varying brightness
+#define FX_CH_WISP      3331    // per-particle fade rate
+#define FX_CH_DRIFT     53      // drift rate variation
+#define FX_CH_AZIMUTH   17      // angular distribution
+#define FX_CH_ELEV      41      // elevation / polar angle
 
-/* Rail beam parameters */
+// Rail beam parameters
 #define RAIL_CORE_HALF_WIDTH    0.8f
-#define RAIL_SPIRAL_PITCH       40.0f   /* world units per full spiral revolution */
-#define RAIL_SPIRAL_PTS_PER_TURN 28     /* particles per revolution */
+#define RAIL_SPIRAL_PITCH       40.0f   // world units per full spiral revolution
+#define RAIL_SPIRAL_PTS_PER_TURN 28     // particles per revolution
 #define RAIL_SPIRAL_MIN_POINTS  12
 #define RAIL_SPIRAL_MAX_POINTS  512
 #define RAIL_SPIRAL_RADIUS      2.5f
 #define RAIL_PARTICLE_HALF_SIZE 1.2f
 #define RAIL_FADE_TIME          1.75f
-#define RAIL_FIZZLE_AMPLITUDE   6.0f    /* max displacement at end of life */
+#define RAIL_FIZZLE_AMPLITUDE   6.0f    // max displacement at end of life
 
-/* LG beam parameters */
+// LG beam parameters
 #define LG_SEGMENTS             24
 #define LG_BEAM_LAYERS          3
 #define LG_CORE_HALF_WIDTH      0.6f
@@ -64,7 +64,7 @@
 #define LG_WOBBLE_AMPLITUDE     5.0f
 #define LG_WOBBLE_FREQ          10.0f
 
-/* ---- Helpers ---- */
+// --- Helpers ---
 
 static void r_fx_cross(f32 *out, const f32 *a, const f32 *b)
 {
@@ -97,7 +97,7 @@ static f32 r_fx_hash(u32 x)
     return (f32)(x & 0xFFFF) / 65535.0f;
 }
 
-/* Signed variant: maps to [-1, 1] instead of [0, 1] */
+// Signed variant: maps to [-1, 1] instead of [0, 1]
 static f32 r_fx_hash_signed(u32 x)
 {
     return r_fx_hash(x) * 2.0f - 1.0f;
@@ -108,16 +108,16 @@ static f32 r_fx_hash_signed(u32 x)
  * Sufficient for particle billboards where exact precision is invisible. */
 static void r_fx_fast_sincos(f32 angle, f32 *out_sin, f32 *out_cos)
 {
-    /* Reduce to [-PI, PI] */
+    // Reduce to [-PI, PI]
     angle += PI;
     angle -= floorf(angle / (2.0f * PI)) * (2.0f * PI);
     angle -= PI;
 
-    /* sin via parabolic approximation + refinement */
+    // sin via parabolic approximation + refinement
     f32 s = (4.0f / PI) * angle - (4.0f / (PI * PI)) * angle * fabsf(angle);
     *out_sin = 0.225f * (s * fabsf(s) - s) + s;
 
-    /* cos = sin(angle + PI/2) */
+    // cos = sin(angle + PI/2)
     f32 ca = angle + PI * 0.5f;
     if (ca > PI) ca -= 2.0f * PI;
     f32 c = (4.0f / PI) * ca - (4.0f / (PI * PI)) * ca * fabsf(ca);
@@ -183,7 +183,7 @@ static u32 r_fx_emit_billboard_quad(r_fx_vertex_t *verts, u32 offset,
 {
     if (offset + 6 > R_FX_MAX_VERTICES) return 0;
 
-    /* Billboard direction: camera to center */
+    // Billboard direction: camera to center
     f32 to_cam[3] = {
         cam_pos[0] - center[0],
         cam_pos[1] - center[1],
@@ -191,17 +191,17 @@ static u32 r_fx_emit_billboard_quad(r_fx_vertex_t *verts, u32 offset,
     };
     r_fx_normalize(to_cam);
 
-    /* Right vector = cross(beam_axis, to_cam) */
+    // Right vector = cross(beam_axis, to_cam)
     f32 right[3];
     r_fx_cross(right, beam_axis, to_cam);
     r_fx_normalize(right);
 
-    /* Up vector = cross(right, beam_axis) */
+    // Up vector = cross(right, beam_axis)
     f32 up[3];
     r_fx_cross(up, right, beam_axis);
     r_fx_normalize(up);
 
-    /* Quad corners */
+    // Quad corners
     f32 corners[4][3];
     for (int i = 0; i < 3; i++) {
         corners[0][i] = center[i] - right[i] * half_size - up[i] * half_size;
@@ -210,7 +210,7 @@ static u32 r_fx_emit_billboard_quad(r_fx_vertex_t *verts, u32 offset,
         corners[3][i] = center[i] - right[i] * half_size + up[i] * half_size;
     }
 
-    /* Triangle 1: 0-1-2 */
+    // Triangle 1: 0-1-2
     memcpy(verts[offset + 0].position, corners[0], sizeof(f32) * 3);
     memcpy(verts[offset + 0].color, color, sizeof(f32) * 4);
     memcpy(verts[offset + 1].position, corners[1], sizeof(f32) * 3);
@@ -218,7 +218,7 @@ static u32 r_fx_emit_billboard_quad(r_fx_vertex_t *verts, u32 offset,
     memcpy(verts[offset + 2].position, corners[2], sizeof(f32) * 3);
     memcpy(verts[offset + 2].color, color, sizeof(f32) * 4);
 
-    /* Triangle 2: 0-2-3 */
+    // Triangle 2: 0-2-3
     memcpy(verts[offset + 3].position, corners[0], sizeof(f32) * 3);
     memcpy(verts[offset + 3].color, color, sizeof(f32) * 4);
     memcpy(verts[offset + 4].position, corners[2], sizeof(f32) * 3);
@@ -238,11 +238,11 @@ static u32 r_fx_emit_strip_quad(r_fx_vertex_t *verts, u32 offset,
 {
     if (offset + 6 > R_FX_MAX_VERTICES) return 0;
 
-    /* Segment direction */
+    // Segment direction
     f32 seg[3] = { p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2] };
     r_fx_normalize(seg);
 
-    /* Mid-point to camera */
+    // Mid-point to camera
     f32 mid[3] = {
         (p0[0] + p1[0]) * 0.5f,
         (p0[1] + p1[1]) * 0.5f,
@@ -255,12 +255,12 @@ static u32 r_fx_emit_strip_quad(r_fx_vertex_t *verts, u32 offset,
     };
     r_fx_normalize(to_cam);
 
-    /* Right = cross(seg, to_cam) */
+    // Right = cross(seg, to_cam)
     f32 right[3];
     r_fx_cross(right, seg, to_cam);
     r_fx_normalize(right);
 
-    /* Four corners: p0 +/- right*half_width, p1 +/- right*half_width */
+    // Four corners: p0 +/- right*half_width, p1 +/- right*half_width
     f32 c0[3], c1[3], c2[3], c3[3];
     for (int i = 0; i < 3; i++) {
         c0[i] = p0[i] - right[i] * half_width;
@@ -269,7 +269,7 @@ static u32 r_fx_emit_strip_quad(r_fx_vertex_t *verts, u32 offset,
         c3[i] = p1[i] - right[i] * half_width;
     }
 
-    /* Triangle 1: c0-c1-c2 */
+    // Triangle 1: c0-c1-c2
     memcpy(verts[offset + 0].position, c0, sizeof(f32) * 3);
     memcpy(verts[offset + 0].color, color, sizeof(f32) * 4);
     memcpy(verts[offset + 1].position, c1, sizeof(f32) * 3);
@@ -277,7 +277,7 @@ static u32 r_fx_emit_strip_quad(r_fx_vertex_t *verts, u32 offset,
     memcpy(verts[offset + 2].position, c2, sizeof(f32) * 3);
     memcpy(verts[offset + 2].color, color, sizeof(f32) * 4);
 
-    /* Triangle 2: c0-c2-c3 */
+    // Triangle 2: c0-c2-c3
     memcpy(verts[offset + 3].position, c0, sizeof(f32) * 3);
     memcpy(verts[offset + 3].color, color, sizeof(f32) * 4);
     memcpy(verts[offset + 4].position, c2, sizeof(f32) * 3);
@@ -288,7 +288,7 @@ static u32 r_fx_emit_strip_quad(r_fx_vertex_t *verts, u32 offset,
     return 6;
 }
 
-/* ---- Init / Shutdown ---- */
+// --- Init / Shutdown ---
 
 qk_result_t r_fx_init(void)
 {
@@ -329,7 +329,7 @@ void r_fx_shutdown(void)
     memset(&g_r.fx, 0, sizeof(g_r.fx));
 }
 
-/* ---- Rail Beam ---- */
+// --- Rail Beam ---
 
 void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
                                  f32 end_x, f32 end_y, f32 end_z,
@@ -342,7 +342,7 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
     f32 start[3] = { start_x, start_y, start_z };
     f32 end[3] = { end_x, end_y, end_z };
 
-    /* Beam axis */
+    // Beam axis
     f32 axis[3] = { end[0] - start[0], end[1] - start[1], end[2] - start[2] };
     f32 beam_len = sqrtf(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
     if (beam_len < 1e-3f) return;
@@ -350,16 +350,16 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
     f32 inv_len = 1.0f / beam_len;
     f32 axis_n[3] = { axis[0] * inv_len, axis[1] * inv_len, axis[2] * inv_len };
 
-    /* Perpendicular vectors for spiral */
+    // Perpendicular vectors for spiral
     f32 perp1[3], perp2[3];
     r_fx_build_perp_frame(axis_n, perp1, perp2);
 
-    /* Fade and age-based expansion */
+    // Fade and age-based expansion
     f32 fade = 1.0f - (age_seconds / RAIL_FADE_TIME);
-    fade = fade * fade; /* quadratic falloff for nicer look */
+    fade = fade * fade; // quadratic falloff for nicer look
     f32 spiral_expand = 1.0f + age_seconds * 2.0f;
 
-    /* Base color from u32 RGBA */
+    // Base color from u32 RGBA
     f32 base_r = (f32)((color_rgba >> 24) & 0xFF) / 255.0f;
     f32 base_g = (f32)((color_rgba >> 16) & 0xFF) / 255.0f;
     f32 base_b = (f32)((color_rgba >>  8) & 0xFF) / 255.0f;
@@ -371,7 +371,7 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
     u32 v_count = 0;
     r_fx_vertex_t *verts = g_r.fx.vertices;
 
-    /* 1. Core beam: thin strip down the center */
+    // 1. Core beam: thin strip down the center
     {
         u32 core_segments = 8;
         f32 core_color[4] = {
@@ -398,7 +398,7 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
         }
     }
 
-    /* 2. Spiral particles - count scales linearly with beam length */
+    // 2. Spiral particles - count scales linearly with beam length
     {
         f32 spiral_turns = beam_len / RAIL_SPIRAL_PITCH;
         u32 spiral_points = (u32)(spiral_turns * RAIL_SPIRAL_PTS_PER_TURN);
@@ -407,7 +407,7 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
 
         f32 spiral_radius = RAIL_SPIRAL_RADIUS * spiral_expand;
 
-        /* Fizzle factor: 0 at birth, ramps quadratically toward 1 at death */
+        // Fizzle factor: 0 at birth, ramps quadratically toward 1 at death
         f32 fizzle = age_seconds / RAIL_FADE_TIME;
         fizzle = fizzle * fizzle;
 
@@ -418,8 +418,8 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
         f32 angle_step = total_angle / (f32)(spiral_points - 1);
         f32 step_cos = cosf(angle_step);
         f32 step_sin = sinf(angle_step);
-        f32 cur_cos = 1.0f;  /* cos(0) */
-        f32 cur_sin = 0.0f;  /* sin(0) */
+        f32 cur_cos = 1.0f;  // cos(0)
+        f32 cur_sin = 0.0f;  // sin(0)
 
         for (u32 i = 0; i < spiral_points; i++) {
             f32 t = (f32)i / (f32)(spiral_points - 1);
@@ -447,11 +447,11 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
                            + axis_n[c] * drift_ax * fizzle_mag * 0.3f;
             }
 
-            /* Particle grows slightly as it disperses */
+            // Particle grows slightly as it disperses
             f32 fizzle_size = 1.0f + fizzle * 0.6f;
             f32 particle_size = RAIL_PARTICLE_HALF_SIZE * fade * fizzle_size;
 
-            /* Sparkle + wispy fade: some particles dim faster for a wispy look */
+            // Sparkle + wispy fade: some particles dim faster for a wispy look
             f32 sparkle = 0.7f + 0.3f * r_fx_hash(i * 7 + FX_CH_SPARKLE + (u32)(age_seconds * 60.0f));
             f32 wisp = 1.0f - fizzle * 0.4f * r_fx_hash(i * 31 + FX_CH_WISP);
             f32 particle_color[4] = {
@@ -467,7 +467,7 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
                                                       particle_color);
             v_count += emitted;
 
-            /* Rotate to next angle: (cos,sin)(a+s) = (cos*cs - sin*ss, sin*cs + cos*ss) */
+            // Rotate to next angle: (cos,sin)(a+s) = (cos*cs - sin*ss, sin*cs + cos*ss)
             f32 new_cos = cur_cos * step_cos - cur_sin * step_sin;
             f32 new_sin = cur_sin * step_cos + cur_cos * step_sin;
             cur_cos = new_cos;
@@ -483,7 +483,7 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
     g_r.fx.vertex_count = v_start + v_count;
 }
 
-/* ---- Lightning Gun Beam ---- */
+// --- Lightning Gun Beam ---
 
 void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
                                 f32 end_x, f32 end_y, f32 end_z,
@@ -517,7 +517,7 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
         qk_renderer_submit_light(&light);
     }
 
-    /* Perpendicular vectors for displacement */
+    // Perpendicular vectors for displacement
     f32 perp1[3], perp2[3];
     r_fx_build_perp_frame(axis_n, perp1, perp2);
 
@@ -528,12 +528,12 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
     u32 v_count = 0;
     r_fx_vertex_t *verts = g_r.fx.vertices;
 
-    /* Generate multiple overlapping beam layers with different wobble phases */
+    // Generate multiple overlapping beam layers with different wobble phases
     for (u32 layer = 0; layer < LG_BEAM_LAYERS; layer++) {
-        f32 phase_offset = (f32)layer * (2.0f * PI / 3.0f); /* 120 degrees apart */
+        f32 phase_offset = (f32)layer * (2.0f * PI / 3.0f); // 120 degrees apart
         f32 layer_amplitude = LG_WOBBLE_AMPLITUDE * (1.0f - (f32)layer * 0.25f);
 
-        /* Interpolate width: inner layer = thin bright core, outer = wider softer */
+        // Interpolate width: inner layer = thin bright core, outer = wider softer
         f32 half_width;
         f32 brightness;
         if (layer == 0) {
@@ -544,7 +544,7 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
             brightness = 0.3f / (f32)layer;
         }
 
-        /* Electric blue-white core color */
+        // Electric blue-white core color
         f32 color[4] = {
             0.6f * brightness,
             0.8f * brightness,
@@ -552,21 +552,21 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
             brightness
         };
 
-        /* Generate displaced points along beam */
+        // Generate displaced points along beam
         f32 points[LG_SEGMENTS + 1][3];
         for (u32 s = 0; s <= LG_SEGMENTS; s++) {
             f32 t = (f32)s / (f32)LG_SEGMENTS;
 
-            /* Noise-based displacement using hash for jitter */
+            // Noise-based displacement using hash for jitter
             u32 seed = s * 131 + layer * 37 + (u32)(time_seconds * LG_WOBBLE_FREQ);
             f32 disp1 = r_fx_hash_signed(seed + FX_CH_X) * layer_amplitude;
             f32 disp2 = r_fx_hash_signed(seed + FX_CH_Y) * layer_amplitude;
 
-            /* Add sinusoidal component for smoother overall shape */
+            // Add sinusoidal component for smoother overall shape
             disp1 += sinf(t * 8.0f * PI + time_seconds * LG_WOBBLE_FREQ + phase_offset) * layer_amplitude * 0.5f;
             disp2 += cosf(t * 6.0f * PI + time_seconds * LG_WOBBLE_FREQ * 1.3f + phase_offset) * layer_amplitude * 0.5f;
 
-            /* Taper displacement at endpoints so it connects cleanly */
+            // Taper displacement at endpoints so it connects cleanly
             f32 taper = sinf(t * PI);
             disp1 *= taper;
             disp2 *= taper;
@@ -578,7 +578,7 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
             }
         }
 
-        /* Emit quad strips connecting consecutive points */
+        // Emit quad strips connecting consecutive points
         for (u32 s = 0; s < LG_SEGMENTS; s++) {
             u32 emitted = r_fx_emit_strip_quad(verts, v_start + v_count,
                                                   points[s], points[s + 1],
@@ -595,7 +595,7 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
     g_r.fx.vertex_count = v_start + v_count;
 }
 
-/* ---- Rocket Smoke Trail ---- */
+// --- Rocket Smoke Trail ---
 
 #define ROCKET_TRAIL_PARTICLES  8.0f
 #define ROCKET_TRAIL_LENGTH     20.0f
@@ -609,7 +609,7 @@ void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
     if (!g_r.fx.initialized) return;
     if (g_r.fx.draw_count >= R_FX_MAX_DRAWS) return;
 
-    /* Auto-emit dim dynamic light at rocket position */
+    // Auto-emit dim dynamic light at rocket position
     {
         qk_dynamic_light_t light = {
             .position  = { pos_x, pos_y, pos_z },
@@ -620,20 +620,20 @@ void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
         qk_renderer_submit_light(&light);
     }
 
-    /* Trail direction = opposite of velocity (smoke is behind the rocket) */
+    // Trail direction = opposite of velocity (smoke is behind the rocket)
     f32 vel_len = sqrtf(vel_x * vel_x + vel_y * vel_y + vel_z * vel_z);
     if (vel_len < 1e-3f) return;
 
     f32 inv_vel = 1.0f / vel_len;
     f32 trail_dir[3] = { -vel_x * inv_vel, -vel_y * inv_vel, -vel_z * inv_vel };
 
-    /* Use trail_dir as beam axis for billboarding */
+    // Use trail_dir as beam axis for billboarding
     f32 axis_n[3] = { trail_dir[0], trail_dir[1], trail_dir[2] };
 
     f32 cam_pos[3];
     r_fx_get_cam_pos(cam_pos);
 
-    /* Perpendicular vectors for jitter displacement */
+    // Perpendicular vectors for jitter displacement
     f32 perp1[3], perp2[3];
     r_fx_build_perp_frame(axis_n, perp1, perp2);
 
@@ -641,35 +641,35 @@ void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
     u32 v_count = 0;
     r_fx_vertex_t *verts = g_r.fx.vertices;
 
-    /* Hash seed based on age for per-rocket variation */
+    // Hash seed based on age for per-rocket variation
     u32 age_seed = (u32)(age_seconds * 1000.0f);
 
     for (u32 i = 0; i < ROCKET_TRAIL_PARTICLES; i++) {
-        f32 t = (f32)i / (f32)(ROCKET_TRAIL_PARTICLES - 1); /* 0 = at rocket, 1 = trail end */
+        f32 t = (f32)i / (f32)(ROCKET_TRAIL_PARTICLES - 1); // 0 = at rocket, 1 = trail end
 
         f32 dist = t * ROCKET_TRAIL_LENGTH;
 
-        /* Base position along trail */
+        // Base position along trail
         f32 pos[3] = { pos_x, pos_y, pos_z };
         f32 center[3];
         for (int c = 0; c < 3; c++) {
             center[c] = pos[c] + trail_dir[c] * dist;
         }
 
-        /* Random perpendicular jitter for organic look - hash-based, stable per particle */
-        f32 jitter_scale = 2.0f + t * 4.0f; /* more jitter further from rocket */
+        // Random perpendicular jitter for organic look - hash-based, stable per particle
+        f32 jitter_scale = 2.0f + t * 4.0f; // more jitter further from rocket
         f32 j1 = r_fx_hash_signed(i * 127 + age_seed + FX_CH_X) * jitter_scale;
         f32 j2 = r_fx_hash_signed(i * 127 + age_seed + FX_CH_Y) * jitter_scale;
         for (int c = 0; c < 3; c++) {
             center[c] += perp1[c] * j1 + perp2[c] * j2;
         }
 
-        /* Size: grows with distance from rocket */
+        // Size: grows with distance from rocket
         f32 half_size = ROCKET_TRAIL_BASE_SIZE + t * ROCKET_TRAIL_EXPAND;
 
-        /* Color: smoky grey, fading with distance */
-        f32 alpha = (1.0f - t) * 0.5f; /* more opaque near rocket */
-        f32 brightness = 0.3f - t * 0.1f; /* darker further back */
+        // Color: smoky grey, fading with distance
+        f32 alpha = (1.0f - t) * 0.5f; // more opaque near rocket
+        f32 brightness = 0.3f - t * 0.1f; // darker further back
         if (brightness < 0.1f) brightness = 0.1f;
 
         f32 color[4] = {
@@ -694,7 +694,7 @@ void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
     g_r.fx.vertex_count = v_start + v_count;
 }
 
-/* ---- Smoke Particle Batch ---- */
+// --- Smoke Particle Batch ---
 
 static u32 s_smoke_batch_v_start;
 
@@ -716,7 +716,7 @@ void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
 
     f32 center[3] = { x, y, z };
 
-    /* Camera-facing billboard */
+    // Camera-facing billboard
     f32 to_cam[3] = {
         cam_pos[0] - x,
         cam_pos[1] - y,
@@ -724,18 +724,18 @@ void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
     };
     r_fx_normalize(to_cam);
 
-    /* Right = world_up x to_cam */
+    // Right = world_up x to_cam
     f32 world_up[3] = { 0, 0, 1 };
     f32 right[3];
     r_fx_cross(right, world_up, to_cam);
     r_fx_normalize(right);
 
-    /* Up = to_cam x right */
+    // Up = to_cam x right
     f32 up[3];
     r_fx_cross(up, to_cam, right);
     r_fx_normalize(up);
 
-    /* Rotate right/up by angle_rad around the to_cam axis */
+    // Rotate right/up by angle_rad around the to_cam axis
     f32 sa, ca;
     r_fx_fast_sincos(angle_rad, &sa, &ca);
     f32 rot_right[3], rot_up[3];
@@ -744,7 +744,7 @@ void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
         rot_up[i]    = -right[i] * sa + up[i] * ca;
     }
 
-    /* Color from RGBA u32 */
+    // Color from RGBA u32
     f32 color[4] = {
         (f32)((color_rgba >> 24) & 0xFF) / 255.0f,
         (f32)((color_rgba >> 16) & 0xFF) / 255.0f,
@@ -752,7 +752,7 @@ void qk_renderer_emit_smoke_puff(f32 x, f32 y, f32 z,
         (f32)( color_rgba        & 0xFF) / 255.0f
     };
 
-    /* Quad corners (rotated) */
+    // Quad corners (rotated)
     r_fx_vertex_t *verts = g_r.fx.vertices;
     f32 corners[4][3];
     for (int i = 0; i < 3; i++) {
@@ -790,7 +790,7 @@ void qk_renderer_end_smoke(void)
     draw->vertex_count = v_count;
 }
 
-/* ---- Screen-facing billboard (fully camera-oriented) ---- */
+// --- Screen-facing billboard (fully camera-oriented) ---
 
 static u32 r_fx_emit_screen_facing_quad(r_fx_vertex_t *verts, u32 offset,
                                             const f32 *center, f32 half_size,
@@ -808,7 +808,7 @@ static u32 r_fx_emit_screen_facing_quad(r_fx_vertex_t *verts, u32 offset,
         corners[3][i] = center[i] - cam_right[i] * half_size + cam_up[i] * half_size;
     }
 
-    /* Two triangles: 0-1-2, 0-2-3 */
+    // Two triangles: 0-1-2, 0-2-3
     r_fx_vertex_t v;
     v.color[0] = color[0]; v.color[1] = color[1];
     v.color[2] = color[2]; v.color[3] = color[3];
@@ -826,16 +826,16 @@ static u32 r_fx_emit_screen_facing_quad(r_fx_vertex_t *verts, u32 offset,
     return 6;
 }
 
-/* ---- Explosion Effect ---- */
+// --- Explosion Effect ---
 
-#define EXPLOSION_OUTER_COUNT       60      /* outer sphere particles */
-#define EXPLOSION_CORE_COUNT        8       /* large center billboards for heft */
-#define EXPLOSION_CORE_OFFSET       16.0f   /* offset multiplier to spread out center billboards */
+#define EXPLOSION_OUTER_COUNT       60      // outer sphere particles
+#define EXPLOSION_CORE_COUNT        8       // large center billboards for heft
+#define EXPLOSION_CORE_OFFSET       16.0f   // offset multiplier to spread out center billboards
 #define EXPLOSION_DURATION          0.8f
-#define EXPLOSION_DRIFT_SPEED       0.6f    /* fraction of radius per second */
-#define EXPLOSION_OUTER_HALF_SIZE   5.0f    /* outer particle base size */
-#define EXPLOSION_CORE_HALF_SIZE    18.0f   /* center glow base size */
-#define EXPLOSION_GOLDEN_ANGLE      2.399963f  /* PI * (3 - sqrt(5)) */
+#define EXPLOSION_DRIFT_SPEED       0.6f    // fraction of radius per second
+#define EXPLOSION_OUTER_HALF_SIZE   5.0f    // outer particle base size
+#define EXPLOSION_CORE_HALF_SIZE    18.0f   // center glow base size
+#define EXPLOSION_GOLDEN_ANGLE      2.399963f  // PI * (3 - sqrt(5))
 
 void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
                                  f32 radius, f32 age_seconds,
@@ -848,7 +848,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
 
     f32 t = age_seconds / EXPLOSION_DURATION;
 
-    /* Auto-emit dynamic light (caller offsets position back along trajectory) */
+    // Auto-emit dynamic light (caller offsets position back along trajectory)
     {
         f32 light_fade = (1.0f - t) * (1.0f - t);
         qk_dynamic_light_t light = {
@@ -860,9 +860,9 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
         qk_renderer_submit_light(&light);
     }
     f32 fade = (1.0f - t);
-    fade = fade * fade;   /* quadratic falloff */
+    fade = fade * fade;   // quadratic falloff
 
-    /* Camera billboard frame for screen-facing quads */
+    // Camera billboard frame for screen-facing quads
     f32 cam_pos[3];
     r_fx_get_cam_pos(cam_pos);
     f32 origin[3] = { x, y, z };
@@ -873,16 +873,16 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
     u32 v_count = 0;
     r_fx_vertex_t *verts = g_r.fx.vertices;
 
-    /* --- Core billboards: 8 large overlapping quads at center for heft --- */
+    // --- Core billboards: 8 large overlapping quads at center for heft ---
     for (u32 i = 0; i < EXPLOSION_CORE_COUNT; i++) {
-        /* Slight offset per core particle so they don't z-fight */
+        // Slight offset per core particle so they don't z-fight
         f32 ox = EXPLOSION_CORE_OFFSET * (r_fx_hash(i * 137 + FX_CH_X) - 0.5f);
         f32 oy = EXPLOSION_CORE_OFFSET * (r_fx_hash(i * 251 + FX_CH_Y) - 0.5f);
         f32 oz = EXPLOSION_CORE_OFFSET * (r_fx_hash(i * 379 + FX_CH_Z) - 0.5f);
 
         f32 center[3] = { x + ox, y + oy, z + oz };
 
-        /* Core starts large and bright, fades and shrinks quickly */
+        // Core starts large and bright, fades and shrinks quickly
         f32 core_t = t * 1.5f;
         if (core_t > 1.0f) core_t = 1.0f;
         f32 core_fade = (1.0f - core_t);
@@ -906,7 +906,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
             -cam_right[2] * rot_sin + cam_up[2] * rot_cos
         };
 
-        /* Hot white-yellow center color */
+        // Hot white-yellow center color
         f32 hue = r_fx_hash(i * 61 + FX_CH_HUE);
         f32 intensity = core_fade * a;
         f32 color[4] = {
@@ -923,7 +923,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
         v_count += emitted;
     }
 
-    /* --- Outer particles: Fibonacci sphere distribution --- */
+    // --- Outer particles: Fibonacci sphere distribution ---
     for (u32 i = 0; i < EXPLOSION_OUTER_COUNT; i++) {
         f32 fi_y = 1.0f - (2.0f * (f32)i + 1.0f) / (f32)EXPLOSION_OUTER_COUNT;
         f32 r_xz = sqrtf(1.0f - fi_y * fi_y);
@@ -934,7 +934,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
             fi_y
         };
 
-        /* Per-particle random drift factor (stable per particle index) */
+        // Per-particle random drift factor (stable per particle index)
         f32 drift_var = 0.7f + 0.6f * r_fx_hash(i * 197 + FX_CH_DRIFT);
         f32 dist = radius * (1.0f + t * EXPLOSION_DRIFT_SPEED * drift_var);
 
@@ -944,20 +944,20 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
             z + dir[2] * dist
         };
 
-        /* Per-particle size variation: shrink as age increases */
+        // Per-particle size variation: shrink as age increases
         f32 size_var = 0.6f + 0.8f * r_fx_hash(i * 311 + FX_CH_SIZE);
         f32 half_size = EXPLOSION_OUTER_HALF_SIZE * size_var * (1.0f - t * 0.5f);
 
-        /* Fiery color variation per particle: shift between orange and yellow */
+        // Fiery color variation per particle: shift between orange and yellow
         f32 hue_shift = r_fx_hash(i * 73 + FX_CH_HUE);
         f32 pr = r * (0.9f + 0.2f * hue_shift);
         f32 pg = g * (0.5f + 0.5f * hue_shift);
         f32 pb = b * (0.2f + 0.3f * (1.0f - hue_shift));
 
-        /* Sparkle: time-varying brightness jitter */
+        // Sparkle: time-varying brightness jitter
         f32 sparkle = 0.75f + 0.25f * r_fx_hash(i * 41 + FX_CH_SPARKLE + (u32)(age_seconds * 30.0f));
 
-        /* Per-particle wisp: some particles fade faster for organic look */
+        // Per-particle wisp: some particles fade faster for organic look
         f32 wisp = 1.0f - t * 0.5f * r_fx_hash(i * 59 + FX_CH_WISP);
 
         f32 intensity = fade * sparkle * wisp * a;
@@ -969,7 +969,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
             intensity
         };
 
-        /* Random rotation per outer particle */
+        // Random rotation per outer particle
         f32 orot = r_fx_hash(i * 523 + FX_CH_ROTATION) * 2.0f * PI;
         f32 os, oc;
         r_fx_fast_sincos(orot, &os, &oc);
@@ -999,16 +999,16 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
     g_r.fx.vertex_count = v_start + v_count;
 }
 
-/* ---- Railgun Impact Sparks ---- */
+// --- Railgun Impact Sparks ---
 
-#define RAIL_IMPACT_SPARK_COUNT     96      /* number of spark particles */
-#define RAIL_IMPACT_DURATION        1.5f    /* seconds until fully faded */
-#define RAIL_IMPACT_SPREAD          8.0f    /* hemisphere spread radius */
-#define RAIL_IMPACT_DRIFT_SPEED     30.0f   /* units/sec outward drift */
-#define RAIL_IMPACT_SPARK_SIZE      2.0f    /* half-size of each spark quad */
-#define RAIL_IMPACT_JITTER_FREQ     12.5f   /* Hz of positional jitter */
-#define RAIL_IMPACT_JITTER_AMP      2.5f    /* max jitter displacement */
-#define RAIL_IMPACT_REFL_BOOST      15.0f   /* extra drift along reflection vector */
+#define RAIL_IMPACT_SPARK_COUNT     96      // number of spark particles
+#define RAIL_IMPACT_DURATION        1.5f    // seconds until fully faded
+#define RAIL_IMPACT_SPREAD          8.0f    // hemisphere spread radius
+#define RAIL_IMPACT_DRIFT_SPEED     30.0f   // units/sec outward drift
+#define RAIL_IMPACT_SPARK_SIZE      2.0f    // half-size of each spark quad
+#define RAIL_IMPACT_JITTER_FREQ     12.5f   // Hz of positional jitter
+#define RAIL_IMPACT_JITTER_AMP      2.5f    // max jitter displacement
+#define RAIL_IMPACT_REFL_BOOST      15.0f   // extra drift along reflection vector
 
 void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
                                    f32 normal_x, f32 normal_y, f32 normal_z,
@@ -1022,7 +1022,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
     f32 t = age_seconds / RAIL_IMPACT_DURATION;
     f32 fade = (1.0f - t);
 
-    /* Auto-emit dynamic light (offset along surface normal so it's not coplanar) */
+    // Auto-emit dynamic light (offset along surface normal so it's not coplanar)
     {
         const f32 LIGHT_OFFSET = 8.0f;
         f32 light_fade = fade * fade;
@@ -1039,9 +1039,9 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
         };
         qk_renderer_submit_light(&light);
     }
-    fade = fade * fade; /* quadratic falloff */
+    fade = fade * fade; // quadratic falloff
 
-    /* Surface normal (normalized) */
+    // Surface normal (normalized)
     f32 nrm[3] = { normal_x, normal_y, normal_z };
     r_fx_normalize(nrm);
 
@@ -1059,16 +1059,16 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
     };
     r_fx_normalize(refl);
 
-    /* Build tangent frame from reflection vector */
+    // Build tangent frame from reflection vector
     f32 tangent[3], bitangent[3];
     r_fx_build_perp_frame(refl, tangent, bitangent);
 
-    /* Base color from u32 RGBA */
+    // Base color from u32 RGBA
     f32 base_r = (f32)((color_rgba >> 24) & 0xFF) / 255.0f;
     f32 base_g = (f32)((color_rgba >> 16) & 0xFF) / 255.0f;
     f32 base_b = (f32)((color_rgba >>  8) & 0xFF) / 255.0f;
 
-    /* Camera billboard frame for screen-facing sparks */
+    // Camera billboard frame for screen-facing sparks
     f32 cam_pos[3];
     r_fx_get_cam_pos(cam_pos);
     f32 origin[3] = { x, y, z };
@@ -1079,10 +1079,10 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
     u32 v_count = 0;
     r_fx_vertex_t *verts = g_r.fx.vertices;
 
-    /* Position array for indexed access in loops */
+    // Position array for indexed access in loops
     f32 pos[3] = { x, y, z };
 
-    /* Seed from position for deterministic per-impact variation */
+    // Seed from position for deterministic per-impact variation
     u32 impact_seed = (u32)(x * 7.0f) ^ (u32)(y * 13.0f) ^ (u32)(z * 19.0f);
 
     for (u32 i = 0; i < RAIL_IMPACT_SPARK_COUNT; i++) {
@@ -1090,7 +1090,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
          * hemisphere defined by the surface normal. Use hash-based random
          * azimuth and elevation. */
         f32 azimuth = r_fx_hash(i * 131 + impact_seed + FX_CH_AZIMUTH) * 2.0f * PI;
-        f32 elev_raw = r_fx_hash(i * 199 + impact_seed + FX_CH_ELEV); /* 0..1 */
+        f32 elev_raw = r_fx_hash(i * 199 + impact_seed + FX_CH_ELEV); // 0..1
 
         /* Bias sparks toward reflection axis: sqrt pulls the distribution
          * toward elev=1, concentrating ~60% of sparks within 45 degrees
@@ -1099,7 +1099,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
         f32 cos_elev = sqrtf(1.0f - elev);
         f32 sin_elev = sqrtf(elev);
 
-        /* Direction in world space: hemisphere around reflection vector */
+        // Direction in world space: hemisphere around reflection vector
         f32 dir[3];
         for (int c = 0; c < 3; c++) {
             dir[c] = refl[c] * sin_elev
@@ -1107,7 +1107,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
                    + bitangent[c] * cos_elev * sinf(azimuth);
         }
 
-        /* Per-spark speed variation */
+        // Per-spark speed variation
         f32 speed_var = 0.5f + r_fx_hash(i * 251 + impact_seed + FX_CH_SPEED) * 1.0f;
         f32 dist = age_seconds * RAIL_IMPACT_DRIFT_SPEED * speed_var;
 
@@ -1115,7 +1115,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
          * into a visible directional ricochet jet */
         f32 refl_drift = age_seconds * RAIL_IMPACT_REFL_BOOST * speed_var;
 
-        /* Spread: sparks fan out from the impact point */
+        // Spread: sparks fan out from the impact point
         f32 spread = RAIL_IMPACT_SPREAD * r_fx_hash(i * 307 + impact_seed + FX_CH_SPREAD);
 
         f32 center[3];
@@ -1130,18 +1130,18 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
         f32 jx = r_fx_hash_signed(jitter_seed + FX_CH_X) * RAIL_IMPACT_JITTER_AMP;
         f32 jy = r_fx_hash_signed(jitter_seed + FX_CH_Y) * RAIL_IMPACT_JITTER_AMP;
         f32 jz = r_fx_hash_signed(jitter_seed + FX_CH_Z) * RAIL_IMPACT_JITTER_AMP;
-        /* Jitter decays as spark fades */
+        // Jitter decays as spark fades
         center[0] += jx * fade;
         center[1] += jy * fade;
         center[2] += jz * fade;
 
-        /* Spark size: small, shrinks as it fades */
+        // Spark size: small, shrinks as it fades
         f32 size_var = 0.6f + 0.8f * r_fx_hash(i * 89 + impact_seed + FX_CH_SIZE);
         f32 half_size = RAIL_IMPACT_SPARK_SIZE * size_var * fade;
 
-        /* Electrical flickering: rapid on/off brightness changes */
+        // Electrical flickering: rapid on/off brightness changes
         f32 flicker = r_fx_hash(i * 61 + (u32)(age_seconds * 60.0f) + impact_seed + FX_CH_SPARKLE);
-        flicker = flicker > 0.3f ? 1.0f : 0.15f; /* binary-ish flicker */
+        flicker = flicker > 0.3f ? 1.0f : 0.15f; // binary-ish flicker
 
         /* Hot white core with beam color tint.
          * Early sparks are white-hot, then shift toward beam color as they cool. */
@@ -1189,14 +1189,14 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
     g_r.fx.vertex_count = v_start + v_count;
 }
 
-/* ---- Command Recording ---- */
+// --- Command Recording ---
 
 void r_fx_record_commands(VkCommandBuffer cmd, u32 frame_index)
 {
     if (!g_r.fx_pipeline.handle || !g_r.fx.initialized) return;
     if (g_r.fx.draw_count == 0) return;
 
-    /* Upload vertices to this frame's mapped buffer */
+    // Upload vertices to this frame's mapped buffer
     void *dst = g_r.fx.vertex_mapped[frame_index];
     if (!dst) return;
     memcpy(dst, g_r.fx.vertices,
@@ -1222,16 +1222,16 @@ void r_fx_record_commands(VkCommandBuffer cmd, u32 frame_index)
     };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    /* Bind view UBO (set 0) */
+    // Bind view UBO (set 0)
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             g_r.fx_pipeline.layout, 0, 1,
                             &frame->view_descriptor_set, 0, NULL);
 
-    /* Bind vertex buffer */
+    // Bind vertex buffer
     VkDeviceSize vb_offset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &g_r.fx.vertex_buffers[frame_index], &vb_offset);
 
-    /* Draw all beam batches */
+    // Draw all beam batches
     for (u32 i = 0; i < g_r.fx.draw_count; i++) {
         r_fx_draw_t *draw = &g_r.fx.draws[i];
         vkCmdDraw(cmd, draw->vertex_count, 1, draw->vertex_offset, 0);

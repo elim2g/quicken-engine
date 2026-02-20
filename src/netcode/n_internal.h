@@ -15,8 +15,9 @@
 
 #include <string.h>
 
-/* ---- Constants ---- */
+// --- Constants ---
 
+// Array sizes used in struct/array declarations (must stay as #define)
 #define N_TRANSPORT_MTU         1400
 #define N_LOOPBACK_QUEUE_SIZE   64
 #define N_MAX_CLIENTS           16
@@ -24,39 +25,39 @@
 #define N_SNAPSHOT_HISTORY      64
 #define N_INPUT_QUEUE_SIZE      64
 #define N_INTERP_BUFFER_SIZE    32
-
-/* Timing */
-#define N_TICK_RATE             128
-#define N_TICK_INTERVAL         (1.0 / 128.0)
-#define N_INTERP_DELAY_DEFAULT  0.020
-#define N_INTERP_DELAY_MIN      0.0078
-#define N_INTERP_DELAY_MAX      0.100
-
-/* Connection */
-#define N_CONNECT_RETRY_SEC     0.5
-#define N_CONNECT_TIMEOUT_SEC   10.0
-#define N_TIMEOUT_SEC           30.0
-#define N_DISCONNECT_LINGER_SEC 1.0
-
-/* Clock sync */
-#define N_CLOCK_SYNC_INTERVAL   1.0
-#define N_CLOCK_SYNC_FAST       0.1
 #define N_CLOCK_SYNC_SAMPLES    16
-#define N_CLOCK_CONVERGE_COUNT  4
-
-/* Reliable channel */
-#define N_RELIABLE_RETRANSMIT_SEC 0.2
 #define N_RELIABLE_MAX_PAYLOAD  4096
 
-/* Input redundancy */
-#define N_INPUT_REDUNDANCY      3
+// Timing
+static const u32 N_TICK_RATE              = 128;
+static const f64 N_TICK_INTERVAL          = 1.0 / 128.0;
+static const f64 N_INTERP_DELAY_DEFAULT   = 0.020;
+static const f64 N_INTERP_DELAY_MIN       = 0.0078;
+static const f64 N_INTERP_DELAY_MAX       = 0.100;
 
-/* Entity field count for delta bitmask */
-#define N_ENTITY_FIELD_COUNT    12
+// Connection
+static const f64 N_CONNECT_RETRY_SEC      = 0.5;
+static const f64 N_CONNECT_TIMEOUT_SEC    = 10.0;
+static const f64 N_TIMEOUT_SEC            = 30.0;
+static const f64 N_DISCONNECT_LINGER_SEC  = 1.0;
 
-/* ---- Message types ---- */
+// Clock sync
+static const f64 N_CLOCK_SYNC_INTERVAL    = 1.0;
+static const f64 N_CLOCK_SYNC_FAST        = 0.1;
+static const u32 N_CLOCK_CONVERGE_COUNT   = 4;
 
-typedef enum {
+// Reliable channel
+static const f64 N_RELIABLE_RETRANSMIT_SEC = 0.2;
+
+// Input redundancy
+static const u32 N_INPUT_REDUNDANCY       = 3;
+
+// Entity field count for delta bitmask
+static const u32 N_ENTITY_FIELD_COUNT     = 12;
+
+// --- Message types ---
+
+enum {
     N_MSG_NOP               = 0,
     N_MSG_INPUT             = 1,
     N_MSG_SNAPSHOT          = 2,
@@ -68,12 +69,12 @@ typedef enum {
     N_MSG_CONNECT_RESPONSE  = 8,
     N_MSG_CONNECT_ACCEPTED  = 9,
     N_MSG_CONNECT_REJECTED  = 10,
-    N_MSG_MAP_LOADED        = 11,   /* client -> server: map load complete */
-    N_MSG_MAP_CONFIRMED     = 12,   /* server -> client: map validated, snapshots will begin */
+    N_MSG_MAP_LOADED        = 11,   // client -> server: map load complete
+    N_MSG_MAP_CONFIRMED     = 12,   // server -> client: map validated, snapshots will begin
     N_MSG_COUNT
-} n_msg_type_t;
+};
 
-/* ---- Connection state (internal mirror of qk_conn_state_t) ---- */
+// --- Connection state (internal mirror of qk_conn_state_t) ---
 
 typedef enum {
     N_CONN_DISCONNECTED     = QK_CONN_DISCONNECTED,
@@ -82,7 +83,7 @@ typedef enum {
     N_CONN_DISCONNECTING    = QK_CONN_DISCONNECTING
 } n_conn_state_t;
 
-/* ---- Transport ---- */
+// --- Transport ---
 
 typedef enum {
     N_TRANSPORT_LOOPBACK,
@@ -107,15 +108,15 @@ typedef struct {
 
 typedef struct {
     n_transport_type_t type;
-    /* On Windows SOCKET is UINT_PTR (64-bit on x64).  Using intptr_t
-     * avoids silent truncation when storing the handle.  -1 means
-     * "no socket" on both platforms (INVALID_SOCKET == ~0). */
+    // On Windows SOCKET is UINT_PTR (64-bit on x64).  Using intptr_t
+    // avoids silent truncation when storing the handle.  -1 means
+    // "no socket" on both platforms (INVALID_SOCKET == ~0).
     intptr_t           socket_fd;
     n_loopback_queue_t *send_queue;
     n_loopback_queue_t *recv_queue;
 } n_transport_t;
 
-/* Transport API */
+// Transport API
 bool n_transport_open_udp(n_transport_t *t, u16 bind_port);
 void n_transport_open_loopback(n_transport_t *client, n_transport_t *server,
                                n_loopback_queue_t *q1, n_loopback_queue_t *q2);
@@ -125,13 +126,13 @@ i32  n_transport_send(n_transport_t *t, const n_address_t *to,
 i32  n_transport_recv(n_transport_t *t, n_address_t *from,
                       void *data, u32 max_len);
 
-/* ---- Platform ---- */
+// --- Platform ---
 
 bool n_platform_init(void);
 void n_platform_shutdown(void);
 f64  n_platform_time(void);
 
-/* ---- Bitpacker ---- */
+// --- Bitpacker ---
 
 typedef struct {
     u8     *buffer;
@@ -145,27 +146,27 @@ typedef struct {
     u32       max_bits;
 } n_bitreader_t;
 
-void n_bitwriter_init(n_bitwriter_t *w, u8 *buffer, u32 max_bytes);
-void n_write_bits(n_bitwriter_t *w, u32 value, u32 num_bits);
-void n_write_bool(n_bitwriter_t *w, bool value);
-void n_write_u8(n_bitwriter_t *w, u8 value);
-void n_write_u16(n_bitwriter_t *w, u16 value);
-void n_write_u32(n_bitwriter_t *w, u32 value);
-void n_write_i16(n_bitwriter_t *w, i16 value);
-void n_write_f64(n_bitwriter_t *w, f64 value);
-u32  n_bitwriter_bytes_written(const n_bitwriter_t *w);
+void n_bitwriter_init(n_bitwriter_t *writer, u8 *buffer, u32 max_bytes);
+void n_write_bits(n_bitwriter_t *writer, u32 value, u32 num_bits);
+void n_write_bool(n_bitwriter_t *writer, bool value);
+void n_write_u8(n_bitwriter_t *writer, u8 value);
+void n_write_u16(n_bitwriter_t *writer, u16 value);
+void n_write_u32(n_bitwriter_t *writer, u32 value);
+void n_write_i16(n_bitwriter_t *writer, i16 value);
+void n_write_f64(n_bitwriter_t *writer, f64 value);
+u32  n_bitwriter_bytes_written(const n_bitwriter_t *writer);
 
-void n_bitreader_init(n_bitreader_t *r, const u8 *buffer, u32 num_bytes);
-u32  n_read_bits(n_bitreader_t *r, u32 num_bits);
-bool n_read_bool(n_bitreader_t *r);
-u8   n_read_u8(n_bitreader_t *r);
-u16  n_read_u16(n_bitreader_t *r);
-u32  n_read_u32(n_bitreader_t *r);
-i16  n_read_i16(n_bitreader_t *r);
-f64  n_read_f64(n_bitreader_t *r);
-bool n_bitreader_overflowed(const n_bitreader_t *r);
+void n_bitreader_init(n_bitreader_t *reader, const u8 *buffer, u32 num_bytes);
+u32  n_read_bits(n_bitreader_t *reader, u32 num_bits);
+bool n_read_bool(n_bitreader_t *reader);
+u8   n_read_u8(n_bitreader_t *reader);
+u16  n_read_u16(n_bitreader_t *reader);
+u32  n_read_u32(n_bitreader_t *reader);
+i16  n_read_i16(n_bitreader_t *reader);
+f64  n_read_f64(n_bitreader_t *reader);
+bool n_bitreader_overflowed(const n_bitreader_t *reader);
 
-/* ---- Protocol ---- */
+// --- Protocol ---
 
 #define N_PACKET_HEADER_SIZE 8
 
@@ -176,20 +177,25 @@ typedef struct {
 } n_packet_header_t;
 
 typedef struct {
-    u8   type;       /* n_msg_type_t (4 bits) */
-    u16  length;     /* payload length (12 bits) */
+    u8   type;       // n_msg_type_t (4 bits)
+    u16  length;     // payload length (12 bits)
 } n_msg_header_t;
 
 static inline bool n_sequence_more_recent(u16 a, u16 b) {
     return (i16)(a - b) > 0;
 }
 
+_Static_assert(sizeof(n_packet_header_t) == 8,
+               "packet header must be exactly 8 bytes");
+_Static_assert(sizeof(n_msg_header_t) == 4,
+               "msg header struct size changed");
+
 void n_packet_header_write(u8 *buf, const n_packet_header_t *hdr);
 void n_packet_header_read(const u8 *buf, n_packet_header_t *hdr);
-void n_msg_header_write(n_bitwriter_t *w, u8 type, u16 length);
-bool n_msg_header_read(n_bitreader_t *r, n_msg_header_t *hdr);
+void n_msg_header_write(n_bitwriter_t *writer, u8 type, u16 length);
+bool n_msg_header_read(n_bitreader_t *reader, n_msg_header_t *hdr);
 
-/* ---- Reliable channel ---- */
+// --- Reliable channel ---
 
 typedef struct {
     u16     reliable_sequence;
@@ -201,15 +207,15 @@ typedef struct {
     f64     last_send_time;
 } n_reliable_channel_t;
 
-void n_reliable_init(n_reliable_channel_t *ch);
-void n_reliable_send(n_reliable_channel_t *ch, const u8 *data, u16 len);
-bool n_reliable_needs_retransmit(const n_reliable_channel_t *ch, f64 now);
-void n_reliable_on_ack(n_reliable_channel_t *ch, u16 ack_seq);
-void n_reliable_write_to_packet(n_reliable_channel_t *ch, n_bitwriter_t *w, f64 now);
-bool n_reliable_read_from_packet(n_reliable_channel_t *ch, n_bitreader_t *r,
+void n_reliable_init(n_reliable_channel_t *channel);
+void n_reliable_send(n_reliable_channel_t *channel, const u8 *data, u16 len);
+bool n_reliable_needs_retransmit(const n_reliable_channel_t *channel, f64 now);
+void n_reliable_on_ack(n_reliable_channel_t *channel, u16 ack_seq);
+void n_reliable_write_to_packet(n_reliable_channel_t *channel, n_bitwriter_t *writer, f64 now);
+bool n_reliable_read_from_packet(n_reliable_channel_t *channel, n_bitreader_t *reader,
                                   u16 *out_len);
 
-/* ---- Snapshot ---- */
+// --- Snapshot ---
 
 typedef struct {
     u32                 tick;
@@ -234,7 +240,7 @@ bool n_snapshot_delta_decode(const n_snapshot_t *baseline, n_snapshot_t *out,
                              const u8 *data, u32 data_len,
                              u32 current_tick);
 
-/* ---- Clock sync ---- */
+// --- Clock sync ---
 
 typedef struct {
     f64     offset_samples[N_CLOCK_SYNC_SAMPLES];
@@ -247,12 +253,12 @@ typedef struct {
     bool    converged;
 } n_clock_state_t;
 
-void n_clock_init(n_clock_state_t *clk);
-void n_clock_add_sample(n_clock_state_t *clk, f64 rtt, f64 offset);
-bool n_clock_should_sync(const n_clock_state_t *clk, f64 now);
-void n_clock_mark_sent(n_clock_state_t *clk, f64 now);
+void n_clock_init(n_clock_state_t *clock_state);
+void n_clock_add_sample(n_clock_state_t *clock_state, f64 rtt, f64 offset);
+bool n_clock_should_sync(const n_clock_state_t *clock_state, f64 now);
+void n_clock_mark_sent(n_clock_state_t *clock_state, f64 now);
 
-/* ---- Stats ---- */
+// --- Stats ---
 
 typedef struct {
     u64     packets_sent;
@@ -267,7 +273,7 @@ typedef struct {
     u64     inputs_late;
 } n_stats_t;
 
-/* ---- Server client slot ---- */
+// --- Server client slot ---
 
 typedef struct {
     n_conn_state_t  state;
@@ -276,42 +282,42 @@ typedef struct {
     u8              client_id;
     bool            is_loopback;
 
-    /* Protocol state */
+    // Protocol state
     u16             outgoing_sequence;
     u16             incoming_sequence;
     u32             ack_bitfield;
 
-    /* Timing */
+    // Timing
     f64             last_packet_recv_time;
     f64             connect_start_time;
     u32             client_challenge;
     u32             server_challenge;
 
-    /* Snapshot delta state */
+    // Snapshot delta state
     u32             last_acked_snapshot_tick;
 
-    /* Input queue */
+    // Input queue
     n_input_t       input_queue[N_INPUT_QUEUE_SIZE];
     u32             input_queue_head;
     u32             input_queue_tail;
     u32             last_input_tick;
     n_input_t       last_input;
 
-    /* Reliable channel */
+    // Reliable channel
     n_reliable_channel_t reliable;
 
-    /* Clock sync (server-side) */
+    // Clock sync (server-side)
     f64             clock_offset;
     i32             rtt_ms;
 
-    /* Disconnect linger */
+    // Disconnect linger
     f64             disconnect_start_time;
 
-    /* Map handshake: true once client has confirmed map load */
+    // Map handshake: true once client has confirmed map load
     bool            map_ready;
 } n_client_slot_t;
 
-/* ---- Server ---- */
+// --- Server ---
 
 typedef struct {
     n_transport_t       transport;
@@ -328,15 +334,15 @@ typedef struct {
     u16                 server_port;
     u32                 max_clients;
 
-    /* Loopback queues (one pair per possible loopback client) */
+    // Loopback queues (one pair per possible loopback client)
     n_loopback_queue_t  loopback_queues[N_MAX_CLIENTS][2];
 
-    /* Map handshake */
+    // Map handshake
     u32                 map_name_hash;
-    char                map_name[128];  /* current map name (sent in connect-accepted) */
+    char                map_name[128];  // current map name (sent in connect-accepted)
 } n_server_t;
 
-/* Server API */
+// Server API
 void n_server_init(n_server_t *srv, u16 port, u32 max_clients, f64 tick_rate);
 void n_server_tick(n_server_t *srv, f64 now);
 void n_server_shutdown(n_server_t *srv);
@@ -347,7 +353,8 @@ i32  n_server_allocate_slot(n_server_t *srv);
 void n_server_disconnect_client(n_server_t *srv, u32 slot);
 void n_server_send_to_client(n_server_t *srv, u32 slot, const u8 *data, u32 len);
 void n_server_broadcast_snapshots(n_server_t *srv);
-/* ---- Client ---- */
+
+// --- Client ---
 
 typedef struct {
     n_transport_t       transport;
@@ -355,19 +362,19 @@ typedef struct {
     u8                  client_id;
     n_address_t         server_address;
 
-    /* Protocol */
+    // Protocol
     u16                 outgoing_sequence;
     u16                 incoming_sequence;
     u32                 ack_bitfield;
 
-    /* Reliable channel */
+    // Reliable channel
     n_reliable_channel_t reliable;
 
-    /* Clock sync */
+    // Clock sync
     n_clock_state_t     clock;
     f64                 clock_sync_send_time;
 
-    /* Interpolation */
+    // Interpolation
     n_snapshot_t        interp_snapshots[N_INTERP_BUFFER_SIZE];
     u32                 interp_count;
     u32                 interp_write;
@@ -377,51 +384,51 @@ typedef struct {
     qk_interp_diag_t   interp_diag;
     f64                 interp_delay;
 
-    /* Input */
+    // Input
     n_input_t           input_history[N_INPUT_QUEUE_SIZE];
     u32                 input_history_head;
     u32                 input_tick;
 
-    /* Prediction reconciliation */
+    // Prediction reconciliation
     u32                 last_server_cmd_ack;
 
-    /* Timing */
+    // Timing
     f64                 last_packet_recv_time;
     f64                 connect_start_time;
     f64                 last_connect_retry_time;
     u32                 client_challenge;
     u32                 server_challenge;
 
-    /* Packet buffer */
+    // Packet buffer
     u8                  packet_buffer[N_TRANSPORT_MTU];
 
     n_stats_t           stats;
     bool                initialized;
     bool                is_loopback;
 
-    /* Reference to server for loopback */
+    // Reference to server for loopback
     n_server_t          *loopback_server;
 
-    /* Map handshake: true once server confirms map load */
+    // Map handshake: true once server confirms map load
     bool                map_ready;
-    char                server_map_name[128]; /* map name received from server in connect-accepted */
+    char                server_map_name[128]; // map name received from server in connect-accepted
 } n_client_t;
 
-/* Client API */
-void n_client_init(n_client_t *cl, f64 interp_delay);
-void n_client_tick(n_client_t *cl, f64 now);
-void n_client_shutdown(n_client_t *cl);
-void n_client_connect_remote(n_client_t *cl, const char *address, u16 port);
-void n_client_connect_local(n_client_t *cl, n_server_t *srv);
-void n_client_disconnect(n_client_t *cl);
-void n_client_interpolate(n_client_t *cl, f64 render_time);
-void n_client_send_input(n_client_t *cl, const n_input_t *input, f64 now);
-void n_client_process_packet(n_client_t *cl, const u8 *data, u32 len, f64 now);
+// Client API
+void n_client_init(n_client_t *client, f64 interp_delay);
+void n_client_tick(n_client_t *client, f64 now);
+void n_client_shutdown(n_client_t *client);
+void n_client_connect_remote(n_client_t *client, const char *address, u16 port);
+void n_client_connect_local(n_client_t *client, n_server_t *srv);
+void n_client_disconnect(n_client_t *client);
+void n_client_interpolate(n_client_t *client, f64 render_time);
+void n_client_send_input(n_client_t *client, const n_input_t *input, f64 now);
+void n_client_process_packet(n_client_t *client, const u8 *data, u32 len, f64 now);
 
-/* ---- Simple PRNG for challenge generation ---- */
+// --- Simple PRNG for challenge generation ---
 u32 n_random_u32(void);
 
-/* ---- Map name hash (FNV-1a 32-bit) ---- */
+// --- Map name hash (FNV-1a 32-bit) ---
 u32 n_hash_map_name(const char *name);
 
 #endif /* N_INTERNAL_H */

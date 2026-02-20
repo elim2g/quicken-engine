@@ -18,12 +18,12 @@
 #define N_DBG(fmt, ...) ((void)0)
 #endif
 
-/* ---- Global instances (heap-allocated to avoid MB-scale BSS) ---- */
+// --- Global instances (heap-allocated to avoid MB-scale BSS) ---
 
 static n_server_t *s_server;
 static n_client_t *s_client;
 
-/* ---- Server API ---- */
+// --- Server API ---
 
 qk_result_t qk_net_server_init(const qk_net_server_config_t *config) {
     if (!config) return QK_ERROR_INVALID_PARAM;
@@ -85,31 +85,33 @@ bool qk_net_server_get_input(u8 client_id, qk_usercmd_t *out_cmd) {
     if (!out_cmd || !s_server) return false;
     if (client_id >= s_server->max_clients) return false;
 
-    n_client_slot_t *cl = &s_server->clients[client_id];
-    if (cl->state != N_CONN_CONNECTED) return false;
+    n_client_slot_t *client = &s_server->clients[client_id];
+    if (client->state != N_CONN_CONNECTED) return false;
 
-    /* Get input for current server tick */
+    // Get input for current server tick
     u32 tick = s_server->tick;
     u32 idx = tick % N_INPUT_QUEUE_SIZE;
-    n_input_t *input = &cl->input_queue[idx];
+    n_input_t *input = &client->input_queue[idx];
 
-    /* Check if we have a valid input for this tick */
-    bool have_input = (cl->last_input_tick >= tick);
+    // Check if we have a valid input for this tick
+    bool have_input = (client->last_input_tick >= tick);
 
-    /* If no input available, repeat last known input */
+    // If no input available, repeat last known input
     if (!have_input) {
-        input = &cl->last_input;
+        input = &client->last_input;
     }
 
-    /* Convert n_input_t to qk_usercmd_t */
-    out_cmd->server_time = tick * (u32)(1000.0 / N_TICK_RATE);
-    out_cmd->forward_move = (f32)input->forward_move / 127.0f;
-    out_cmd->side_move = (f32)input->side_move / 127.0f;
-    out_cmd->up_move = 0.0f;
-    out_cmd->yaw = (f32)input->yaw * (360.0f / 65536.0f);
-    out_cmd->pitch = (f32)input->pitch * (360.0f / 65536.0f);
-    out_cmd->buttons = input->buttons;
-    out_cmd->weapon_select = input->weapon_select;
+    // Convert n_input_t to qk_usercmd_t
+    *out_cmd = (qk_usercmd_t){
+        .server_time = tick * (u32)(1000.0 / N_TICK_RATE),
+        .forward_move = (f32)input->forward_move / 127.0f,
+        .side_move = (f32)input->side_move / 127.0f,
+        .up_move = 0.0f,
+        .yaw = (f32)input->yaw * (360.0f / 65536.0f),
+        .pitch = (f32)input->pitch * (360.0f / 65536.0f),
+        .buttons = input->buttons,
+        .weapon_select = input->weapon_select,
+    };
 
     return true;
 }
@@ -123,11 +125,11 @@ qk_conn_state_t qk_net_server_get_client_state(u8 client_id) {
 bool qk_net_server_is_client_map_ready(u8 client_id) {
     if (!s_server) return false;
     if (client_id >= s_server->max_clients) return false;
-    n_client_slot_t *cl = &s_server->clients[client_id];
-    return cl->state == N_CONN_CONNECTED && cl->map_ready;
+    n_client_slot_t *client = &s_server->clients[client_id];
+    return client->state == N_CONN_CONNECTED && client->map_ready;
 }
 
-/* ---- Client API ---- */
+// --- Client API ---
 
 qk_result_t qk_net_client_init(const qk_net_client_config_t *config) {
     if (!config) return QK_ERROR_INVALID_PARAM;
@@ -202,18 +204,19 @@ void qk_net_client_shutdown(void) {
 void qk_net_client_send_input(const qk_usercmd_t *cmd) {
     if (!cmd || !s_client) return;
 
-    /* Convert qk_usercmd_t to n_input_t */
-    n_input_t input;
-    input.forward_move = (i8)(cmd->forward_move * 127.0f);
-    input.side_move = (i8)(cmd->side_move * 127.0f);
-    input.yaw = (u16)(cmd->yaw * (65536.0f / 360.0f));
-    input.pitch = (u16)(cmd->pitch * (65536.0f / 360.0f));
-    input.buttons = (u16)cmd->buttons;
-    input.weapon_select = cmd->weapon_select;
+    // Convert qk_usercmd_t to n_input_t
+    n_input_t input = {
+        .forward_move = (i8)(cmd->forward_move * 127.0f),
+        .side_move = (i8)(cmd->side_move * 127.0f),
+        .yaw = (u16)(cmd->yaw * (65536.0f / 360.0f)),
+        .pitch = (u16)(cmd->pitch * (65536.0f / 360.0f)),
+        .buttons = (u16)cmd->buttons,
+        .weapon_select = cmd->weapon_select,
+    };
 
     n_client_send_input(s_client, &input, n_platform_time());
 
-    /* Demo recording hook */
+    // Demo recording hook
     if (qk_demo_is_recording()) {
         qk_demo_record_usercmd(s_client->input_tick - 1, cmd);
     }
@@ -273,58 +276,58 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
     if (!out || !s_client) return false;
     if (s_client->conn_state != N_CONN_CONNECTED) return false;
 
-    /* Loopback: read directly from gameplay module (authoritative) */
+    // Loopback: read directly from gameplay module (authoritative)
     if (s_client->is_loopback) {
-        const qk_player_state_t *ps = qk_game_get_player_state(s_client->client_id);
-        if (!ps) return false;
-        *out = *ps;
+        const qk_player_state_t *player_state = qk_game_get_player_state(s_client->client_id);
+        if (!player_state) return false;
+        *out = *player_state;
         return true;
     }
 
-    /* Remote: extract from latest snapshot */
+    // Remote: extract from latest snapshot
     if (s_client->interp_count == 0) return false;
 
     u32 idx = (s_client->interp_write - 1 + N_INTERP_BUFFER_SIZE) % N_INTERP_BUFFER_SIZE;
     const n_snapshot_t *snap = &s_client->interp_snapshots[idx];
 
-    u8 eid = s_client->client_id;
-    if (!n_snapshot_has_entity(snap, eid)) return false;
+    u8 entity_id = s_client->client_id;
+    if (!n_snapshot_has_entity(snap, entity_id)) return false;
 
-    const n_entity_state_t *e = &snap->entities[eid];
+    const n_entity_state_t *entity = &snap->entities[entity_id];
 
-    /* Zero-init sets physics-internal fields (last_jump_tick, skim_ticks,
-     * jump_buffer_ticks, etc.) to 0.  These are not transmitted on the wire;
-     * the physics engine reconstructs them during prediction input replay.
-     * For CPM double-jump: last_jump_tick=0 means "no recent jump",
-     * which is the safe default -- a brief misprediction is corrected on the
-     * next server snapshot. */
+    // Zero-init sets physics-internal fields (last_jump_tick, skim_ticks,
+    // jump_buffer_ticks, etc.) to 0.  These are not transmitted on the wire;
+    // the physics engine reconstructs them during prediction input replay.
+    // For CPM double-jump: last_jump_tick=0 means "no recent jump",
+    // which is the safe default -- a brief misprediction is corrected on the
+    // next server snapshot.
     memset(out, 0, sizeof(*out));
-    out->origin.x = (f32)e->pos_x * 0.5f;
-    out->origin.y = (f32)e->pos_y * 0.5f;
-    out->origin.z = (f32)e->pos_z * 0.5f;
-    out->velocity.x = (f32)e->vel_x;
-    out->velocity.y = (f32)e->vel_y;
-    out->velocity.z = (f32)e->vel_z;
-    out->on_ground = (e->flags & QK_ENT_FLAG_ON_GROUND) != 0;
-    out->jump_held = (e->flags & QK_ENT_FLAG_JUMP_HELD) != 0;
+    out->origin.x = (f32)entity->pos_x * 0.5f;
+    out->origin.y = (f32)entity->pos_y * 0.5f;
+    out->origin.z = (f32)entity->pos_z * 0.5f;
+    out->velocity.x = (f32)entity->vel_x;
+    out->velocity.y = (f32)entity->vel_y;
+    out->velocity.z = (f32)entity->vel_z;
+    out->on_ground = (entity->flags & QK_ENT_FLAG_ON_GROUND) != 0;
+    out->jump_held = (entity->flags & QK_ENT_FLAG_JUMP_HELD) != 0;
     out->mins = QK_PLAYER_MINS;
     out->maxs = QK_PLAYER_MAXS;
     out->max_speed = QK_PM_MAX_SPEED;
     out->gravity = QK_PM_GRAVITY;
-    out->health = (i16)e->health;
-    out->armor = (i16)e->armor;
-    out->weapon = (qk_weapon_id_t)e->weapon;
+    out->health = (i16)entity->health;
+    out->armor = (i16)entity->armor;
+    out->weapon = (qk_weapon_id_t)entity->weapon;
 
     return true;
 }
 
-/* ---- Map handshake ---- */
+// --- Map handshake ---
 
 void qk_net_client_notify_map_loaded(const char *map_name) {
     if (!s_client) return;
     if (s_client->conn_state != N_CONN_CONNECTED) return;
 
-    /* For loopback, fast-track: both sides share the same process */
+    // For loopback, fast-track: both sides share the same process
     if (s_client->is_loopback) {
         s_client->map_ready = true;
         if (s_server) {
@@ -336,7 +339,7 @@ void qk_net_client_notify_map_loaded(const char *map_name) {
         return;
     }
 
-    /* Remote: send N_MSG_MAP_LOADED to server */
+    // Remote: send N_MSG_MAP_LOADED to server
     u32 map_hash = n_hash_map_name(map_name);
 
     u8 pkt[N_TRANSPORT_MTU];
@@ -346,14 +349,14 @@ void qk_net_client_notify_map_loaded(const char *map_name) {
     hdr.ack_bitfield = s_client->ack_bitfield;
     n_packet_header_write(pkt, &hdr);
 
-    n_bitwriter_t w;
-    n_bitwriter_init(&w, pkt + N_PACKET_HEADER_SIZE,
+    n_bitwriter_t writer;
+    n_bitwriter_init(&writer, pkt + N_PACKET_HEADER_SIZE,
                      N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
-    n_msg_header_write(&w, N_MSG_MAP_LOADED, 4);
-    n_write_u32(&w, map_hash);
-    n_msg_header_write(&w, N_MSG_NOP, 0);
+    n_msg_header_write(&writer, N_MSG_MAP_LOADED, 4);
+    n_write_u32(&writer, map_hash);
+    n_msg_header_write(&writer, N_MSG_NOP, 0);
 
-    u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&w);
+    u32 total = N_PACKET_HEADER_SIZE + n_bitwriter_bytes_written(&writer);
     n_transport_send(&s_client->transport, &s_client->server_address, pkt, total);
     s_client->stats.packets_sent++;
 
@@ -369,7 +372,7 @@ void qk_net_server_set_map(const char *map_name) {
     if (!s_server) return;
     s_server->map_name_hash = n_hash_map_name(map_name);
 
-    /* Store map name for CONNECT_ACCEPTED (tells joining clients which map to load) */
+    // Store map name for CONNECT_ACCEPTED (tells joining clients which map to load)
     if (map_name) {
         size_t len = strlen(map_name);
         if (len >= sizeof(s_server->map_name)) len = sizeof(s_server->map_name) - 1;
@@ -382,7 +385,7 @@ void qk_net_server_set_map(const char *map_name) {
     N_DBG("server_set_map: hash=0x%08x (map=%s)",
           s_server->map_name_hash, map_name ? map_name : "NULL");
 
-    /* Invalidate all clients' map_ready state (forces re-handshake on map change) */
+    // Invalidate all clients' map_ready state (forces re-handshake on map change)
     for (u32 i = 0; i < s_server->max_clients; i++) {
         s_server->clients[i].map_ready = false;
     }

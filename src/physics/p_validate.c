@@ -12,7 +12,7 @@
 #include <math.h>
 #include <string.h>
 
-/* Horizontal speed (XY plane) */
+// Horizontal speed (XY plane)
 static f32 p_hspeed(const qk_player_state_t *ps) {
     return sqrtf(ps->velocity.x * ps->velocity.x +
                  ps->velocity.y * ps->velocity.y);
@@ -21,7 +21,7 @@ static f32 p_hspeed(const qk_player_state_t *ps) {
 bool qk_physics_validate_strafejump(void) {
     printf("=== Strafejump Validation ===\n");
 
-    /* Create test room and player */
+    // Create test room and player
     qk_phys_world_t *world = qk_physics_world_create_test_room();
     if (!world) {
         printf("FAIL: Could not create test room\n");
@@ -29,8 +29,8 @@ bool qk_physics_validate_strafejump(void) {
     }
 
     qk_player_state_t ps = {0};
-    /* Spawn at ground level near -X wall, facing +X diagonal for max room.
-       origin.z = 24 puts box bottom at z=0 (floor). */
+    // Spawn at ground level near -X wall, facing +X diagonal for max room.
+    // origin.z = 24 puts box bottom at z=0 (floor).
     qk_physics_player_init(&ps, (vec3_t){-200.0f, 0.0f, 24.0f});
 
     /*
@@ -54,7 +54,7 @@ bool qk_physics_validate_strafejump(void) {
     printf("Tick  | OnGrnd | HSpeed   | VelZ     | OrigZ    | Jump#\n");
     printf("------+--------+----------+----------+----------+------\n");
 
-    /* Phase 1: walk forward on ground for 60 ticks to reach base speed (~320 u/s) */
+    // Phase 1: walk forward on ground for 60 ticks to reach base speed (~320 u/s)
     for (i32 tick = 0; tick < 60; tick++) {
         cmd.forward_move = 1.0f;
         cmd.side_move = 0.0f;
@@ -72,38 +72,40 @@ bool qk_physics_validate_strafejump(void) {
         }
     }
 
-    /* Phase 2: strafejump sequence
+    /*
+     * Phase 2: strafejump sequence
      *
      * Classic Q3 strafejump: on ground, jump. In air, hold forward + strafe
      * and rotate yaw slowly (~0.5-1 degrees per tick at 128Hz). The key:
      * the wish direction (forward+right at ~45 degrees in move-space) combined
      * with a slow yaw turn keeps the wish vector at a shallow angle to the
-     * current velocity vector, maximizing the air accel exploit. */
+     * current velocity vector, maximizing the air accel exploit.
+     */
     for (i32 tick = 60; tick < 560; tick++) {
-        /* Detect landing */
+        // Detect landing
         if (ps.on_ground && !was_on_ground) {
             jump_count++;
         }
         was_on_ground = ps.on_ground;
 
-        /* Build command */
+        // Build command
         cmd.pitch = 0.0f;
 
-        /* Release jump during descending air phase (vel.z < -50) to reset
-         * edge detection. Press jump during ascending + ground phases.
-         * This mimics the Q3 +jump script: release during fall, press on land. */
+        // Release jump during descending air phase (vel.z < -50) to reset
+        // edge detection. Press jump during ascending + ground phases.
+        // This mimics the Q3 +jump script: release during fall, press on land.
         bool descending = (!ps.on_ground && ps.velocity.z < -50.0f);
         cmd.buttons = descending ? 0 : QK_BUTTON_JUMP;
 
         if (ps.on_ground) {
-            /* On ground: hold forward only */
+            // On ground: hold forward only
             cmd.forward_move = 1.0f;
             cmd.side_move = 0.0f;
         } else {
-            /* In air: hold forward + right, turn yaw 0.5 deg/tick.
-             * This rate matches the velocity's natural turn rate from
-             * air accel (~0.45 deg/tick at 320 ups), keeping the wish
-             * direction near the optimal angle for speed gain. */
+            // In air: hold forward + right, turn yaw 0.5 deg/tick.
+            // This rate matches the velocity's natural turn rate from
+            // air accel (~0.45 deg/tick at 320 ups), keeping the wish
+            // direction near the optimal angle for speed gain.
             cmd.forward_move = 1.0f;
             cmd.side_move = 1.0f;
             yaw -= 0.5f;
@@ -148,7 +150,7 @@ bool qk_physics_validate_strafejump(void) {
     return pass;
 }
 
-/* ---- Map-based validation ---- */
+// --- Map-based validation ---
 
 /*
  * Deep-copy a collision model so the physics world can own its memory
@@ -170,7 +172,7 @@ static qk_collision_model_t *p_clone_collision_model(const qk_collision_model_t 
         cm->brushes[i].planes = (qk_plane_t *)malloc(
             cm->brushes[i].plane_count * sizeof(qk_plane_t));
         if (!cm->brushes[i].planes) {
-            /* Partial cleanup */
+            // Partial cleanup
             for (u32 j = 0; j < i; j++) free(cm->brushes[j].planes);
             free(cm->brushes);
             free(cm);
@@ -202,8 +204,8 @@ bool qk_physics_validate_map(const char *map_path) {
         return false;
     }
 
-    /* Clone the collision model so physics world owns its own memory.
-       This avoids the double-free between world_destroy and map_free. */
+    // Clone the collision model so physics world owns its own memory.
+    // This avoids the double-free between world_destroy and map_free.
     qk_collision_model_t *cm = p_clone_collision_model(&map.collision);
     if (!cm) {
         printf("FAIL: Could not clone collision model\n");
@@ -221,7 +223,7 @@ bool qk_physics_validate_map(const char *map_path) {
     bool all_pass = true;
     i32 test_num = 0;
 
-    /* --- Test 1: Downward trace hits the floor --- */
+    // --- Test 1: Downward trace hits the floor ---
     {
         test_num++;
         vec3_t start = {0.0f, 0.0f, 100.0f};
@@ -238,17 +240,17 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 2: Player-sized box trace hits floor --- */
+    // --- Test 2: Player-sized box trace hits floor ---
     {
         test_num++;
-        /* Start away from center platform ([-64,64] on XY) to hit bare floor */
+        // Start away from center platform ([-64,64] on XY) to hit bare floor
         vec3_t start = {-150.0f, 0.0f, 100.0f};
         vec3_t end   = {-150.0f, 0.0f, -100.0f};
 
         qk_trace_result_t tr = qk_physics_trace(world, start, end,
                                                   QK_PLAYER_MINS, QK_PLAYER_MAXS);
-        /* Player box bottom at z=-24 relative to origin, floor at z=0.
-           Should stop with origin.z ~ 24. */
+        // Player box bottom at z=-24 relative to origin, floor at z=0.
+        // Should stop with origin.z ~ 24.
         bool pass = (tr.fraction < 1.0f && fabsf(tr.end_pos.z - 24.0f) < 1.0f);
         printf("  Test %d: Player box trace to floor: %s "
                "(frac=%.4f, end_z=%.2f, expected ~24.0)\n",
@@ -257,10 +259,10 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 3: Horizontal trace hits +X wall --- */
+    // --- Test 3: Horizontal trace hits +X wall ---
     {
         test_num++;
-        /* Room interior spans X: [-256, 256]. +X wall starts at x=256. */
+        // Room interior spans X: [-256, 256]. +X wall starts at x=256.
         vec3_t start = {0.0f, 0.0f, 50.0f};
         vec3_t end   = {500.0f, 0.0f, 50.0f};
         vec3_t mins  = {0.0f, 0.0f, 0.0f};
@@ -276,7 +278,7 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 4: Trace inside open space hits nothing --- */
+    // --- Test 4: Trace inside open space hits nothing ---
     {
         test_num++;
         vec3_t start = {-100.0f, 0.0f, 50.0f};
@@ -293,7 +295,7 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 5: Player-sized box trace hits +X wall at correct distance --- */
+    // --- Test 5: Player-sized box trace hits +X wall at correct distance ---
     {
         test_num++;
         vec3_t start = {0.0f, 0.0f, 50.0f};
@@ -301,7 +303,7 @@ bool qk_physics_validate_map(const char *map_path) {
 
         qk_trace_result_t tr = qk_physics_trace(world, start, end,
                                                   QK_PLAYER_MINS, QK_PLAYER_MAXS);
-        /* Player maxs.x = 15, wall at x=256, so should stop at x = 256-15 = 241 */
+        // Player maxs.x = 15, wall at x=256, so should stop at x = 256-15 = 241
         bool pass = (tr.fraction < 1.0f && fabsf(tr.end_pos.x - 241.0f) < 2.0f);
         printf("  Test %d: Player box hits +X wall: %s "
                "(frac=%.4f, end_x=%.2f, expected ~241.0)\n",
@@ -310,18 +312,18 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 6: Center platform trace (step-up box at z=0..16) --- */
+    // --- Test 6: Center platform trace (step-up box at z=0..16) ---
     {
         test_num++;
-        /* test_box.map has a center platform from z=0 to z=16, x/y [-64,64].
-           A trace from above should hit the top of this platform. */
+        // test_box.map has a center platform from z=0 to z=16, x/y [-64,64].
+        // A trace from above should hit the top of this platform.
         vec3_t start = {0.0f, 0.0f, 100.0f};
         vec3_t end   = {0.0f, 0.0f, -100.0f};
         vec3_t mins  = {0.0f, 0.0f, 0.0f};
         vec3_t maxs  = {0.0f, 0.0f, 0.0f};
 
         qk_trace_result_t tr = qk_physics_trace(world, start, end, mins, maxs);
-        /* Should hit platform top at z=16 (not the floor at z=0) */
+        // Should hit platform top at z=16 (not the floor at z=0)
         bool pass = (tr.fraction < 1.0f && fabsf(tr.end_pos.z - 16.0f) < 1.0f);
         printf("  Test %d: Point trace hits center platform top: %s "
                "(frac=%.4f, end_z=%.2f, expected ~16.0)\n",
@@ -330,7 +332,7 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 7: Player movement at spawn point --- */
+    // --- Test 7: Player movement at spawn point ---
     {
         test_num++;
         vec3_t spawn = {-128.0f, -128.0f, 24.0f};
@@ -341,7 +343,7 @@ bool qk_physics_validate_map(const char *map_path) {
         qk_player_state_t ps = {0};
         qk_physics_player_init(&ps, spawn);
 
-        /* Run 10 ticks standing still to settle on ground */
+        // Run 10 ticks standing still to settle on ground
         qk_usercmd_t cmd = {0};
         for (i32 i = 0; i < 10; i++) {
             qk_physics_move(&ps, &cmd, world);
@@ -356,23 +358,23 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 8: Player walks forward and hits wall --- */
+    // --- Test 8: Player walks forward and hits wall ---
     {
         test_num++;
         qk_player_state_t ps = {0};
-        /* Start near +X wall, facing +X */
+        // Start near +X wall, facing +X
         qk_physics_player_init(&ps, (vec3_t){200.0f, 0.0f, 24.0f});
 
         qk_usercmd_t cmd = {0};
         cmd.forward_move = 1.0f;
         cmd.yaw = 0.0f;
 
-        /* Walk forward for 200 ticks -- should hit wall and stop */
+        // Walk forward for 200 ticks -- should hit wall and stop
         for (i32 i = 0; i < 200; i++) {
             qk_physics_move(&ps, &cmd, world);
         }
 
-        /* Player maxs.x = 15, wall at x=256, so can't go past 241 */
+        // Player maxs.x = 15, wall at x=256, so can't go past 241
         bool pass = (ps.origin.x < 242.0f && ps.on_ground);
         printf("  Test %d: Player walks into +X wall: %s "
                "(origin.x=%.2f, expected <=241)\n",
@@ -381,7 +383,7 @@ bool qk_physics_validate_map(const char *map_path) {
         if (!pass) all_pass = false;
     }
 
-    /* --- Test 9: Strafejump in loaded map --- */
+    // --- Test 9: Strafejump in loaded map ---
     {
         test_num++;
         qk_player_state_t ps = {0};
@@ -393,7 +395,7 @@ bool qk_physics_validate_map(const char *map_path) {
         i32 jumps = 0;
         bool prev_ground = false;
 
-        /* Ground accel for 60 ticks */
+        // Ground accel for 60 ticks
         for (i32 t = 0; t < 60; t++) {
             cmd.forward_move = 1.0f;
             cmd.side_move = 0.0f;
@@ -402,7 +404,7 @@ bool qk_physics_validate_map(const char *map_path) {
             qk_physics_move(&ps, &cmd, world);
         }
 
-        /* Strafejump for 400 ticks */
+        // Strafejump for 400 ticks
         for (i32 t = 0; t < 400; t++) {
             if (ps.on_ground && !prev_ground) jumps++;
             prev_ground = ps.on_ground;
@@ -428,8 +430,8 @@ bool qk_physics_validate_map(const char *map_path) {
             if (hs > peak) peak = hs;
         }
 
-        /* In a 512x512 room, strafejump can't build much speed before
-           hitting walls. Pass if near max ground speed and multiple jumps. */
+        // In a 512x512 room, strafejump can't build much speed before
+        // hitting walls. Pass if near max ground speed and multiple jumps.
         bool pass = (peak > 310.0f && jumps >= 3);
         printf("  Test %d: Strafejump in loaded map: %s "
                "(peak=%.1f u/s, jumps=%d)\n",

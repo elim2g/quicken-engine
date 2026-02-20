@@ -21,12 +21,12 @@ void qk_cvar_shutdown(void) {
     s_cvar_count = 0;
 }
 
-/* ---- Internal helpers ---- */
+// --- Internal Helpers ---
 
 static qk_cvar_t *cvar_alloc(const char *name) {
     if (s_cvar_count >= QK_CVAR_MAX_COUNT) return NULL;
 
-    /* Check for duplicate */
+    // Check for duplicate
     for (u32 i = 0; i < s_cvar_count; i++) {
         if (s_cvars[i].in_use && strcmp(s_cvars[i].name, name) == 0) {
             return &s_cvars[i];
@@ -40,7 +40,7 @@ static qk_cvar_t *cvar_alloc(const char *name) {
     return cv;
 }
 
-/* ---- Registration ---- */
+// --- Registration ---
 
 qk_cvar_t *qk_cvar_register_float(const char *name, f32 default_val,
                                     f32 min_val, f32 max_val,
@@ -104,7 +104,7 @@ qk_cvar_t *qk_cvar_register_string(const char *name, const char *default_val,
     return cv;
 }
 
-/* ---- Lookup ---- */
+// --- Lookup ---
 
 qk_cvar_t *qk_cvar_find(const char *name) {
     if (!name) return NULL;
@@ -116,7 +116,7 @@ qk_cvar_t *qk_cvar_find(const char *name) {
     return NULL;
 }
 
-/* ---- Setters ---- */
+// --- Setters ---
 
 bool qk_cvar_set_float(qk_cvar_t *cvar, f32 value) {
     if (!cvar || cvar->type != QK_CVAR_FLOAT) return false;
@@ -198,7 +198,7 @@ void qk_cvar_reset(qk_cvar_t *cvar) {
     if (cvar->callback) cvar->callback(cvar);
 }
 
-/* ---- Iteration ---- */
+// --- Iteration ---
 
 u32 qk_cvar_count(void) {
     return s_cvar_count;
@@ -208,7 +208,7 @@ qk_cvar_t *qk_cvar_get_all(void) {
     return s_cvars;
 }
 
-/* ---- Format ---- */
+// --- Format ---
 
 void qk_cvar_to_string(const qk_cvar_t *cvar, char *buf, u32 buf_size) {
     if (!cvar || !buf || buf_size == 0) return;

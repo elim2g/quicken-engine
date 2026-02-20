@@ -13,7 +13,7 @@
 #include <string.h>
 #include <stdio.h>
 
-/* ---- Bitmap Font Atlas ---- */
+// --- Bitmap Font Atlas ---
 
 /*
  * 8x8 pixel monospace font, covering ASCII 32..126 (95 glyphs).
@@ -26,13 +26,13 @@
 #define FONT_GLYPH_H       8
 #define FONT_ATLAS_COLS     16
 #define FONT_ATLAS_ROWS     6
-#define FONT_ATLAS_W        (FONT_GLYPH_W * FONT_ATLAS_COLS)   /* 128 */
-#define FONT_ATLAS_H        (FONT_GLYPH_H * FONT_ATLAS_ROWS)   /* 48  */
+#define FONT_ATLAS_W        (FONT_GLYPH_W * FONT_ATLAS_COLS)   // 128
+#define FONT_ATLAS_H        (FONT_GLYPH_H * FONT_ATLAS_ROWS)   // 48
 #define FONT_FIRST_CHAR     32
 #define FONT_LAST_CHAR      126
-#define FONT_GLYPH_COUNT    (FONT_LAST_CHAR - FONT_FIRST_CHAR + 1) /* 95 */
+#define FONT_GLYPH_COUNT    (FONT_LAST_CHAR - FONT_FIRST_CHAR + 1) // 95
 
-/* 8x8 pixel data for each glyph (8 bytes per glyph, MSB=left) */
+// 8x8 pixel data for each glyph (8 bytes per glyph, MSB=left)
 static const u8 s_font_glyphs[FONT_GLYPH_COUNT][8] = {
     /* 32 ' ' */ { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },
     /* 33 '!' */ { 0x18,0x18,0x18,0x18,0x18,0x00,0x18,0x00 },
@@ -137,7 +137,7 @@ static bool s_font_initialized = false;
 static void ui_font_init(void) {
     if (s_font_initialized) return;
 
-    /* Rasterize the glyph data into an RGBA pixel buffer */
+    // Rasterize the glyph data into an RGBA pixel buffer
     u8 pixels[FONT_ATLAS_W * FONT_ATLAS_H * 4];
     memset(pixels, 0, sizeof(pixels));
 
@@ -154,10 +154,10 @@ static void ui_font_init(void) {
                     u32 px = base_x + x;
                     u32 py = base_y + y;
                     u32 idx = (py * FONT_ATLAS_W + px) * 4;
-                    pixels[idx + 0] = 255;  /* R */
-                    pixels[idx + 1] = 255;  /* G */
-                    pixels[idx + 2] = 255;  /* B */
-                    pixels[idx + 3] = 255;  /* A */
+                    pixels[idx + 0] = 255;  // R
+                    pixels[idx + 1] = 255;  // G
+                    pixels[idx + 2] = 255;  // B
+                    pixels[idx + 3] = 255;  // A
                 }
             }
         }
@@ -167,23 +167,18 @@ static void ui_font_init(void) {
     s_font_initialized = true;
 }
 
-/* ---- Solid Rectangle ---- */
+// --- Solid Rectangle ---
 void qk_ui_draw_rect(f32 x, f32 y, f32 w, f32 h, u32 color_rgba) {
-    qk_ui_quad_t quad = {0};
-    quad.x = x;
-    quad.y = y;
-    quad.w = w;
-    quad.h = h;
-    quad.u0 = 0.0f;
-    quad.v0 = 0.0f;
-    quad.u1 = 1.0f;
-    quad.v1 = 1.0f;
-    quad.color = color_rgba;
-    quad.texture_id = 0; /* 0 = white/solid fill */
+    qk_ui_quad_t quad = {
+        .x = x, .y = y, .w = w, .h = h,
+        .u0 = 0.0f, .v0 = 0.0f, .u1 = 1.0f, .v1 = 1.0f,
+        .color = color_rgba,
+        .texture_id = 0, // 0 = white/solid fill
+    };
     qk_renderer_push_ui_quad(&quad);
 }
 
-/* ---- Text ---- */
+// --- Text ---
 void qk_ui_draw_text(f32 x, f32 y, const char *text, f32 size, u32 color_rgba) {
     if (!text || !text[0]) return;
 
@@ -219,31 +214,26 @@ void qk_ui_draw_text(f32 x, f32 y, const char *text, f32 size, u32 color_rgba) {
         f32 u1 = u0 + (f32)FONT_GLYPH_W * inv_atlas_w;
         f32 v1 = v0 + (f32)FONT_GLYPH_H * inv_atlas_h;
 
-        qk_ui_quad_t quad = {0};
-        quad.x = cx;
-        quad.y = y;
-        quad.w = glyph_w;
-        quad.h = glyph_h;
-        quad.u0 = u0;
-        quad.v0 = v0;
-        quad.u1 = u1;
-        quad.v1 = v1;
-        quad.color = color_rgba;
-        quad.texture_id = s_font_texture_id;
+        qk_ui_quad_t quad = {
+            .x = cx, .y = y, .w = glyph_w, .h = glyph_h,
+            .u0 = u0, .v0 = v0, .u1 = u1, .v1 = v1,
+            .color = color_rgba,
+            .texture_id = s_font_texture_id,
+        };
         qk_renderer_push_ui_quad(&quad);
 
         cx += glyph_w;
     }
 }
 
-/* ---- Number ---- */
+// --- Number ---
 void qk_ui_draw_number(f32 x, f32 y, i32 value, f32 size, u32 color_rgba) {
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", value);
     qk_ui_draw_text(x, y, buf, size, color_rgba);
 }
 
-/* ---- Text Width Measurement ---- */
+// --- Text Width Measurement ---
 f32 qk_ui_text_width(const char *text, f32 size) {
     if (!text) return 0.0f;
     f32 scale = size / (f32)FONT_GLYPH_H;

@@ -53,7 +53,7 @@ f64 n_platform_time(void) {
     return (f64)(now.QuadPart - s_timer_start.QuadPart) / (f64)s_timer_freq.QuadPart;
 }
 
-#else /* Linux */
+#else // Linux
 
 #include <time.h>
 
@@ -81,7 +81,7 @@ f64 n_platform_time(void) {
 
 #endif
 
-/* ---- PRNG (shared state across all TUs) ---- */
+// --- PRNG (shared state across all TUs) ---
 
 static u32 s_rng_state = 2166136261u;
 

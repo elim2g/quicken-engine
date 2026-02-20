@@ -28,7 +28,7 @@
 #include <string.h>
 #include <math.h>
 
-/* ---- Test Framework ---- */
+// --- Test Framework ---
 
 static int s_tests_passed = 0;
 static int s_tests_failed = 0;
@@ -47,7 +47,7 @@ static const char *s_current_test = "";
         } \
     } while (0)
 
-/* ---- Helper: set up a player for testing ---- */
+// --- Helper: set up a player for testing ---
 
 static void setup_player(u8 id, const char *name, qk_team_t team,
                           vec3_t spawn, qk_weapon_id_t weapon) {
@@ -65,15 +65,14 @@ static void setup_player(u8 id, const char *name, qk_team_t team,
     qk_physics_player_init(ps, spawn);
 }
 
-/* ---- Test 1: forward_move ---- */
+// --- Test 1: forward_move ---
 
 static void test_forward_move(void) {
     printf("\n=== Test: forward_move ===\n");
     s_current_test = "forward_move";
 
     qk_phys_world_t *world = qk_physics_world_create_test_room();
-    qk_player_state_t ps;
-    memset(&ps, 0, sizeof(ps));
+    qk_player_state_t ps = {0};
     ps.mins = QK_PLAYER_MINS;
     ps.maxs = QK_PLAYER_MAXS;
     ps.max_speed = QK_PM_MAX_SPEED;
@@ -81,8 +80,7 @@ static void test_forward_move(void) {
     ps.alive_state = QK_PSTATE_ALIVE;
     qk_physics_player_init(&ps, (vec3_t){0, 0, 24});
 
-    qk_usercmd_t cmd;
-    memset(&cmd, 0, sizeof(cmd));
+    qk_usercmd_t cmd = {0};
     cmd.forward_move = 1.0f;
     cmd.yaw = 0.0f;
 
@@ -105,15 +103,14 @@ static void test_forward_move(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test 2: strafejump ---- */
+// --- Test 2: strafejump ---
 
 static void test_strafejump(void) {
     printf("\n=== Test: strafejump ===\n");
     s_current_test = "strafejump";
 
     qk_phys_world_t *world = qk_physics_world_create_test_room();
-    qk_player_state_t ps;
-    memset(&ps, 0, sizeof(ps));
+    qk_player_state_t ps = {0};
     ps.mins = QK_PLAYER_MINS;
     ps.maxs = QK_PLAYER_MAXS;
     ps.max_speed = QK_PM_MAX_SPEED;
@@ -132,12 +129,11 @@ static void test_strafejump(void) {
        This simulates "perfect" strafejumping to verify the physics.
        2000 ticks = ~23 jumps, enough to exceed 120% of max_speed. */
     for (int t = 0; t < 2000; t++) {
-        qk_usercmd_t cmd;
-        memset(&cmd, 0, sizeof(cmd));
+        qk_usercmd_t cmd = {0};
         cmd.forward_move = 1.0f;
         cmd.side_move = (f32)strafe_dir;
 
-        /* Jump when grounded and jump_held cleared; alternate strafe on re-jump */
+        // Jump when grounded and jump_held cleared; alternate strafe on re-jump
         if (ps.on_ground && !ps.jump_held) {
             cmd.buttons = QK_BUTTON_JUMP;
             if (!prev_on_ground) {
@@ -180,7 +176,7 @@ static void test_strafejump(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test 3: rocket_jump ---- */
+// --- Test 3: rocket_jump ---
 
 static void test_rocket_jump(void) {
     printf("\n=== Test: rocket_jump ===\n");
@@ -193,14 +189,13 @@ static void test_rocket_jump(void) {
     setup_player(0, "RJPlayer", QK_TEAM_ALPHA, (vec3_t){0, 0, 24},
                  QK_WEAPON_ROCKET);
 
-    /* Force CA state to PLAYING with time remaining */
+    // Force CA state to PLAYING with time remaining
     qk_game_state_t *gs = qk_game_get_state();
     gs->ca.state = CA_STATE_PLAYING;
     gs->ca.state_timer_ms = 120000;
 
-    /* Aim straight down and fire + jump */
-    qk_usercmd_t cmd;
-    memset(&cmd, 0, sizeof(cmd));
+    // Aim straight down and fire + jump
+    qk_usercmd_t cmd = {0};
     cmd.pitch = -89.0f;
     cmd.yaw = 0.0f;
     cmd.buttons = QK_BUTTON_ATTACK | QK_BUTTON_JUMP;
@@ -208,7 +203,7 @@ static void test_rocket_jump(void) {
     qk_game_player_command(0, &cmd);
     qk_game_tick(world, QK_TICK_DT);
 
-    /* Continue ticking for the rocket to reach floor and explode */
+    // Continue ticking for the rocket to reach floor and explode
     cmd.buttons = 0;
     for (int i = 0; i < 30; i++) {
         qk_game_player_command(0, &cmd);
@@ -226,7 +221,7 @@ static void test_rocket_jump(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test 4: rail_damage ---- */
+// --- Test 4: rail_damage ---
 
 static void test_rail_damage(void) {
     printf("\n=== Test: rail_damage ===\n");
@@ -241,14 +236,13 @@ static void test_rail_damage(void) {
     setup_player(1, "Target", QK_TEAM_BETA, (vec3_t){200, 0, 24},
                  QK_WEAPON_ROCKET);
 
-    /* Force CA state to PLAYING with time remaining */
+    // Force CA state to PLAYING with time remaining
     qk_game_state_t *gs = qk_game_get_state();
     gs->ca.state = CA_STATE_PLAYING;
     gs->ca.state_timer_ms = 120000;
 
-    /* Attacker aims at target (+X direction, yaw=0, pitch=0) and fires */
-    qk_usercmd_t cmd;
-    memset(&cmd, 0, sizeof(cmd));
+    // Attacker aims at target (+X direction, yaw=0, pitch=0) and fires
+    qk_usercmd_t cmd = {0};
     cmd.yaw = 0.0f;
     cmd.pitch = 0.0f;
     cmd.buttons = QK_BUTTON_ATTACK;
@@ -266,7 +260,7 @@ static void test_rail_damage(void) {
     TEST_CHECK(total_hp < QK_CA_SPAWN_HEALTH + QK_CA_SPAWN_ARMOR,
                "Target took damage from rail hit");
 
-    /* Rail does 80 damage; check approximate damage */
+    // Rail does 80 damage; check approximate damage
     i16 damage_taken = (QK_CA_SPAWN_HEALTH + QK_CA_SPAWN_ARMOR) - total_hp;
     TEST_CHECK(damage_taken >= 60 && damage_taken <= 100,
                "Damage taken in expected range (60-100)");
@@ -275,7 +269,7 @@ static void test_rail_damage(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test 5: ca_lifecycle ---- */
+// --- Test 5: ca_lifecycle ---
 
 static void test_ca_lifecycle(void) {
     printf("\n=== Test: ca_lifecycle ===\n");
@@ -283,11 +277,11 @@ static void test_ca_lifecycle(void) {
 
     qk_phys_world_t *world = qk_physics_world_create_test_room();
     qk_game_config_t gc = {0};
-    gc.countdown_time_ms = 100;        /* fast for testing */
+    gc.countdown_time_ms = 100;  // fast for testing
     gc.round_time_limit_ms = 500;
     qk_game_init(&gc);
 
-    /* Connect two players on different teams */
+    // Connect two players on different teams
     setup_player(0, "Alpha1", QK_TEAM_ALPHA, (vec3_t){-100, 0, 24},
                  QK_WEAPON_ROCKET);
     setup_player(1, "Beta1", QK_TEAM_BETA, (vec3_t){100, 0, 24},
@@ -296,14 +290,14 @@ static void test_ca_lifecycle(void) {
     const qk_ca_state_t *ca = qk_game_get_ca_state();
     TEST_CHECK(ca->state == CA_STATE_WARMUP, "Initial state is WARMUP");
 
-    /* Warmup has no auto-transition; manually start countdown */
+    // Warmup has no auto-transition; manually start countdown
     qk_game_state_t *gs = qk_game_get_state();
     g_ca_start_countdown(gs);
 
     ca = qk_game_get_ca_state();
     TEST_CHECK(ca->state == CA_STATE_COUNTDOWN, "Transitioned to COUNTDOWN");
 
-    /* Tick through countdown (100ms / ~7.8ms per tick = ~13 ticks; use 20) */
+    // Tick through countdown (100ms / ~7.8ms per tick = ~13 ticks; use 20)
     for (int i = 0; i < 20; i++) {
         qk_game_tick(world, QK_TICK_DT);
     }
@@ -313,7 +307,7 @@ static void test_ca_lifecycle(void) {
     TEST_CHECK(ca->state == CA_STATE_PLAYING,
                "Reached PLAYING after countdown");
 
-    /* Tick through round time limit (500ms / ~7.8ms = ~64 ticks; use 80) */
+    // Tick through round time limit (500ms / ~7.8ms = ~64 ticks; use 80)
     for (int i = 0; i < 80; i++) {
         qk_game_tick(world, QK_TICK_DT);
     }
@@ -327,7 +321,7 @@ static void test_ca_lifecycle(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test 6: physics_trace ---- */
+// --- Test 6: physics_trace ---
 
 static void test_physics_trace(void) {
     printf("\n=== Test: physics_trace ===\n");
@@ -336,7 +330,7 @@ static void test_physics_trace(void) {
     qk_phys_world_t *world = qk_physics_world_create_test_room();
     vec3_t zero = {0, 0, 0};
 
-    /* Trace downward from center: should hit floor */
+    // Trace downward from center: should hit floor
     qk_trace_result_t r = qk_physics_trace(world,
         (vec3_t){0, 0, 128}, (vec3_t){0, 0, -100}, zero, zero);
     TEST_CHECK(r.fraction < 1.0f, "Downward trace hits floor");
@@ -344,17 +338,17 @@ static void test_physics_trace(void) {
         TEST_CHECK(r.hit_normal.z > 0.9f, "Floor normal points up");
     }
 
-    /* Trace toward +X wall from center */
+    // Trace toward +X wall from center
     r = qk_physics_trace(world,
         (vec3_t){0, 0, 128}, (vec3_t){16000, 0, 128}, zero, zero);
     TEST_CHECK(r.fraction < 1.0f, "Trace hits +X wall");
 
-    /* Short trace in open space: should not hit */
+    // Short trace in open space: should not hit
     r = qk_physics_trace(world,
         (vec3_t){0, 0, 128}, (vec3_t){100, 0, 128}, zero, zero);
     TEST_CHECK(r.fraction >= 0.99f, "Short trace in open space misses");
 
-    /* Trace toward -Y wall */
+    // Trace toward -Y wall
     r = qk_physics_trace(world,
         (vec3_t){0, 0, 128}, (vec3_t){0, -16000, 128}, zero, zero);
     TEST_CHECK(r.fraction < 1.0f, "Trace hits -Y wall");
@@ -362,7 +356,7 @@ static void test_physics_trace(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test 7: rail_impact_data ---- */
+// --- Test 7: rail_impact_data ---
 
 static void test_rail_impact_data(void) {
     printf("\n=== Test: rail_impact_data ===\n");
@@ -375,7 +369,7 @@ static void test_rail_impact_data(void) {
        This mirrors exactly what main.c does when a rail fires:
        ray trace with zero extents from eye position in the aim direction. */
     vec3_t start = {0, 0, 128};
-    vec3_t end = {8192, 0, 128};  /* 8192 = rail max range */
+    vec3_t end = {8192, 0, 128};  // 8192 = rail max range
 
     qk_trace_result_t tr = qk_physics_trace(world, start, end, zero, zero);
 
@@ -389,7 +383,7 @@ static void test_rail_impact_data(void) {
     TEST_CHECK(tr.fraction < 1.0f,
                "Rail trace hits wall (fraction < 1.0)");
 
-    /* Verify the impact normal is non-zero and normalized */
+    // Verify the impact normal is non-zero and normalized
     f32 nrm_len = sqrtf(tr.hit_normal.x * tr.hit_normal.x +
                          tr.hit_normal.y * tr.hit_normal.y +
                          tr.hit_normal.z * tr.hit_normal.z);
@@ -398,11 +392,11 @@ static void test_rail_impact_data(void) {
     TEST_CHECK(nrm_len > 0.9f && nrm_len < 1.1f,
                "Hit normal is unit length (not zero)");
 
-    /* For a +X wall, normal should point in -X direction */
+    // For a +X wall, normal should point in -X direction
     TEST_CHECK(tr.hit_normal.x < -0.5f,
                "Normal points back toward ray origin (-X)");
 
-    /* Impact position should be near the wall, not at the origin */
+    // Impact position should be near the wall, not at the origin
     TEST_CHECK(tr.end_pos.x > 100.0f,
                "Impact position is away from start (near wall)");
 
@@ -417,12 +411,12 @@ static void test_rail_impact_data(void) {
     TEST_CHECK(pos_finite && nrm_finite,
                "All impact data is finite (no NaN)");
 
-    /* Test multiple directions (simulate rail through players hitting wall) */
+    // Test multiple directions (simulate rail through players hitting wall)
     vec3_t dirs[] = {
-        {0, 8192, 128},     /* +Y wall */
-        {-8192, 0, 128},    /* -X wall */
-        {0, 0, -100},       /* floor */
-        {0, 0, 16000},      /* ceiling */
+        {0, 8192, 128},  // +Y wall
+        {-8192, 0, 128},  // -X wall
+        {0, 0, -100},  // floor
+        {0, 0, 16000},  // ceiling
     };
 
     int walls_hit = 0;
@@ -443,7 +437,7 @@ static void test_rail_impact_data(void) {
     qk_physics_world_destroy(world);
 }
 
-/* ---- Test Registry ---- */
+// --- Test Registry ---
 
 typedef struct {
     const char *name;
@@ -462,7 +456,7 @@ static const test_entry_t s_tests[] = {
 
 #define NUM_TESTS (sizeof(s_tests) / sizeof(s_tests[0]))
 
-/* ---- Main ---- */
+// --- Main ---
 
 int main(int argc, char **argv) {
     bool run_all = false;
@@ -487,7 +481,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* Default to --all if no specific test requested */
+    // Default to --all if no specific test requested
     if (!run_all && !run_single) {
         run_all = true;
     }

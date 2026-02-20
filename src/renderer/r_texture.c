@@ -51,7 +51,7 @@ qk_result_t r_texture_init(void)
     memset(&g_r.textures, 0, sizeof(g_r.textures));
     g_r.textures.next_free = 0;
 
-    /* Create samplers */
+    // Create samplers
     VkSamplerCreateInfo nearest_info = {
         .sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter    = VK_FILTER_NEAREST,
@@ -76,7 +76,7 @@ qk_result_t r_texture_init(void)
     };
     vkCreateSampler(g_r.device.handle, &linear_info, NULL, &g_r.textures.sampler_linear);
 
-    /* Create 1x1 white pixel default texture (texture 0) */
+    // Create 1x1 white pixel default texture (texture 0)
     u8 white_pixel[4] = { 255, 255, 255, 255 };
     u32 tex_id = r_texture_upload(white_pixel, 1, 1, 4, false);
     if (tex_id != 0) {
@@ -115,25 +115,25 @@ u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool
     u32 id = g_r.textures.next_free;
     r_texture_t *tex = &g_r.textures.textures[id];
 
-    /* Determine format */
+    // Determine format
     VkFormat format;
     u32 bpp;
     switch (channels) {
         case 4:  format = VK_FORMAT_R8G8B8A8_SRGB; bpp = 4; break;
-        case 3:  format = VK_FORMAT_R8G8B8A8_SRGB; bpp = 4; break; /* expand to RGBA */
+        case 3:  format = VK_FORMAT_R8G8B8A8_SRGB; bpp = 4; break; // expand to RGBA
         case 1:  format = VK_FORMAT_R8_UNORM;       bpp = 1; break;
         default: format = VK_FORMAT_R8G8B8A8_SRGB;  bpp = 4; break;
     }
 
     VkDeviceSize image_size = (VkDeviceSize)width * height * bpp;
 
-    /* Stage pixel data */
+    // Stage pixel data
     VkDeviceSize staging_offset;
     void *staging_ptr = r_staging_alloc(image_size, &staging_offset);
     if (!staging_ptr) return 0;
 
     if (channels == 3) {
-        /* Expand RGB to RGBA */
+        // Expand RGB to RGBA
         u8 *dst = (u8 *)staging_ptr;
         for (u32 i = 0; i < width * height; i++) {
             dst[i * 4 + 0] = pixels[i * 3 + 0];
@@ -145,7 +145,7 @@ u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool
         memcpy(staging_ptr, pixels, (size_t)image_size);
     }
 
-    /* Create image */
+    // Create image
     VkImageCreateInfo img_info = {
         .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType     = VK_IMAGE_TYPE_2D,
@@ -165,14 +165,14 @@ u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool
     VkMemoryRequirements mem_req;
     vkGetImageMemoryRequirements(g_r.device.handle, tex->image, &mem_req);
 
-    /* Try pool suballocation for device-local texture memory */
+    // Try pool suballocation for device-local texture memory
     r_memory_pool_t *pool = &g_r.pools[R_MEMORY_POOL_DEVICE_LOCAL];
     if (pool->memory && (mem_req.memoryTypeBits & (1u << pool->memory_type))) {
         VkDeviceSize pool_offset;
         if (r_memory_pool_alloc(R_MEMORY_POOL_DEVICE_LOCAL, mem_req.size,
                                  mem_req.alignment, &pool_offset) == QK_SUCCESS) {
             vkBindImageMemory(g_r.device.handle, tex->image, pool->memory, pool_offset);
-            tex->memory = VK_NULL_HANDLE; /* Pool-owned */
+            tex->memory = VK_NULL_HANDLE; // Pool-owned
             goto texture_create_view;
         }
     }
@@ -198,7 +198,7 @@ u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool
 texture_create_view:
     ;
 
-    /* Create image view */
+    // Create image view
     VkImageViewCreateInfo view_info = {
         .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image    = tex->image,
@@ -214,7 +214,7 @@ texture_create_view:
     };
     vkCreateImageView(g_r.device.handle, &view_info, NULL, &tex->view);
 
-    /* Transfer: transition, copy, transition */
+    // Transfer: transition, copy, transition
     VkCommandBuffer cmd = r_commands_begin_single();
 
     transition_image_layout(cmd, tex->image,
@@ -244,7 +244,7 @@ texture_create_view:
 
     r_commands_end_single(cmd);
 
-    /* Allocate per-texture descriptor set (UI pipeline compatibility) */
+    // Allocate per-texture descriptor set (UI pipeline compatibility)
     VkDescriptorSetAllocateInfo desc_alloc = {
         .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool     = g_r.descriptor_pool,
@@ -259,7 +259,7 @@ texture_create_view:
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
 
-    /* Write into per-texture descriptor set AND bindless array */
+    // Write into per-texture descriptor set AND bindless array
     VkWriteDescriptorSet writes[2] = {
         {
             .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -286,7 +286,7 @@ texture_create_view:
     tex->format = format;
     tex->in_use = true;
 
-    /* Find next free slot */
+    // Find next free slot
     g_r.textures.next_free = id + 1;
     while (g_r.textures.next_free < R_MAX_TEXTURES &&
            g_r.textures.textures[g_r.textures.next_free].in_use) {
@@ -299,7 +299,7 @@ texture_create_view:
 VkDescriptorSet r_texture_get_descriptor(u32 texture_id)
 {
     if (texture_id >= R_MAX_TEXTURES || !g_r.textures.textures[texture_id].in_use) {
-        /* Return default (white) texture descriptor */
+        // Return default (white) texture descriptor
         return g_r.textures.textures[0].descriptor_set;
     }
     return g_r.textures.textures[texture_id].descriptor_set;

@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ---- Lifecycle ---- */
+// --- Lifecycle ---
 
 qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
 {
@@ -31,51 +31,51 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
 
     qk_result_t res;
 
-    /* Vulkan instance */
+    // Vulkan instance
     res = r_vulkan_create_instance();
     if (res != QK_SUCCESS) return res;
 
-    /* Surface (from SDL window) */
+    // Surface (from SDL window)
     res = r_vulkan_create_surface(config->sdl_window);
     if (res != QK_SUCCESS) return res;
 
-    /* Physical device */
+    // Physical device
     res = r_vulkan_pick_physical_device();
     if (res != QK_SUCCESS) return res;
 
-    /* Logical device */
+    // Logical device
     res = r_vulkan_create_device();
     if (res != QK_SUCCESS) return res;
 
-    /* Memory allocator */
+    // Memory allocator
     res = r_memory_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Staging buffer */
+    // Staging buffer
     res = r_staging_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Swapchain */
+    // Swapchain
     res = r_vulkan_create_swapchain();
     if (res != QK_SUCCESS) return res;
 
-    /* Descriptor layouts and pool */
+    // Descriptor layouts and pool
     res = r_descriptors_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Offscreen render targets */
+    // Offscreen render targets
     res = r_create_render_targets();
     if (res != QK_SUCCESS) return res;
 
-    /* Command pools, sync objects, per-frame buffers */
+    // Command pools, sync objects, per-frame buffers
     res = r_commands_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Textures (creates default white texture) */
+    // Textures (creates default white texture)
     res = r_texture_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Pipeline cache */
+    // Pipeline cache
     res = r_pipeline_cache_init();
     if (res != QK_SUCCESS) return res;
 
@@ -85,7 +85,7 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_compute_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Pipelines */
+    // Pipelines
     res = r_pipeline_create_world();
     if (res != QK_SUCCESS) return res;
 
@@ -101,30 +101,30 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_pipeline_create_compose();
     if (res != QK_SUCCESS) return res;
 
-    /* UI index buffer */
+    // UI index buffer
     res = r_ui_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Composition pass descriptor setup */
+    // Composition pass descriptor setup
     res = r_compose_init();
     if (res != QK_SUCCESS) return res;
 
-    /* World geometry */
+    // World geometry
     r_world_init();
 
-    /* Entity meshes (capsule + sphere) */
+    // Entity meshes (capsule + sphere)
     res = r_entity_init();
     if (res != QK_SUCCESS) return res;
 
-    /* FX effect buffers */
+    // FX effect buffers
     res = r_fx_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Bloom mip chain */
+    // Bloom mip chain
     res = r_bloom_init();
     if (res != QK_SUCCESS) return res;
 
-    /* Debug timers */
+    // Debug timers
     r_debug_init();
 
     g_r.initialized = true;
@@ -185,7 +185,7 @@ void qk_renderer_shutdown(void)
     fprintf(stderr, "[Renderer] Shutdown complete\n");
 }
 
-/* ---- Resolution ---- */
+// --- Resolution ---
 
 void qk_renderer_set_render_resolution(u32 width, u32 height)
 {
@@ -202,10 +202,10 @@ void qk_renderer_set_render_resolution(u32 width, u32 height)
     r_destroy_render_targets();
     r_create_render_targets();
 
-    /* Forward+ compute (needs render targets for depth pre-pass) */
+    // Forward+ compute (needs render targets for depth pre-pass)
     r_compute_init();
 
-    /* Re-create pipelines that reference render targets */
+    // Re-create pipelines that reference render targets
     r_pipeline_destroy_all();
     r_pipeline_create_world();
     r_pipeline_create_entity();
@@ -234,7 +234,7 @@ void qk_renderer_set_vsync(bool vsync)
 
     g_r.config.vsync = vsync;
 
-    /* Defer recreation to begin_frame where synchronization is correct */
+    // Defer recreation to begin_frame where synchronization is correct
     g_r.swapchain_needs_recreate = true;
 }
 
@@ -247,7 +247,7 @@ void qk_renderer_handle_window_resize(u32 new_width, u32 new_height)
     g_r.swapchain_needs_recreate = true;
 }
 
-/* ---- Resource Upload ---- */
+// --- Resource Upload ---
 
 qk_result_t qk_renderer_upload_world(
     const qk_world_vertex_t *vertices, u32 vertex_count,
@@ -259,7 +259,7 @@ qk_result_t qk_renderer_upload_world(
     r_world_shutdown();
     r_staging_reset();
 
-    /* Upload vertices via staging buffer */
+    // Upload vertices via staging buffer
     VkDeviceSize vb_size = vertex_count * sizeof(r_world_vertex_t);
     VkDeviceSize staging_offset;
     void *staging_ptr = r_staging_alloc(vb_size, &staging_offset);
@@ -278,7 +278,7 @@ qk_result_t qk_renderer_upload_world(
     vkCmdCopyBuffer(cmd, g_r.staging.buffer, g_r.world.vertex_buffer, 1, &vb_copy);
     r_commands_end_single(cmd);
 
-    /* Upload indices */
+    // Upload indices
     VkDeviceSize ib_size = index_count * sizeof(u32);
     staging_ptr = r_staging_alloc(ib_size, &staging_offset);
     if (!staging_ptr) return QK_ERROR_OUT_OF_MEMORY;
@@ -318,7 +318,7 @@ qk_result_t qk_renderer_upload_world(
     }
     g_r.world.surface_count = kept;
 
-    /* Sort surfaces by texture for batching */
+    // Sort surfaces by texture for batching
     for (u32 i = 1; i < kept; i++) {
         r_draw_surface_t key = g_r.world.surfaces[i];
         u32 j = i;
@@ -361,7 +361,7 @@ void qk_renderer_free_world(void)
     r_world_shutdown();
 }
 
-/* ---- Matrix inverse (for light culling) ---- */
+// --- Matrix inverse (for light culling) ---
 
 static void mat4_inverse(const f32 *m, f32 *out)
 {
@@ -392,7 +392,7 @@ static void mat4_inverse(const f32 *m, f32 *out)
     for (int i = 0; i < 16; i++) out[i] = inv[i] * inv_det;
 }
 
-/* ---- Frame Rendering ---- */
+// --- Frame Rendering ---
 
 static u64 s_start_ticks = 0;
 
@@ -407,13 +407,13 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
     u32 fi = g_r.frame_index % R_FRAMES_IN_FLIGHT;
     r_frame_data_t *frame = &g_r.frames[fi];
 
-    /* Wait for this frame's previous GPU work (timed) */
+    // Wait for this frame's previous GPU work (timed)
     u64 fence_t0 = SDL_GetPerformanceCounter();
     vkWaitForFences(g_r.device.handle, 1, &frame->in_flight, VK_TRUE, UINT64_MAX);
     u64 fence_t1 = SDL_GetPerformanceCounter();
     g_r.stats_fence_wait_ms = (f32)((f64)(fence_t1 - fence_t0) / (f64)SDL_GetPerformanceFrequency() * 1000.0);
 
-    /* Read GPU timers from previous frame */
+    // Read GPU timers from previous frame
     r_debug_timers_read();
 
     /* Recreate swapchain BEFORE acquire if flagged (vsync change, etc).
@@ -423,7 +423,7 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
         r_vulkan_recreate_swapchain();
     }
 
-    /* Acquire swapchain image (timed) */
+    // Acquire swapchain image (timed)
     u64 acq_t0 = SDL_GetPerformanceCounter();
     VkResult result = vkAcquireNextImageKHR(
         g_r.device.handle, g_r.swapchain.handle, UINT64_MAX,
@@ -444,7 +444,7 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
 
     vkResetFences(g_r.device.handle, 1, &frame->in_flight);
 
-    /* Update view uniforms */
+    // Update view uniforms
     if (camera && frame->view_ubo_mapped) {
         r_view_uniforms_t uniforms;
         memcpy(uniforms.view_projection, camera->view_projection, sizeof(f32) * 16);
@@ -457,11 +457,11 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
         uniforms._pad = 0;
         memcpy(frame->view_ubo_mapped, &uniforms, sizeof(uniforms));
 
-        /* Cache inverse VP for compute light culling */
+        // Cache inverse VP for compute light culling
         mat4_inverse(camera->view_projection, g_r.inv_view_projection);
     }
 
-    /* Reset per-frame draw lists */
+    // Reset per-frame draw lists
     g_r.ui_quad_count = 0;
     g_r.entities.draw_count = 0;
     g_r.fx.draw_count = 0;
@@ -473,7 +473,7 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
 
 void qk_renderer_draw_world(void)
 {
-    /* World drawing is deferred to end_frame where we record all commands */
+    // World drawing is deferred to end_frame where we record all commands
 }
 
 void qk_renderer_push_ui_quad(const qk_ui_quad_t *quad)
@@ -501,7 +501,7 @@ void qk_renderer_end_frame(void)
     r_frame_data_t *frame = &g_r.frames[fi];
     VkCommandBuffer cmd = frame->command_buffer;
 
-    /* Reset and begin command buffer */
+    // Reset and begin command buffer
     vkResetCommandPool(g_r.device.handle, frame->command_pool, 0);
 
     VkCommandBufferBeginInfo begin_info = {
@@ -510,24 +510,24 @@ void qk_renderer_end_frame(void)
     };
     vkBeginCommandBuffer(cmd, &begin_info);
 
-    /* Reset GPU timestamp queries */
+    // Reset GPU timestamp queries
     if (g_r.gpu_timers.pool) {
         vkCmdResetQueryPool(cmd, g_r.gpu_timers.pool, 0, R_TIMESTAMP_COUNT);
     }
 
-    /* Timestamp: frame start */
+    // Timestamp: frame start
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0);
 
-    /* Upload dynamic lights to GPU SSBO */
+    // Upload dynamic lights to GPU SSBO
     r_compute_upload_lights();
 
-    /* ---- Depth Pre-Pass ---- */
+    // --- Depth Pre-Pass ---
     r_depth_prepass_record(cmd, fi);
 
-    /* ---- Light Cull Compute (always dispatch to keep tile SSBO valid) ---- */
+    // --- Light Cull Compute (always dispatch to keep tile SSBO valid) ---
     r_compute_record_cull(cmd, g_r.inv_view_projection);
 
-    /* ---- Pass 1: World + UI ---- */
+    // --- Pass 1: World + UI ---
     r_debug_begin_label(cmd, "World Pass", 0.2f, 0.8f, 0.2f);
     {
         VkClearValue clears[2] = {
@@ -553,26 +553,26 @@ void qk_renderer_end_frame(void)
     }
     r_debug_end_label(cmd);
 
-    /* Timestamp: after world + UI */
+    // Timestamp: after world + UI
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 1);
 
-    /* ---- Bloom pass ---- */
+    // --- Bloom pass ---
     r_bloom_record_commands(cmd);
 
-    /* Timestamp: after bloom */
+    // Timestamp: after bloom
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 2);
 
-    /* ---- Pass 2: Composition ---- */
+    // --- Pass 2: Composition ---
     r_debug_begin_label(cmd, "Compose Pass", 0.2f, 0.2f, 0.8f);
     r_compose_record_commands(cmd, g_r.current_image_index);
     r_debug_end_label(cmd);
 
-    /* Timestamp: after compose */
+    // Timestamp: after compose
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 3);
 
     vkEndCommandBuffer(cmd);
 
-    /* Submit */
+    // Submit
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submit = {
@@ -588,7 +588,7 @@ void qk_renderer_end_frame(void)
 
     vkQueueSubmit(g_r.device.graphics_queue, 1, &submit, frame->in_flight);
 
-    /* Present */
+    // Present
     VkPresentInfoKHR present = {
         .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
@@ -607,7 +607,7 @@ void qk_renderer_end_frame(void)
     g_r.frame_index++;
 }
 
-/* ---- Debug ---- */
+// --- Debug ---
 
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats)
 {

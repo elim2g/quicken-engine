@@ -29,14 +29,14 @@ void qk_perf_end_frame(f32 cpu_frame_ms, f32 gpu_frame_ms, f32 world_ms,
 void qk_perf_set_enabled(bool enabled) { QK_UNUSED(enabled); }
 void qk_perf_log_event(const char *fmt, ...) { QK_UNUSED(fmt); }
 
-#else /* !QK_HEADLESS */
+#else  // !QK_HEADLESS
 
 #include <SDL3/SDL_timer.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 
-#define PERF_LOG_INTERVAL   64
+static const u32 PERF_LOG_INTERVAL = 64;
 #define PERF_ROLLING_SIZE   256
 
 typedef struct {
@@ -48,7 +48,7 @@ typedef struct {
     u64     total_frames;
     u32     interval_counter;
 
-    /* Rolling averages */
+    // Rolling averages
     f32     cpu_ms_history[PERF_ROLLING_SIZE];
     f32     gpu_ms_history[PERF_ROLLING_SIZE];
     f32     fence_ms_history[PERF_ROLLING_SIZE];
@@ -56,7 +56,7 @@ typedef struct {
     u32     rolling_index;
     u32     rolling_count;
 
-    /* Lifetime stats */
+    // Lifetime stats
     f64     sum_cpu_ms;
     f32     min_cpu_ms;
     f32     max_cpu_ms;
@@ -140,7 +140,7 @@ void qk_perf_end_frame(f32 cpu_frame_ms, f32 gpu_frame_ms, f32 world_ms,
 
     s_perf.total_frames++;
 
-    /* Update lifetime stats */
+    // Update lifetime stats
     s_perf.sum_cpu_ms += (f64)cpu_frame_ms;
     s_perf.sum_gpu_ms += (f64)gpu_frame_ms;
     if (cpu_frame_ms < s_perf.min_cpu_ms) s_perf.min_cpu_ms = cpu_frame_ms;
@@ -148,7 +148,7 @@ void qk_perf_end_frame(f32 cpu_frame_ms, f32 gpu_frame_ms, f32 world_ms,
     if (gpu_frame_ms < s_perf.min_gpu_ms) s_perf.min_gpu_ms = gpu_frame_ms;
     if (gpu_frame_ms > s_perf.max_gpu_ms) s_perf.max_gpu_ms = gpu_frame_ms;
 
-    /* Update rolling buffers */
+    // Update rolling buffers
     u32 ri = s_perf.rolling_index;
     s_perf.cpu_ms_history[ri] = cpu_frame_ms;
     s_perf.gpu_ms_history[ri] = gpu_frame_ms;
@@ -157,12 +157,12 @@ void qk_perf_end_frame(f32 cpu_frame_ms, f32 gpu_frame_ms, f32 world_ms,
     s_perf.rolling_index = (ri + 1) % PERF_ROLLING_SIZE;
     if (s_perf.rolling_count < PERF_ROLLING_SIZE) s_perf.rolling_count++;
 
-    /* Only write every Nth frame */
+    // Only write every Nth frame
     s_perf.interval_counter++;
     if (s_perf.interval_counter < PERF_LOG_INTERVAL) return;
     s_perf.interval_counter = 0;
 
-    /* Compute rolling averages */
+    // Compute rolling averages
     f64 avg_cpu = 0, avg_gpu = 0, avg_fence = 0, avg_acquire = 0;
     u32 count = s_perf.rolling_count;
     for (u32 i = 0; i < count; i++) {
@@ -204,4 +204,4 @@ void qk_perf_log_event(const char *fmt, ...)
     fflush(s_perf.file);
 }
 
-#endif /* QK_HEADLESS */
+#endif  // QK_HEADLESS

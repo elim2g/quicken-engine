@@ -7,7 +7,7 @@
 #include "r_types.h"
 #include <string.h>
 
-/* ---- Debug Labels ---- */
+// --- Debug Labels ---
 
 #ifdef QUICKEN_DEBUG
 static PFN_vkCmdBeginDebugUtilsLabelEXT s_begin_label = NULL;
@@ -52,7 +52,7 @@ void r_debug_end_label(VkCommandBuffer cmd)
 #endif
 }
 
-/* ---- GPU Timers ---- */
+// --- GPU Timers ---
 
 void r_debug_timers_init(void)
 {
@@ -97,9 +97,9 @@ void r_debug_timers_read(void)
     if (vr != VK_SUCCESS && vr != VK_NOT_READY) return;
     if (vr == VK_NOT_READY) return;
 
-    f64 period = (f64)g_r.device.properties.limits.timestampPeriod; /* nanoseconds */
+    f64 period = (f64)g_r.device.properties.limits.timestampPeriod; // nanoseconds
 
-    /* Timestamps: 0=frame start, 1=world end, 2=ui end, 3=compose end */
+    // Timestamps: 0=frame start, 1=world end, 2=ui end, 3=compose end
     if (g_r.gpu_timers.results[0] > 0 && g_r.gpu_timers.results[3] > 0) {
         g_r.gpu_timers.gpu_frame_ms = (f64)(g_r.gpu_timers.results[3] - g_r.gpu_timers.results[0])
                                     * period / 1000000.0;

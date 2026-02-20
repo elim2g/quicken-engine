@@ -11,29 +11,29 @@
 
 #include "quicken.h"
 
-/* Command function signature: func(argc, argv) */
+// Command function signature: func(argc, argv)
 typedef void (*qk_console_cmd_func_t)(i32 argc, const char **argv);
 
-/* ---- Lifecycle ---- */
+// --- Lifecycle ---
 void    qk_console_init(void);
 void    qk_console_shutdown(void);
 
-/* ---- State ---- */
+// --- State ---
 bool    qk_console_is_open(void);
 void    qk_console_toggle(void);
 
-/* ---- Input (called from qk_input when console is open) ---- */
+// --- Input (called from qk_input when console is open) ---
 void    qk_console_key_event(u32 scancode, bool pressed);
 void    qk_console_text_event(const char *text);
 
-/* ---- Rendering ---- */
+// --- Rendering ---
 void    qk_console_draw(f32 screen_w, f32 screen_h, f32 dt);
 
-/* ---- Output ---- */
+// --- Output ---
 void    qk_console_print(const char *text);
 void    qk_console_printf(const char *fmt, ...);
 
-/* ---- Command registration ---- */
+// --- Command registration ---
 void    qk_console_register_cmd(const char *name,
                                  qk_console_cmd_func_t func,
                                  const char *desc);

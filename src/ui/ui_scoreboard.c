@@ -10,19 +10,19 @@
 #include "renderer/qk_renderer.h"
 #include <stdio.h>
 
-/* Colors */
-#define SB_COLOR_BG         0x00000099
-#define SB_COLOR_HEADER     0xFFFFFFFF
-#define SB_COLOR_ALPHA      0xFF4444FF
-#define SB_COLOR_BETA       0x4444FFFF
-#define SB_COLOR_TEXT        0xCCCCCCFF
-#define SB_COLOR_DEAD       0x666666FF
+// --- Colors ---
+static const u32 SB_COLOR_BG     = 0x00000099;
+static const u32 SB_COLOR_HEADER = 0xFFFFFFFF;
+static const u32 SB_COLOR_ALPHA  = 0xFF4444FF;
+static const u32 SB_COLOR_BETA   = 0x4444FFFF;
+static const u32 SB_COLOR_TEXT   = 0xCCCCCCFF;
+static const u32 SB_COLOR_DEAD   = 0x666666FF;
 
 void qk_ui_draw_scoreboard(const qk_ca_state_t *ca,
                              f32 screen_w, f32 screen_h) {
     if (!ca) return;
 
-    /* background panel centered on screen */
+    // background panel centered on screen
     f32 panel_w = 500.0f;
     f32 panel_h = 400.0f;
     f32 px = (screen_w - panel_w) * 0.5f;
@@ -30,20 +30,20 @@ void qk_ui_draw_scoreboard(const qk_ca_state_t *ca,
 
     qk_ui_draw_rect(px, py, panel_w, panel_h, SB_COLOR_BG);
 
-    /* title */
+    // title
     char title[64];
     snprintf(title, sizeof(title), "CLAN ARENA - Round %u", ca->round_number);
     f32 tw = qk_ui_text_width(title, 24.0f);
     qk_ui_draw_text(screen_w * 0.5f - tw * 0.5f, py + 10.0f, title, 24.0f, SB_COLOR_HEADER);
 
-    /* team scores */
+    // team scores
     char score_line[64];
     snprintf(score_line, sizeof(score_line), "ALPHA: %u   BETA: %u",
              ca->score_alpha, ca->score_beta);
     f32 sw = qk_ui_text_width(score_line, 20.0f);
     qk_ui_draw_text(screen_w * 0.5f - sw * 0.5f, py + 40.0f, score_line, 20.0f, SB_COLOR_TEXT);
 
-    /* column headers */
+    // column headers
     f32 col_x = px + 20.0f;
     f32 row_y = py + 80.0f;
     qk_ui_draw_text(col_x, row_y, "Player", 14.0f, SB_COLOR_HEADER);
@@ -51,7 +51,7 @@ void qk_ui_draw_scoreboard(const qk_ca_state_t *ca,
     qk_ui_draw_text(col_x + 260.0f, row_y, "Deaths", 14.0f, SB_COLOR_HEADER);
     qk_ui_draw_text(col_x + 350.0f, row_y, "Dmg", 14.0f, SB_COLOR_HEADER);
 
-    /* player rows */
+    // player rows
     f32 entry_y = row_y + 24.0f;
     f32 row_height = 20.0f;
 
@@ -81,7 +81,7 @@ void qk_ui_draw_scoreboard(const qk_ca_state_t *ca,
         entry_y += row_height;
     }
 
-    /* alive counts */
+    // alive counts
     char alive_line[64];
     snprintf(alive_line, sizeof(alive_line), "Alive: Alpha %u  Beta %u",
              ca->alive_alpha, ca->alive_beta);

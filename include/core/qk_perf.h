@@ -20,4 +20,4 @@ void qk_perf_end_frame(f32 cpu_frame_ms, f32 gpu_frame_ms, f32 world_ms,
 void qk_perf_set_enabled(bool enabled);
 void qk_perf_log_event(const char *fmt, ...);
 
-#endif /* QK_PERF_H */
+#endif // QK_PERF_H

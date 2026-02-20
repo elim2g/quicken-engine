@@ -7,7 +7,7 @@
 
 #include "g_internal.h"
 
-/* ---- Weapon Definitions Table ---- */
+// --- Weapon Definitions Table ---
 const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT] = {
     [QK_WEAPON_NONE] = {0},
 
@@ -69,39 +69,39 @@ const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT] = {
     },
 };
 
-/* ---- Weapon Switch ---- */
+// --- Weapon Switch ---
 void g_weapon_switch(entity_t *player_ent, qk_weapon_id_t new_weapon) {
     qk_player_state_t *ps = &player_ent->data.player;
     if (new_weapon == ps->weapon) return;
     if (new_weapon <= QK_WEAPON_NONE || new_weapon >= QK_WEAPON_COUNT) return;
-    if (ps->pending_weapon != QK_WEAPON_NONE) return; /* already switching */
+    if (ps->pending_weapon != QK_WEAPON_NONE) return; // already switching
 
     const g_weapon_def_t *wdef = &g_weapon_defs[new_weapon];
     ps->pending_weapon = new_weapon;
     ps->switch_time = wdef->switch_time_ms;
 }
 
-/* ---- Weapon Fire ---- */
+// --- Weapon Fire ---
 bool g_weapon_fire(qk_game_state_t *gs, entity_t *player_ent) {
     qk_player_state_t *ps = &player_ent->data.player;
     const g_weapon_def_t *wdef = &g_weapon_defs[ps->weapon];
 
-    /* check ammo */
+    // check ammo
     if (ps->ammo[ps->weapon] < wdef->ammo_per_shot) return false;
 
-    /* subtract ammo */
+    // subtract ammo
     ps->ammo[ps->weapon] -= wdef->ammo_per_shot;
 
-    /* set cooldown */
+    // set cooldown
     ps->weapon_time = wdef->fire_interval_ms;
 
-    /* compute fire origin and direction */
+    // compute fire origin and direction
     vec3_t forward = angles_to_forward(ps->pitch, ps->yaw);
-    /* eye position: player origin + eye height offset */
+    // eye position: player origin + eye height offset
     vec3_t eye = ps->origin;
-    eye.z += 26.0f; /* approximate eye height */
+    eye.z += 26.0f; // approximate eye height
 
-    /* dispatch based on fire mode */
+    // dispatch based on fire mode
     switch (wdef->fire_mode) {
     case FIRE_HITSCAN:
         g_combat_hitscan_trace(gs, player_ent, eye, forward, wdef->range, ps->weapon);
@@ -117,11 +117,11 @@ bool g_weapon_fire(qk_game_state_t *gs, entity_t *player_ent) {
     return true;
 }
 
-/* ---- Weapon Tick (per player, per server tick) ---- */
+// --- Weapon Tick (per player, per server tick) ---
 void g_weapon_tick(qk_game_state_t *gs, entity_t *player_ent, u32 tick_dt_ms) {
     qk_player_state_t *ps = &player_ent->data.player;
 
-    /* handle weapon switch */
+    // handle weapon switch
     if (ps->switch_time > 0) {
         if (tick_dt_ms >= ps->switch_time) {
             ps->switch_time = 0;
@@ -131,10 +131,10 @@ void g_weapon_tick(qk_game_state_t *gs, entity_t *player_ent, u32 tick_dt_ms) {
         } else {
             ps->switch_time -= tick_dt_ms;
         }
-        return; /* cannot fire while switching */
+        return; // cannot fire while switching
     }
 
-    /* handle weapon cooldown */
+    // handle weapon cooldown
     if (ps->weapon_time > 0) {
         if (tick_dt_ms >= ps->weapon_time) {
             ps->weapon_time = 0;
@@ -144,7 +144,7 @@ void g_weapon_tick(qk_game_state_t *gs, entity_t *player_ent, u32 tick_dt_ms) {
         return;
     }
 
-    /* weapon ready: check if attack button pressed */
+    // weapon ready: check if attack button pressed
     if (ps->last_cmd.buttons & QK_BUTTON_ATTACK) {
         g_weapon_fire(gs, player_ent);
     }

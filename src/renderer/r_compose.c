@@ -53,7 +53,7 @@ qk_result_t r_compose_init(void)
 
 void r_compose_shutdown(void)
 {
-    /* Descriptor set freed with pool; sampler freed in r_descriptors_shutdown */
+    // Descriptor set freed with pool; sampler freed in r_descriptors_shutdown
 }
 
 void r_compose_update_descriptors(void)
@@ -147,7 +147,7 @@ void r_compose_record_commands(VkCommandBuffer cmd, u32 image_index)
                        VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(pc), &pc);
 
-    /* Draw fullscreen triangle (3 vertices, no buffer) */
+    // Draw fullscreen triangle (3 vertices, no buffer)
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
     g_r.stats_draw_calls++;

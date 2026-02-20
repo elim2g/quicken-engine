@@ -8,7 +8,7 @@
 #include "r_types.h"
 #include <string.h>
 
-/* Forward declaration from r_vulkan.c (file-scope helper) */
+// Forward declaration from r_vulkan.c (file-scope helper)
 static qk_result_t bloom_create_image(u32 w, u32 h,
                                       VkImage *out_image,
                                       VkDeviceMemory *out_memory,
@@ -34,7 +34,7 @@ static qk_result_t bloom_create_image(u32 w, u32 h,
     VkMemoryRequirements mem_req;
     vkGetImageMemoryRequirements(g_r.device.handle, *out_image, &mem_req);
 
-    /* Try pool suballocation */
+    // Try pool suballocation
     r_memory_pool_t *pool = &g_r.pools[R_MEMORY_POOL_DEVICE_LOCAL];
     if (pool->memory && (mem_req.memoryTypeBits & (1u << pool->memory_type))) {
         VkDeviceSize offset;
@@ -86,7 +86,7 @@ create_view:
 
 static qk_result_t create_bloom_render_passes(void)
 {
-    /* Downsample render pass: DONT_CARE load, STORE */
+    // Downsample render pass: DONT_CARE load, STORE
     {
         VkAttachmentDescription attachment = {
             .format         = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -126,7 +126,7 @@ static qk_result_t create_bloom_render_passes(void)
         if (vr != VK_SUCCESS) return QK_ERROR_PIPELINE;
     }
 
-    /* Upsample render pass: LOAD existing content (downsample result), STORE */
+    // Upsample render pass: LOAD existing content (downsample result), STORE
     {
         VkAttachmentDescription attachment = {
             .format         = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -183,7 +183,7 @@ static qk_result_t create_bloom_pipelines(void)
         return QK_ERROR_PIPELINE;
     }
 
-    /* Shared pipeline state */
+    // Shared pipeline state
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
     };
@@ -216,14 +216,14 @@ static qk_result_t create_bloom_pipelines(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Push constant range: texel_size(8) + threshold(4) + intensity(4) = 16 bytes */
+    // Push constant range: texel_size(8) + threshold(4) + intensity(4) = 16 bytes
     VkPushConstantRange push_range = {
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset     = 0,
         .size       = sizeof(r_bloom_push_constants_t)
     };
 
-    /* Layout: set 0 = single sampler (reuse texture_set_layout) */
+    // Layout: set 0 = single sampler (reuse texture_set_layout)
     VkPipelineLayoutCreateInfo layout_info = {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount         = 1,
@@ -232,7 +232,7 @@ static qk_result_t create_bloom_pipelines(void)
         .pPushConstantRanges    = &push_range
     };
 
-    /* Downsample pipeline (opaque blend) */
+    // Downsample pipeline (opaque blend)
     {
         vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL,
                                &g_r.bloom.downsample_pipeline.layout);
@@ -290,7 +290,7 @@ static qk_result_t create_bloom_pipelines(void)
         }
     }
 
-    /* Upsample pipeline (additive blend: src ONE + dst ONE) */
+    // Upsample pipeline (additive blend: src ONE + dst ONE)
     {
         vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL,
                                &g_r.bloom.upsample_pipeline.layout);
@@ -369,11 +369,11 @@ qk_result_t r_bloom_init(void)
     u32 w = g_r.config.render_width / 2;
     u32 h = g_r.config.render_height / 2;
 
-    /* Render passes */
+    // Render passes
     qk_result_t res = create_bloom_render_passes();
     if (res != QK_SUCCESS) return res;
 
-    /* Create mip chain images */
+    // Create mip chain images
     for (u32 i = 0; i < R_BLOOM_MIP_COUNT; i++) {
         if (w < 1) w = 1;
         if (h < 1) h = 1;
@@ -386,7 +386,7 @@ qk_result_t r_bloom_init(void)
                                  &g_r.bloom.mip_views[i]);
         if (res != QK_SUCCESS) return res;
 
-        /* Downsample framebuffer */
+        // Downsample framebuffer
         VkFramebufferCreateInfo fb_info = {
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass      = g_r.bloom.render_pass,
@@ -400,7 +400,7 @@ qk_result_t r_bloom_init(void)
                                            &g_r.bloom.down_framebuffers[i]);
         if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
 
-        /* Upsample framebuffer (only for mips 0 through N-2, mip N-1 is never an upsample target) */
+        // Upsample framebuffer (only for mips 0 through N-2, mip N-1 is never an upsample target)
         if (i < R_BLOOM_MIP_COUNT - 1) {
             VkFramebufferCreateInfo ufb_info = {
                 .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -434,7 +434,7 @@ qk_result_t r_bloom_init(void)
                                   &g_r.bloom.mip_descriptors[i]);
     }
 
-    /* Write descriptor for HDR world target (index 0) */
+    // Write descriptor for HDR world target (index 0)
     {
         VkDescriptorImageInfo img_info = {
             .sampler     = g_r.textures.sampler_linear,
@@ -452,7 +452,7 @@ qk_result_t r_bloom_init(void)
         vkUpdateDescriptorSets(g_r.device.handle, 1, &write, 0, NULL);
     }
 
-    /* Write descriptors for bloom mips (indices 1..5) */
+    // Write descriptors for bloom mips (indices 1..5)
     for (u32 i = 0; i < R_BLOOM_MIP_COUNT; i++) {
         VkDescriptorImageInfo img_info = {
             .sampler     = g_r.textures.sampler_linear,
@@ -470,7 +470,7 @@ qk_result_t r_bloom_init(void)
         vkUpdateDescriptorSets(g_r.device.handle, 1, &write, 0, NULL);
     }
 
-    /* Pipelines */
+    // Pipelines
     res = create_bloom_pipelines();
     if (res != QK_SUCCESS) return res;
 
@@ -505,7 +505,7 @@ void r_bloom_shutdown(void)
             vkFreeMemory(dev, g_r.bloom.mip_memories[i], NULL);
     }
 
-    /* Descriptor sets freed with pool */
+    // Descriptor sets freed with pool
 
     if (g_r.bloom.render_pass)
         vkDestroyRenderPass(dev, g_r.bloom.render_pass, NULL);
@@ -523,26 +523,26 @@ void r_bloom_record_commands(VkCommandBuffer cmd)
 
     r_debug_begin_label(cmd, "Bloom", 1.0f, 0.8f, 0.2f);
 
-    /* ---- Downsample chain (5 passes) ---- */
+    // --- Downsample chain (5 passes) ---
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       g_r.bloom.downsample_pipeline.handle);
 
     for (u32 i = 0; i < R_BLOOM_MIP_COUNT; i++) {
         VkExtent2D ext = g_r.bloom.mip_extents[i];
 
-        /* Source texel size (from the texture we're reading) */
+        // Source texel size (from the texture we're reading)
         r_bloom_push_constants_t pc;
         if (i == 0) {
-            /* Reading from HDR world target */
+            // Reading from HDR world target
             pc.texel_size[0] = 1.0f / (f32)g_r.config.render_width;
             pc.texel_size[1] = 1.0f / (f32)g_r.config.render_height;
-            pc.threshold = 1.0f;   /* Extract >1.0 brightness on first pass */
+            pc.threshold = 1.0f; // Extract >1.0 brightness on first pass
         } else {
-            /* Reading from previous mip */
+            // Reading from previous mip
             VkExtent2D prev = g_r.bloom.mip_extents[i - 1];
             pc.texel_size[0] = 1.0f / (f32)prev.width;
             pc.texel_size[1] = 1.0f / (f32)prev.height;
-            pc.threshold = 0.0f;   /* No threshold on subsequent passes */
+            pc.threshold = 0.0f; // No threshold on subsequent passes
         }
         pc.intensity = 1.0f;
 
@@ -577,12 +577,12 @@ void r_bloom_record_commands(VkCommandBuffer cmd)
         vkCmdEndRenderPass(cmd);
     }
 
-    /* ---- Upsample chain (4 passes, additive) ---- */
+    // --- Upsample chain (4 passes, additive) ---
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       g_r.bloom.upsample_pipeline.handle);
 
     for (u32 pass = 0; pass < R_BLOOM_MIP_COUNT - 1; pass++) {
-        /* Read from mip (N-1-pass), write to mip (N-2-pass) */
+        // Read from mip (N-1-pass), write to mip (N-2-pass)
         u32 src_mip = R_BLOOM_MIP_COUNT - 1 - pass;
         u32 dst_mip = src_mip - 1;
 
@@ -614,7 +614,7 @@ void r_bloom_record_commands(VkCommandBuffer cmd)
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        /* Source is mip_descriptors[src_mip + 1] (offset by 1 for HDR target at [0]) */
+        // Source is mip_descriptors[src_mip + 1] (offset by 1 for HDR target at [0])
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 g_r.bloom.upsample_pipeline.layout,
                                 0, 1, &g_r.bloom.mip_descriptors[src_mip + 1], 0, NULL);

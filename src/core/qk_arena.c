@@ -34,7 +34,7 @@ qk_arena_t *qk_arena_create(u64 size) {
 void *qk_arena_alloc(qk_arena_t *arena, u64 size) {
     QK_ASSERT(arena != NULL);
 
-    /* Align to 16 bytes */
+    // Align to 16 bytes
     u64 aligned_offset = (arena->offset + 15) & ~(u64)15;
     if (aligned_offset + size > arena->size) {
         return NULL;

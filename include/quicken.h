@@ -12,12 +12,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* Version */
+// Version
 #define QUICKEN_VERSION_MAJOR 0
 #define QUICKEN_VERSION_MINOR 1
 #define QUICKEN_VERSION_PATCH 0
 
-/* Platform detection */
+// Platform detection
 #if defined(_WIN32) || defined(_WIN64)
     #define QK_PLATFORM_WINDOWS
 #elif defined(__linux__)
@@ -26,7 +26,7 @@
     #error "Unsupported platform"
 #endif
 
-/* Common types */
+// Common types
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -40,24 +40,24 @@ typedef int64_t  i64;
 typedef float    f32;
 typedef double   f64;
 
-/* Unified result codes (all modules return this) */
+// Unified result codes (all modules return this)
 typedef enum {
     QK_SUCCESS = 0,
 
-    /* General errors */
+    // General errors
     QK_ERROR_INIT_FAILED,
     QK_ERROR_OUT_OF_MEMORY,
     QK_ERROR_INVALID_PARAM,
     QK_ERROR_NOT_FOUND,
     QK_ERROR_FULL,
 
-    /* Renderer errors */
+    // Renderer errors
     QK_ERROR_VULKAN_INIT,
     QK_ERROR_NO_SUITABLE_GPU,
     QK_ERROR_SWAPCHAIN,
     QK_ERROR_PIPELINE,
 
-    /* Netcode errors */
+    // Netcode errors
     QK_ERROR_SOCKET,
     QK_ERROR_TIMEOUT,
     QK_ERROR_REJECTED,
@@ -65,7 +65,7 @@ typedef enum {
     QK_RESULT_COUNT
 } qk_result_t;
 
-/* Assert macro */
+// Assert macro
 #ifdef QUICKEN_DEBUG
     #include <stdio.h>
     #include <stdlib.h>
@@ -81,8 +81,8 @@ typedef enum {
     #define QK_ASSERT(expr) ((void)0)
 #endif
 
-/* Utility */
+// Utility
 #define QK_UNUSED(x) ((void)(x))
-#define QK_TARGET_FPS 1000
+static const u32 QK_TARGET_FPS = 1000;
 
-#endif /* QUICKEN_H */
+#endif // QUICKEN_H

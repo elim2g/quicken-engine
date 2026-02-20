@@ -21,35 +21,37 @@
 #include <vulkan/vulkan.h>
 #include <string.h>
 
-/* ---- Constants ---- */
+// --- Constants ---
 
 #define R_MAX_SWAPCHAIN_IMAGES  4
-/* 2 frames in flight. With only minImageCount+2 swapchain images,
-   3-in-flight causes every image to be busy, blocking
-   vkAcquireNextImageKHR until a present completes. 2-in-flight
-   keeps a free image available for immediate acquire. */
+// 2 frames in flight. With only minImageCount+2 swapchain images,
+// 3-in-flight causes every image to be busy, blocking
+// vkAcquireNextImageKHR until a present completes. 2-in-flight
+// keeps a free image available for immediate acquire.
 #define R_FRAMES_IN_FLIGHT      2
 #define R_MAX_TEXTURES          256
 #define R_UI_MAX_QUADS          8192
 #define R_TIMESTAMP_COUNT       8
 #define R_ENTITY_MAX_DRAWS      512
 
-#define R_MEMORY_POOL_DEVICE_LOCAL  0
-#define R_MEMORY_POOL_HOST_VISIBLE  1
-#define R_MEMORY_POOL_COUNT         2
+enum {
+    R_MEMORY_POOL_DEVICE_LOCAL = 0,
+    R_MEMORY_POOL_HOST_VISIBLE,
+    R_MEMORY_POOL_COUNT
+};
 
 #define R_DEVICE_LOCAL_POOL_SIZE    (256u * 1024u * 1024u)
 #define R_HOST_VISIBLE_POOL_SIZE    (16u * 1024u * 1024u)
 #define R_STAGING_BUFFER_SIZE       (32u * 1024u * 1024u)
 
-/* ---- Instance ---- */
+// --- Instance ---
 
 typedef struct r_instance {
     VkInstance                  handle;
     VkDebugUtilsMessengerEXT   debug_messenger;
 } r_instance_t;
 
-/* ---- Queue Families ---- */
+// --- Queue Families ---
 
 typedef struct r_queue_families {
     u32     graphics;
@@ -57,7 +59,7 @@ typedef struct r_queue_families {
     bool    has_dedicated_transfer;
 } r_queue_families_t;
 
-/* ---- Device ---- */
+// --- Device ---
 
 typedef struct r_device {
     VkDevice                            handle;
@@ -69,7 +71,7 @@ typedef struct r_device {
     VkPhysicalDeviceMemoryProperties    mem_properties;
 } r_device_t;
 
-/* ---- Swapchain ---- */
+// --- Swapchain ---
 
 typedef struct r_swapchain {
     VkSwapchainKHR  handle;
@@ -81,7 +83,7 @@ typedef struct r_swapchain {
     VkImageView     views[R_MAX_SWAPCHAIN_IMAGES];
 } r_swapchain_t;
 
-/* ---- Render Target ---- */
+// --- Render Target ---
 
 typedef struct r_render_target {
     VkImage         color_image;
@@ -95,7 +97,7 @@ typedef struct r_render_target {
     VkExtent2D      extent;
 } r_render_target_t;
 
-/* ---- Render Config ---- */
+// --- Render Config ---
 
 typedef struct r_render_config {
     u32     render_width;
@@ -106,7 +108,7 @@ typedef struct r_render_config {
     bool    vsync;
 } r_render_config_t;
 
-/* ---- Frame Data ---- */
+// --- Frame Data ---
 
 typedef struct r_frame_data {
     VkCommandPool       command_pool;
@@ -126,14 +128,14 @@ typedef struct r_frame_data {
     void               *ui_vertex_mapped;
 } r_frame_data_t;
 
-/* ---- Pipeline ---- */
+// --- Pipeline ---
 
 typedef struct r_pipeline {
     VkPipeline          handle;
     VkPipelineLayout    layout;
 } r_pipeline_t;
 
-/* ---- Memory Pool ---- */
+// --- Memory Pool ---
 
 typedef struct r_memory_pool {
     VkDeviceMemory  memory;
@@ -143,7 +145,7 @@ typedef struct r_memory_pool {
     void           *mapped;
 } r_memory_pool_t;
 
-/* ---- Staging Buffer ---- */
+// --- Staging Buffer ---
 
 typedef struct r_staging_buffer {
     VkBuffer        buffer;
@@ -153,7 +155,7 @@ typedef struct r_staging_buffer {
     VkDeviceSize    offset;
 } r_staging_buffer_t;
 
-/* ---- World Geometry ---- */
+// --- World Geometry ---
 
 typedef struct r_world_vertex {
     f32     position[3];
@@ -190,7 +192,7 @@ typedef struct r_world_geometry {
     r_draw_surface_t   *surfaces;
 } r_world_geometry_t;
 
-/* ---- UI Types ---- */
+// --- UI Types ---
 
 typedef struct r_ui_vertex {
     f32     position[2];
@@ -205,7 +207,7 @@ typedef struct r_ui_quad {
     u32     texture_id;
 } r_ui_quad_t;
 
-/* ---- Texture ---- */
+// --- Texture ---
 
 typedef struct r_texture {
     VkImage         image;
@@ -225,7 +227,7 @@ typedef struct r_texture_manager {
     u32             next_free;
 } r_texture_manager_t;
 
-/* ---- View Uniforms ---- */
+// --- View Uniforms ---
 
 typedef struct r_view_uniforms {
     f32     view_projection[16];
@@ -237,7 +239,10 @@ typedef struct r_view_uniforms {
     u32     _pad;
 } r_view_uniforms_t;
 
-/* ---- Entity Types ---- */
+_Static_assert(sizeof(r_view_uniforms_t) == 96,
+               "UBO struct size changed — update descriptor");
+
+// --- Entity Types ---
 
 typedef struct r_entity_vertex {
     f32     position[3];
@@ -245,16 +250,16 @@ typedef struct r_entity_vertex {
 } r_entity_vertex_t;
 
 typedef struct r_entity_push_constants {
-    f32     model[16];      /* column-major 4x4 */
-    f32     color[4];       /* RGBA */
+    f32     model[16];      // column-major 4x4
+    f32     color[4];       // RGBA
 } r_entity_push_constants_t;
 
 typedef enum {
     R_ENTITY_MESH_CAPSULE = 0,
     R_ENTITY_MESH_SPHERE,
-    R_ENTITY_MESH_VIEWMODEL_RL,    /* Rocket Launcher */
-    R_ENTITY_MESH_VIEWMODEL_RG,    /* Railgun */
-    R_ENTITY_MESH_VIEWMODEL_LG,    /* Lightning Gun */
+    R_ENTITY_MESH_VIEWMODEL_RL,    // Rocket Launcher
+    R_ENTITY_MESH_VIEWMODEL_RG,    // Railgun
+    R_ENTITY_MESH_VIEWMODEL_LG,    // Lightning Gun
     R_ENTITY_MESH_COUNT
 } r_entity_mesh_type_t;
 
@@ -278,14 +283,14 @@ typedef struct r_entity_state {
     bool                initialized;
 } r_entity_state_t;
 
-/* ---- FX Types ---- */
+// --- FX Types ---
 
 #define R_FX_MAX_DRAWS        64
-#define R_FX_MAX_VERTICES     24576   /* shared dynamic VB for all FX this frame */
+#define R_FX_MAX_VERTICES     24576   // shared dynamic VB for all FX this frame
 
 typedef struct r_fx_vertex {
     f32     position[3];
-    f32     color[4];       /* RGBA with premultiplied alpha for additive blending */
+    f32     color[4];       // RGBA with premultiplied alpha for additive blending
 } r_fx_vertex_t;
 
 typedef struct r_fx_draw {
@@ -304,7 +309,7 @@ typedef struct r_fx_state {
     bool                initialized;
 } r_fx_state_t;
 
-/* ---- Bloom Types ---- */
+// --- Bloom Types ---
 
 #define R_BLOOM_MIP_COUNT   5
 
@@ -329,7 +334,7 @@ typedef struct r_bloom_state {
     bool            initialized;
 } r_bloom_state_t;
 
-/* ---- Forward+ Light Culling Types ---- */
+// --- Forward+ Light Culling Types ---
 
 #define R_MAX_DYNAMIC_LIGHTS    256
 #define R_TILE_SIZE             16
@@ -366,7 +371,7 @@ typedef struct r_light_state {
     VkDescriptorSetLayout cull_set_layout;
     VkDescriptorSet     cull_descriptor_set;
 
-    /* Light SSBO readable by fragment shaders */
+    // Light SSBO readable by fragment shaders
     VkDescriptorSetLayout light_set_layout;
     VkDescriptorSet       light_descriptor_set;
 
@@ -375,7 +380,7 @@ typedef struct r_light_state {
     bool                initialized;
 } r_light_state_t;
 
-/* ---- Depth Pre-Pass ---- */
+// --- Depth Pre-Pass ---
 
 typedef struct r_depth_prepass {
     VkRenderPass    render_pass;
@@ -384,7 +389,7 @@ typedef struct r_depth_prepass {
     bool            initialized;
 } r_depth_prepass_t;
 
-/* ---- Composition Push Constants ---- */
+// --- Composition Push Constants ---
 
 typedef struct r_compose_push_constants {
     f32     viewport[4];
@@ -393,7 +398,7 @@ typedef struct r_compose_push_constants {
     f32     bloom_strength;
 } r_compose_push_constants_t;
 
-/* ---- GPU Timers ---- */
+// --- GPU Timers ---
 
 typedef struct r_gpu_timers {
     VkQueryPool     pool;
@@ -404,7 +409,7 @@ typedef struct r_gpu_timers {
     f64             compose_pass_ms;
 } r_gpu_timers_t;
 
-/* ---- Global Renderer State ---- */
+// --- Global Renderer State ---
 
 typedef struct r_state {
     r_instance_t            instance;
@@ -436,7 +441,7 @@ typedef struct r_state {
     VkDescriptorSet         compose_descriptor_set;
     VkSampler               compose_sampler;
 
-    /* Composition framebuffers (one per swapchain image) */
+    // Composition framebuffers (one per swapchain image)
     VkRenderPass            compose_render_pass;
     VkFramebuffer           compose_framebuffers[R_MAX_SWAPCHAIN_IMAGES];
 
@@ -465,30 +470,30 @@ typedef struct r_state {
 
     r_gpu_timers_t          gpu_timers;
 
-    /* Stats for current frame */
+    // Stats for current frame
     u32                     stats_draw_calls;
     u32                     stats_triangles;
     f32                     stats_fence_wait_ms;
     f32                     stats_acquire_ms;
 
-    /* Lightmap state (Phase 2) */
+    // Lightmap state (Phase 2)
     u32                     lightmap_texture_id;
     bool                    has_lightmaps;
     f32                     ambient;
 
-    /* Cached inverse VP for light culling compute */
+    // Cached inverse VP for light culling compute
     f32                     inv_view_projection[16];
 
     bool                    initialized;
     bool                    swapchain_needs_recreate;
 } r_state_t;
 
-/* ---- Global state accessor (defined in r_vulkan.c) ---- */
+// --- Global state accessor (defined in r_vulkan.c) ---
 extern r_state_t g_r;
 
-/* ---- Internal function declarations ---- */
+// --- Internal function declarations ---
 
-/* r_vulkan.c */
+// r_vulkan.c
 qk_result_t r_vulkan_create_instance(void);
 qk_result_t r_vulkan_pick_physical_device(void);
 qk_result_t r_vulkan_create_device(void);
@@ -497,7 +502,7 @@ qk_result_t r_vulkan_create_swapchain(void);
 void        r_vulkan_destroy_swapchain(void);
 qk_result_t r_vulkan_recreate_swapchain(void);
 
-/* r_memory.c */
+// r_memory.c
 qk_result_t r_memory_init(void);
 void        r_memory_shutdown(void);
 bool        r_memory_find_type(u32 type_filter, VkMemoryPropertyFlags properties, u32 *out_type);
@@ -512,13 +517,13 @@ void        r_staging_reset(void);
 void       *r_staging_alloc(VkDeviceSize size, VkDeviceSize *out_offset);
 void        r_staging_flush_copies(VkCommandBuffer cmd);
 
-/* r_commands.c */
+// r_commands.c
 qk_result_t r_commands_init(void);
 void        r_commands_shutdown(void);
 VkCommandBuffer r_commands_begin_single(void);
 void        r_commands_end_single(VkCommandBuffer cmd);
 
-/* r_pipeline.c */
+// r_pipeline.c
 qk_result_t r_pipeline_cache_init(void);
 void        r_pipeline_cache_save(void);
 void        r_pipeline_cache_shutdown(void);
@@ -530,51 +535,51 @@ qk_result_t r_pipeline_create_ui(void);
 qk_result_t r_pipeline_create_compose(void);
 void        r_pipeline_destroy_all(void);
 
-/* r_world.c */
+// r_world.c
 void r_world_init(void);
 void r_world_shutdown(void);
 void r_world_record_commands(VkCommandBuffer cmd, u32 frame_index);
 
-/* r_entity.c */
+// r_entity.c
 qk_result_t r_entity_init(void);
 void        r_entity_shutdown(void);
 void        r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index);
 
-/* r_fx.c */
+// r_fx.c
 qk_result_t r_fx_init(void);
 void        r_fx_shutdown(void);
 void        r_fx_record_commands(VkCommandBuffer cmd, u32 frame_index);
 
-/* r_ui.c */
+// r_ui.c
 qk_result_t r_ui_init(void);
 void        r_ui_shutdown(void);
 void        r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index);
 
-/* r_bloom.c */
+// r_bloom.c
 qk_result_t r_bloom_init(void);
 void        r_bloom_shutdown(void);
 void        r_bloom_record_commands(VkCommandBuffer cmd);
 
-/* r_compute.c */
+// r_compute.c
 qk_result_t r_compute_init(void);
 void        r_compute_shutdown(void);
 void        r_compute_upload_lights(void);
 void        r_compute_record_cull(VkCommandBuffer cmd, const f32 *inv_projection);
 void        r_depth_prepass_record(VkCommandBuffer cmd, u32 frame_index);
 
-/* r_compose.c */
+// r_compose.c
 qk_result_t r_compose_init(void);
 void        r_compose_shutdown(void);
 void        r_compose_update_descriptors(void);
 void        r_compose_record_commands(VkCommandBuffer cmd, u32 image_index);
 
-/* r_texture.c */
+// r_texture.c
 qk_result_t r_texture_init(void);
 void        r_texture_shutdown(void);
 u32         r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool nearest);
 VkDescriptorSet r_texture_get_descriptor(u32 texture_id);
 
-/* r_debug.c */
+// r_debug.c
 qk_result_t r_debug_init(void);
 void        r_debug_shutdown(void);
 void        r_debug_begin_label(VkCommandBuffer cmd, const char *name, float r, float g, float b);
@@ -584,12 +589,12 @@ void        r_debug_timers_shutdown(void);
 void        r_debug_timestamp_write(VkCommandBuffer cmd, VkPipelineStageFlagBits stage, u32 query);
 void        r_debug_timers_read(void);
 
-/* Render target helpers */
+// Render target helpers
 qk_result_t r_create_render_targets(void);
 void        r_destroy_render_targets(void);
 
-/* Descriptor helpers */
+// Descriptor helpers
 qk_result_t r_descriptors_init(void);
 void        r_descriptors_shutdown(void);
 
-#endif /* R_TYPES_H */
+#endif // R_TYPES_H

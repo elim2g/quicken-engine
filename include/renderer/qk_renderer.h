@@ -11,24 +11,24 @@
 #include "quicken.h"
 #include "qk_math.h"
 
-/* Configuration */
+// Configuration
 typedef struct {
     void    *sdl_window;
-    u32      render_width;      /* 0 = default (1920) */
-    u32      render_height;     /* 0 = default (1080) */
+    u32      render_width; // 0 = default (1920)
+    u32      render_height; // 0 = default (1080)
     u32      window_width;
     u32      window_height;
     bool     aspect_fit;
     bool     vsync;
 } qk_renderer_config_t;
 
-/* Camera */
+// Camera
 typedef struct {
-    f32     view_projection[16];    /* column-major 4x4 */
+    f32     view_projection[16]; // column-major 4x4
     f32     position[3];
 } qk_camera_t;
 
-/* World vertex (produced by map loader, consumed by renderer) */
+// World vertex (produced by map loader, consumed by renderer)
 typedef struct {
     f32     position[3];
     f32     normal[3];
@@ -37,17 +37,17 @@ typedef struct {
     u32     texture_id;
 } qk_world_vertex_t;
 
-/* Surface draw info */
+// Surface draw info
 typedef struct {
     u32     index_offset;
     u32     index_count;
     u32     vertex_offset;
-    u32     texture_index;      /* BSP texture index (into texture lump) */
-    u32     surface_flags;      /* Q3 surface flags (NODRAW, SKY, TRANS33, etc.) */
-    u32     contents_flags;     /* Q3 contents flags (SOLID, FOG, PLAYERCLIP, etc.) */
+    u32     texture_index; // BSP texture index (into texture lump)
+    u32     surface_flags; // Q3 surface flags (NODRAW, SKY, TRANS33, etc.)
+    u32     contents_flags; // Q3 contents flags (SOLID, FOG, PLAYERCLIP, etc.)
 } qk_draw_surface_t;
 
-/* UI quad (low-level, used by UI module internally) */
+// UI quad (low-level, used by UI module internally)
 typedef struct {
     f32     x, y, w, h;
     f32     u0, v0, u1, v1;
@@ -57,7 +57,7 @@ typedef struct {
 
 typedef u32 qk_texture_id_t;
 
-/* GPU stats */
+// GPU stats
 typedef struct {
     f64     gpu_frame_ms;
     f64     world_pass_ms;
@@ -69,17 +69,17 @@ typedef struct {
     f32     acquire_ms;
 } qk_gpu_stats_t;
 
-/* Lifecycle */
+// Lifecycle
 qk_result_t qk_renderer_init(const qk_renderer_config_t *config);
 void        qk_renderer_shutdown(void);
 
-/* Resolution / display */
+// Resolution / display
 void qk_renderer_set_render_resolution(u32 width, u32 height);
 void qk_renderer_set_aspect_mode(bool aspect_fit);
 void qk_renderer_set_vsync(bool vsync);
 void qk_renderer_handle_window_resize(u32 new_width, u32 new_height);
 
-/* Resource upload (map load) */
+// Resource upload (map load)
 qk_result_t qk_renderer_upload_world(
     const qk_world_vertex_t *vertices, u32 vertex_count,
     const u32 *indices, u32 index_count,
@@ -88,23 +88,23 @@ qk_texture_id_t qk_renderer_upload_texture(
     const u8 *pixels, u32 width, u32 height, u32 channels, bool nearest);
 void qk_renderer_free_world(void);
 
-/* Lightmap atlas upload (call after upload_world, before rendering) */
+// Lightmap atlas upload (call after upload_world, before rendering)
 qk_result_t qk_renderer_upload_lightmap_atlas(const u8 *pixels, u32 w, u32 h);
 
-/* Frame rendering */
+// Frame rendering
 void qk_renderer_begin_frame(const qk_camera_t *camera);
 void qk_renderer_draw_world(void);
 void qk_renderer_push_ui_quad(const qk_ui_quad_t *quad);
 void qk_renderer_end_frame(void);
 
-/* Entity rendering (debug visuals for vertical slice) */
+// Entity rendering (debug visuals for vertical slice)
 void qk_renderer_draw_capsule(f32 pos_x, f32 pos_y, f32 pos_z,
                                f32 radius, f32 half_height,
                                f32 yaw, u32 color_rgba);
 void qk_renderer_draw_sphere(f32 pos_x, f32 pos_y, f32 pos_z,
                               f32 radius, u32 color_rgba);
 
-/* Beam effects */
+// Beam effects
 void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
                                  f32 end_x, f32 end_y, f32 end_z,
                                  f32 age_seconds, u32 color_rgba);
@@ -113,11 +113,11 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
                                 f32 end_x, f32 end_y, f32 end_z,
                                 f32 time_seconds);
 
-/* Viewmodel (first-person weapon model, right-handed placement) */
+// Viewmodel (first-person weapon model, right-handed placement)
 void qk_renderer_draw_viewmodel(u32 weapon_id, f32 pitch_deg, f32 yaw_deg,
                                  f32 time_seconds, bool firing);
 
-/* Rocket smoke trail (retro zdoom-style particles behind rocket) */
+// Rocket smoke trail (retro zdoom-style particles behind rocket)
 void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
                                     f32 vel_x, f32 vel_y, f32 vel_z,
                                     f32 age_seconds);
@@ -148,7 +148,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
                                    f32 in_dir_x, f32 in_dir_y, f32 in_dir_z,
                                    f32 age_seconds, u32 color_rgba);
 
-/* Dynamic lights (Forward+) */
+// Dynamic lights (Forward+)
 typedef struct {
     f32 position[3];
     f32 radius;
@@ -158,10 +158,10 @@ typedef struct {
 
 void qk_renderer_submit_light(const qk_dynamic_light_t *light);
 
-/* Ambient lighting level (HDR-space value, default 0.15) */
+// Ambient lighting level (HDR-space value, default 0.15)
 void qk_renderer_set_ambient(f32 ambient);
 
-/* Debug */
+// Debug
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 
 /* High-level UI drawing (convenience functions built on push_ui_quad).
@@ -172,4 +172,4 @@ void qk_ui_draw_text(f32 x, f32 y, const char *text, f32 size,
 void qk_ui_draw_number(f32 x, f32 y, i32 value, f32 size, u32 color_rgba);
 f32  qk_ui_text_width(const char *text, f32 size);
 
-#endif /* QK_RENDERER_H */
+#endif // QK_RENDERER_H

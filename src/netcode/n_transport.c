@@ -27,65 +27,65 @@
 
 #endif
 
-/* ---- Loopback ---- */
+// --- Loopback ---
 
 void n_transport_open_loopback(n_transport_t *client, n_transport_t *server,
                                n_loopback_queue_t *q1, n_loopback_queue_t *q2) {
-    /* q1: client->server direction (client sends, server recvs)
-     * q2: server->client direction (server sends, client recvs) */
+    // q1: client->server direction (client sends, server recvs)
+    // q2: server->client direction (server sends, client recvs)
     memset(q1, 0, sizeof(*q1));
     memset(q2, 0, sizeof(*q2));
 
     memset(client, 0, sizeof(*client));
     client->type = N_TRANSPORT_LOOPBACK;
     client->socket_fd = -1;
-    client->send_queue = q1;    /* client writes to q1 */
-    client->recv_queue = q2;    /* client reads from q2 */
+    client->send_queue = q1;    // client writes to q1
+    client->recv_queue = q2;    // client reads from q2
 
     memset(server, 0, sizeof(*server));
     server->type = N_TRANSPORT_LOOPBACK;
     server->socket_fd = -1;
-    server->send_queue = q2;    /* server writes to q2 */
-    server->recv_queue = q1;    /* server reads from q1 */
+    server->send_queue = q2;    // server writes to q2
+    server->recv_queue = q1;    // server reads from q1
 }
 
 static i32 loopback_send(n_transport_t *t, const void *data, u32 len) {
     if (!t->send_queue) return -1;
     if (len > N_TRANSPORT_MTU) return -1;
 
-    n_loopback_queue_t *q = t->send_queue;
-    u32 next_head = (q->head + 1) % N_LOOPBACK_QUEUE_SIZE;
-    if (next_head == q->tail) {
-        return -1; /* queue full */
+    n_loopback_queue_t *queue = t->send_queue;
+    u32 next_head = (queue->head + 1) % N_LOOPBACK_QUEUE_SIZE;
+    if (next_head == queue->tail) {
+        return -1; // queue full
     }
 
-    q->packets[q->head].len = (u16)len;
-    memcpy(q->packets[q->head].data, data, len);
-    q->head = next_head;
+    queue->packets[queue->head].len = (u16)len;
+    memcpy(queue->packets[queue->head].data, data, len);
+    queue->head = next_head;
     return (i32)len;
 }
 
 static i32 loopback_recv(n_transport_t *t, void *data, u32 max_len) {
     if (!t->recv_queue) return -1;
 
-    n_loopback_queue_t *q = t->recv_queue;
-    if (q->tail == q->head) {
-        return 0; /* nothing to read */
+    n_loopback_queue_t *queue = t->recv_queue;
+    if (queue->tail == queue->head) {
+        return 0; // nothing to read
     }
 
-    u16 pkt_len = q->packets[q->tail].len;
+    u16 pkt_len = queue->packets[queue->tail].len;
     if (pkt_len > max_len) {
-        /* skip oversized packet */
-        q->tail = (q->tail + 1) % N_LOOPBACK_QUEUE_SIZE;
+        // skip oversized packet
+        queue->tail = (queue->tail + 1) % N_LOOPBACK_QUEUE_SIZE;
         return -1;
     }
 
-    memcpy(data, q->packets[q->tail].data, pkt_len);
-    q->tail = (q->tail + 1) % N_LOOPBACK_QUEUE_SIZE;
+    memcpy(data, queue->packets[queue->tail].data, pkt_len);
+    queue->tail = (queue->tail + 1) % N_LOOPBACK_QUEUE_SIZE;
     return (i32)pkt_len;
 }
 
-/* ---- UDP ---- */
+// --- UDP ---
 
 bool n_transport_open_udp(n_transport_t *t, u16 bind_port) {
     memset(t, 0, sizeof(*t));
@@ -97,7 +97,7 @@ bool n_transport_open_udp(n_transport_t *t, u16 bind_port) {
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == INVALID_SOCKET) return false;
 
-    /* non-blocking */
+    // non-blocking
     u_long one = 1;
     ioctlsocket(sock, FIONBIO, &one);
 
@@ -117,7 +117,7 @@ bool n_transport_open_udp(n_transport_t *t, u16 bind_port) {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return false;
 
-    /* non-blocking */
+    // non-blocking
     int flags = fcntl(sock, F_GETFL, 0);
     fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
@@ -196,7 +196,7 @@ static i32 udp_recv(n_transport_t *t, n_address_t *from,
     return (i32)result;
 }
 
-/* ---- Unified interface ---- */
+// --- Unified interface ---
 
 i32 n_transport_send(n_transport_t *t, const n_address_t *to,
                      const void *data, u32 len) {

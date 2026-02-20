@@ -6,34 +6,34 @@
 
 #include "g_internal.h"
 
-/* ---- Apply Damage (central damage pipeline) ---- */
+// --- Apply Damage (central damage pipeline) ---
 void g_combat_apply_damage(qk_game_state_t *gs, const damage_event_t *dmg) {
     entity_t *victim = g_entity_find(&gs->entities, dmg->victim_id);
     if (!victim || victim->type != ENTITY_PLAYER) return;
 
     qk_player_state_t *vps = &victim->data.player;
 
-    /* only damage alive players */
+    // only damage alive players
     if (vps->alive_state != QK_PSTATE_ALIVE) return;
 
     i16 raw_damage = dmg->damage;
 
-    /* self damage: apply knockback in ALL game states (rocket jumping) */
+    // self damage: apply knockback in ALL game states (rocket jumping)
     if (dmg->is_self) {
         const g_weapon_def_t *wdef = &g_weapon_defs[dmg->weapon];
         raw_damage = (i16)((f32)raw_damage * wdef->self_damage_mult);
         if (raw_damage <= 0) return;
 
-        f32 kb = wdef->self_knockback;
-        vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, kb * (f32)raw_damage));
-        vps->splash_slick_ticks = 8; /* ~62ms at 128Hz */
+        f32 knockback = wdef->self_knockback;
+        vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, knockback * (f32)raw_damage));
+        vps->splash_slick_ticks = 8; // ~62ms at 128Hz
         return;
     }
 
-    /* only deal damage to other players during PLAYING state */
+    // only deal damage to other players during PLAYING state
     if (gs->ca.state != CA_STATE_PLAYING) return;
 
-    /* armor absorption */
+    // armor absorption
     i16 health_dmg, armor_dmg;
     g_player_apply_armor(vps, raw_damage, &health_dmg, &armor_dmg);
 
@@ -42,33 +42,33 @@ void g_combat_apply_damage(qk_game_state_t *gs, const damage_event_t *dmg) {
 
     i16 actual_damage = health_dmg + armor_dmg;
 
-    /* knockback (non-self only; self-knockback handled above) */
+    // knockback (non-self only; self-knockback handled above)
     vps->velocity = vec3_add(vps->velocity, vec3_scale(dmg->dir, dmg->knockback * (f32)actual_damage));
 
-    /* update stats */
+    // update stats
     entity_t *attacker = g_entity_find(&gs->entities, dmg->attacker_id);
     if (attacker && attacker->type == ENTITY_PLAYER && !dmg->is_self) {
         attacker->data.player.damage_given += (u16)actual_damage;
     }
     vps->damage_taken += (u16)actual_damage;
 
-    /* push hit event for attacker's client */
+    // push hit event for attacker's client
     if (!dmg->is_self) {
-        game_event_t evt = {0};
-        evt.type = GEVT_HIT;
-        evt.server_time = gs->server_time_ms;
-        evt.data.hit.target = dmg->victim_id;
-        evt.data.hit.damage = actual_damage;
+        game_event_t evt = {
+            .type = GEVT_HIT,
+            .server_time = gs->server_time_ms,
+            .data.hit = { .target = dmg->victim_id, .damage = actual_damage },
+        };
         g_event_push(&gs->events, &evt);
     }
 
-    /* check for kill */
+    // check for kill
     if (vps->health <= 0) {
         g_combat_kill(gs, dmg->attacker_id, dmg->victim_id, dmg->weapon);
     }
 }
 
-/* ---- Kill Processing ---- */
+// --- Kill Processing ---
 void g_combat_kill(qk_game_state_t *gs, u8 attacker_id, u8 victim_id,
                     qk_weapon_id_t weapon) {
     entity_t *victim = g_entity_find(&gs->entities, victim_id);
@@ -78,7 +78,7 @@ void g_combat_kill(qk_game_state_t *gs, u8 attacker_id, u8 victim_id,
     vps->alive_state = QK_PSTATE_DEAD;
     vps->deaths++;
 
-    /* increment attacker frags (if not self-kill) */
+    // increment attacker frags (if not self-kill)
     if (attacker_id != victim_id) {
         entity_t *attacker = g_entity_find(&gs->entities, attacker_id);
         if (attacker && attacker->type == ENTITY_PLAYER) {
@@ -86,20 +86,19 @@ void g_combat_kill(qk_game_state_t *gs, u8 attacker_id, u8 victim_id,
         }
     }
 
-    /* push kill event */
-    game_event_t evt = {0};
-    evt.type = GEVT_KILL;
-    evt.server_time = gs->server_time_ms;
-    evt.data.kill.attacker = attacker_id;
-    evt.data.kill.victim = victim_id;
-    evt.data.kill.weapon = weapon;
+    // push kill event
+    game_event_t evt = {
+        .type = GEVT_KILL,
+        .server_time = gs->server_time_ms,
+        .data.kill = { .attacker = attacker_id, .victim = victim_id, .weapon = weapon },
+    };
     g_event_push(&gs->events, &evt);
 
-    /* recount alive players */
+    // recount alive players
     g_ca_count_alive(gs);
 }
 
-/* ---- Hitscan Trace (Railgun) ---- */
+// --- Hitscan Trace (Railgun) ---
 void g_combat_hitscan_trace(qk_game_state_t *gs, entity_t *attacker,
                              vec3_t start, vec3_t dir, f32 range,
                              qk_weapon_id_t weapon) {
@@ -129,30 +128,31 @@ void g_combat_hitscan_trace(qk_game_state_t *gs, entity_t *attacker,
         }
     }
 
-    /* apply damage if we hit a player */
+    // apply damage if we hit a player
     if (hit_ent) {
         vec3_t hit_dir = vec3_normalize(vec3_sub(hit_ent->data.player.origin, start));
-        damage_event_t dmg = {0};
-        dmg.attacker_id = attacker->id;
-        dmg.victim_id = hit_ent->id;
-        dmg.damage = (i16)wdef->damage;
-        dmg.dir = hit_dir;
-        dmg.knockback = wdef->knockback;
-        dmg.weapon = weapon;
-        dmg.is_self = false;
+        damage_event_t dmg = {
+            .attacker_id = attacker->id,
+            .victim_id = hit_ent->id,
+            .damage = (i16)wdef->damage,
+            .dir = hit_dir,
+            .knockback = wdef->knockback,
+            .weapon = weapon,
+            .is_self = false,
+        };
         g_combat_apply_damage(gs, &dmg);
     }
 }
 
-/* ---- Beam Trace (Lightning Gun) ---- */
+// --- Beam Trace (Lightning Gun) ---
 void g_combat_beam_trace(qk_game_state_t *gs, entity_t *attacker,
                           vec3_t start, vec3_t dir, f32 range,
                           qk_weapon_id_t weapon) {
-    /* Beam is mechanically identical to hitscan, just fires more frequently */
+    // Beam is mechanically identical to hitscan, just fires more frequently
     g_combat_hitscan_trace(gs, attacker, start, dir, range, weapon);
 }
 
-/* ---- Splash Damage (Rocket Explosion) ---- */
+// --- Splash Damage (Rocket Explosion) ---
 void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
                              f32 radius, f32 max_damage, f32 knockback,
                              u8 attacker_id, qk_weapon_id_t weapon,
@@ -162,8 +162,8 @@ void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
         if (e->id == skip_id) continue;
         if (e->data.player.alive_state != QK_PSTATE_ALIVE) continue;
 
-        /* Find nearest point on player AABB to explosion origin.
-           This ensures rockets at feet produce upward impulse (not horizontal). */
+        // Find nearest point on player AABB to explosion origin.
+        // This ensures rockets at feet produce upward impulse (not horizontal).
         vec3_t pmin = vec3_add(e->data.player.origin, e->data.player.mins);
         vec3_t pmax = vec3_add(e->data.player.origin, e->data.player.maxs);
         vec3_t nearest = {
@@ -181,14 +181,15 @@ void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
         vec3_t dir = (dist > 0.001f) ? vec3_normalize(diff) : (vec3_t){0, 0, 1.0f};
         bool is_self = (e->id == attacker_id);
 
-        damage_event_t dmg = {0};
-        dmg.attacker_id = attacker_id;
-        dmg.victim_id = e->id;
-        dmg.damage = damage;
-        dmg.dir = dir;
-        dmg.knockback = kb;
-        dmg.weapon = weapon;
-        dmg.is_self = is_self;
+        damage_event_t dmg = {
+            .attacker_id = attacker_id,
+            .victim_id = e->id,
+            .damage = damage,
+            .dir = dir,
+            .knockback = kb,
+            .weapon = weapon,
+            .is_self = is_self,
+        };
         g_combat_apply_damage(gs, &dmg);
     }
 }

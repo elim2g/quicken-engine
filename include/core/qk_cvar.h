@@ -10,7 +10,7 @@
 
 #include "quicken.h"
 
-/* ---- Types ---- */
+// --- Types ---
 
 typedef enum {
     QK_CVAR_FLOAT,
@@ -19,9 +19,11 @@ typedef enum {
     QK_CVAR_STRING
 } qk_cvar_type_t;
 
-/* Flags */
-#define QK_CVAR_ARCHIVE     (1 << 0)    /* saved to config file */
-#define QK_CVAR_READONLY    (1 << 1)    /* cannot be changed at runtime */
+// Flags
+enum {
+    QK_CVAR_ARCHIVE  = (1 << 0),    // saved to config file
+    QK_CVAR_READONLY = (1 << 1),    // cannot be changed at runtime
+};
 
 #define QK_CVAR_MAX_COUNT   512
 #define QK_CVAR_NAME_LEN    64
@@ -29,7 +31,7 @@ typedef enum {
 
 typedef struct qk_cvar qk_cvar_t;
 
-/* Callback: called after value changes, receives the cvar that changed */
+// Callback: called after value changes, receives the cvar that changed
 typedef void (*qk_cvar_callback_t)(qk_cvar_t *cvar);
 
 struct qk_cvar {
@@ -44,12 +46,12 @@ struct qk_cvar {
     bool                in_use;
 };
 
-/* ---- Lifecycle ---- */
+// --- Lifecycle ---
 
 void qk_cvar_init(void);
 void qk_cvar_shutdown(void);
 
-/* ---- Registration (returns cached pointer for direct reads) ---- */
+// --- Registration (returns cached pointer for direct reads) ---
 
 qk_cvar_t *qk_cvar_register_float(const char *name, f32 default_val,
                                     f32 min_val, f32 max_val,
@@ -62,29 +64,29 @@ qk_cvar_t *qk_cvar_register_bool(const char *name, bool default_val,
 qk_cvar_t *qk_cvar_register_string(const char *name, const char *default_val,
                                      u32 flags, qk_cvar_callback_t cb);
 
-/* ---- Lookup ---- */
+// --- Lookup ---
 
 qk_cvar_t *qk_cvar_find(const char *name);
 
-/* ---- Setters (with clamping + callback) ---- */
+// --- Setters (with clamping + callback) ---
 
 bool qk_cvar_set_float(qk_cvar_t *cvar, f32 value);
 bool qk_cvar_set_int(qk_cvar_t *cvar, i32 value);
 bool qk_cvar_set_bool(qk_cvar_t *cvar, bool value);
 bool qk_cvar_set_string(qk_cvar_t *cvar, const char *value);
 
-/* Set from string (auto-parses based on type) */
+// Set from string (auto-parses based on type)
 bool qk_cvar_set_from_string(qk_cvar_t *cvar, const char *str);
 
-/* Reset to default */
+// Reset to default
 void qk_cvar_reset(qk_cvar_t *cvar);
 
-/* ---- Iteration ---- */
+// --- Iteration ---
 
 u32         qk_cvar_count(void);
-qk_cvar_t  *qk_cvar_get_all(void);   /* returns static array */
+qk_cvar_t  *qk_cvar_get_all(void);   // returns static array
 
-/* Format value to string */
+// Format value to string
 void qk_cvar_to_string(const qk_cvar_t *cvar, char *buf, u32 buf_size);
 
-#endif /* QK_CVAR_H */
+#endif // QK_CVAR_H

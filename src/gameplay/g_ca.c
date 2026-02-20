@@ -7,7 +7,7 @@
 
 #include "g_internal.h"
 
-/* ---- Default spawn points (hardcoded until map loader provides them) ---- */
+// --- Default spawn points (hardcoded until map loader provides them) ---
 static const qk_spawn_point_t s_alpha_spawns[] = {
     {{ 100.0f,  100.0f, 0.0f}, 0.0f},
     {{ 100.0f, -100.0f, 0.0f}, 0.0f},
@@ -25,7 +25,7 @@ static const qk_spawn_point_t s_beta_spawns[] = {
 #define NUM_ALPHA_SPAWNS (sizeof(s_alpha_spawns) / sizeof(s_alpha_spawns[0]))
 #define NUM_BETA_SPAWNS  (sizeof(s_beta_spawns) / sizeof(s_beta_spawns[0]))
 
-/* ---- Init ---- */
+// --- Init ---
 void g_ca_init(qk_game_state_t *gs) {
     gs->ca.state = CA_STATE_WARMUP;
     gs->ca.state_timer_ms = 0;
@@ -36,7 +36,7 @@ void g_ca_init(qk_game_state_t *gs) {
     gs->ca.alive_beta = 0;
 }
 
-/* ---- Count alive players per team ---- */
+// --- Count alive players per team ---
 void g_ca_count_alive(qk_game_state_t *gs) {
     u8 alive_a = 0, alive_b = 0;
 
@@ -53,17 +53,17 @@ void g_ca_count_alive(qk_game_state_t *gs) {
     gs->ca.alive_beta = alive_b;
 }
 
-/* ---- Start Countdown ---- */
+// --- Start Countdown ---
 void g_ca_start_countdown(qk_game_state_t *gs) {
     gs->ca.state = CA_STATE_COUNTDOWN;
     gs->ca.state_timer_ms = gs->countdown_time_ms;
 }
 
-/* ---- Begin Round (transition from COUNTDOWN -> PLAYING) ---- */
+// --- Begin Round (transition from COUNTDOWN -> PLAYING) ---
 void g_ca_begin_round(qk_game_state_t *gs) {
     gs->ca.round_number++;
 
-    /* destroy all projectiles */
+    // destroy all projectiles
     entity_t *proj = g_entity_first(&gs->entities, ENTITY_PROJECTILE);
     while (proj) {
         entity_t *next = g_entity_next(&gs->entities, proj, ENTITY_PROJECTILE);
@@ -71,7 +71,7 @@ void g_ca_begin_round(qk_game_state_t *gs) {
         proj = next;
     }
 
-    /* spawn all players at their team spawn points */
+    // spawn all players at their team spawn points
     u8 alpha_idx = 0, beta_idx = 0;
 
     for (entity_t *e = g_entity_first(&gs->entities, ENTITY_PLAYER);
@@ -93,15 +93,16 @@ void g_ca_begin_round(qk_game_state_t *gs) {
 
     g_ca_count_alive(gs);
 
-    /* push round start event */
-    game_event_t evt = {0};
-    evt.type = GEVT_ROUND_START;
-    evt.server_time = gs->server_time_ms;
-    evt.data.round_start.round_number = gs->ca.round_number;
+    // push round start event
+    game_event_t evt = {
+        .type = GEVT_ROUND_START,
+        .server_time = gs->server_time_ms,
+        .data.round_start = { .round_number = gs->ca.round_number },
+    };
     g_event_push(&gs->events, &evt);
 }
 
-/* ---- End Round (one team eliminated) ---- */
+// --- End Round (one team eliminated) ---
 void g_ca_end_round(qk_game_state_t *gs) {
     u8 winner = 0;
 
@@ -112,24 +113,27 @@ void g_ca_end_round(qk_game_state_t *gs) {
         gs->ca.score_alpha++;
         winner = QK_TEAM_ALPHA;
     }
-    /* both zero = draw round, no score change */
+    // both zero = draw round, no score change
 
     gs->ca.state = CA_STATE_ROUND_END;
     gs->ca.state_timer_ms = QK_CA_ROUND_END_MS;
 
-    /* push round end event */
-    game_event_t evt = {0};
-    evt.type = GEVT_ROUND_END;
-    evt.server_time = gs->server_time_ms;
-    evt.data.round_end.winner_team = winner;
-    evt.data.round_end.score_a = gs->ca.score_alpha;
-    evt.data.round_end.score_b = gs->ca.score_beta;
+    // push round end event
+    game_event_t evt = {
+        .type = GEVT_ROUND_END,
+        .server_time = gs->server_time_ms,
+        .data.round_end = {
+            .winner_team = winner,
+            .score_a = gs->ca.score_alpha,
+            .score_b = gs->ca.score_beta,
+        },
+    };
     g_event_push(&gs->events, &evt);
 }
 
-/* ---- End Round on Timeout ---- */
+// --- End Round on Timeout ---
 void g_ca_end_round_timeout(qk_game_state_t *gs) {
-    /* sum health+armor for each team */
+    // sum health+armor for each team
     i32 total_alpha = 0, total_beta = 0;
 
     for (entity_t *e = g_entity_first(&gs->entities, ENTITY_PLAYER);
@@ -150,25 +154,28 @@ void g_ca_end_round_timeout(qk_game_state_t *gs) {
         gs->ca.score_beta++;
         winner = QK_TEAM_BETA;
     }
-    /* equal = draw, no score change */
+    // equal = draw, no score change
 
     gs->ca.state = CA_STATE_ROUND_END;
     gs->ca.state_timer_ms = QK_CA_ROUND_END_MS;
 
-    game_event_t evt = {0};
-    evt.type = GEVT_ROUND_END;
-    evt.server_time = gs->server_time_ms;
-    evt.data.round_end.winner_team = winner;
-    evt.data.round_end.score_a = gs->ca.score_alpha;
-    evt.data.round_end.score_b = gs->ca.score_beta;
+    game_event_t evt = {
+        .type = GEVT_ROUND_END,
+        .server_time = gs->server_time_ms,
+        .data.round_end = {
+            .winner_team = winner,
+            .score_a = gs->ca.score_alpha,
+            .score_b = gs->ca.score_beta,
+        },
+    };
     g_event_push(&gs->events, &evt);
 }
 
-/* ---- CA Tick (called once per server tick) ---- */
+// --- CA Tick (called once per server tick) ---
 void g_ca_tick(qk_game_state_t *gs, u32 dt_ms) {
     switch (gs->ca.state) {
     case CA_STATE_WARMUP:
-        /* allow free movement, no damage. wait for ready-up or admin force. */
+        // allow free movement, no damage. wait for ready-up or admin force.
         break;
 
     case CA_STATE_COUNTDOWN:
@@ -199,11 +206,14 @@ void g_ca_tick(qk_game_state_t *gs, u32 dt_ms) {
                 gs->ca.score_beta >= gs->rounds_to_win) {
                 gs->ca.state = CA_STATE_MATCH_END;
 
-                game_event_t evt = {0};
-                evt.type = GEVT_MATCH_END;
-                evt.server_time = gs->server_time_ms;
-                evt.data.match_end.winner_team =
-                    (gs->ca.score_alpha >= gs->rounds_to_win) ? QK_TEAM_ALPHA : QK_TEAM_BETA;
+                game_event_t evt = {
+                    .type = GEVT_MATCH_END,
+                    .server_time = gs->server_time_ms,
+                    .data.match_end = {
+                        .winner_team = (gs->ca.score_alpha >= gs->rounds_to_win)
+                            ? QK_TEAM_ALPHA : QK_TEAM_BETA,
+                    },
+                };
                 g_event_push(&gs->events, &evt);
             } else {
                 g_ca_start_countdown(gs);
@@ -212,7 +222,7 @@ void g_ca_tick(qk_game_state_t *gs, u32 dt_ms) {
         break;
 
     case CA_STATE_MATCH_END:
-        /* display final scores. wait for admin restart. */
+        // display final scores. wait for admin restart.
         break;
 
     default:

@@ -27,7 +27,7 @@
 #define DEMO_MAX_ENTITIES 256
 #define DEMO_PAYLOAD_MAX  8192
 
-/* ---- State machine ---- */
+// --- State machine ---
 
 typedef enum {
     DEMO_IDLE,
@@ -40,14 +40,14 @@ static struct {
     FILE               *file;
     qk_demo_header_t    header;
 
-    /* Playback peek-ahead */
+    // Playback peek-ahead
     qk_demo_record_t    next_record;
     bool                 has_peeked;
     qk_usercmd_t         last_cmd;
     qk_ca_state_t        last_ca_state;
 } s_demo;
 
-/* ---- Helpers ---- */
+// --- Helpers ---
 
 static u32 count_mask_bits(const u64 *mask, u32 count) {
     u32 total = 0;
@@ -66,7 +66,7 @@ static void demo_build_path(char *out, u32 out_size, const char *name) {
     snprintf(out, out_size, "%s/%s%s", DEMO_DIR, name, DEMO_EXT);
 }
 
-/* ---- Lifecycle ---- */
+// --- Lifecycle ---
 
 void qk_demo_init(void) {
     memset(&s_demo, 0, sizeof(s_demo));
@@ -81,7 +81,7 @@ void qk_demo_shutdown(void) {
     }
 }
 
-/* ---- Recording ---- */
+// --- Recording ---
 
 bool qk_demo_record_start(const char *name, u8 client_id,
                            u32 start_tick, const char *map_name) {
@@ -114,7 +114,7 @@ bool qk_demo_record_start(const char *name, u8 client_id,
 void qk_demo_record_stop(void) {
     if (s_demo.mode != DEMO_RECORDING) return;
 
-    /* Write END record */
+    // Write END record
     qk_demo_record_t end_rec = {0};
     end_rec.type = QK_DEMO_RECORD_END;
     fwrite(&end_rec, sizeof(end_rec), 1, s_demo.file);
@@ -185,7 +185,7 @@ void qk_demo_record_gamestate(u32 tick, const struct qk_ca_state *ca_state) {
     fwrite(ca_state, sizeof(qk_ca_state_t), 1, s_demo.file);
 }
 
-/* ---- Playback ---- */
+// --- Playback ---
 
 bool qk_demo_play_start(const char *name) {
     if (s_demo.mode != DEMO_IDLE) return false;
@@ -228,7 +228,7 @@ void qk_demo_play_stop(void) {
 bool qk_demo_play_tick(u32 current_tick) {
     if (s_demo.mode != DEMO_PLAYING) return false;
 
-    /* Ensure we have a peeked record */
+    // Ensure we have a peeked record
     if (!s_demo.has_peeked) {
         if (fread(&s_demo.next_record, sizeof(qk_demo_record_t), 1,
                   s_demo.file) != 1) {
@@ -237,7 +237,7 @@ bool qk_demo_play_tick(u32 current_tick) {
         s_demo.has_peeked = true;
     }
 
-    /* Process all records whose tick <= current_tick */
+    // Process all records whose tick <= current_tick
     while (s_demo.has_peeked &&
            s_demo.next_record.server_tick <= current_tick) {
         qk_demo_record_t *rec = &s_demo.next_record;
@@ -246,7 +246,7 @@ bool qk_demo_play_tick(u32 current_tick) {
             return false;
         }
 
-        /* Read payload */
+        // Read payload
         u8 payload[DEMO_PAYLOAD_MAX];
         u16 plen = rec->payload_len;
         if (plen > sizeof(payload)) plen = (u16)sizeof(payload);
@@ -255,7 +255,7 @@ bool qk_demo_play_tick(u32 current_tick) {
             if (fread(payload, plen, 1, s_demo.file) != 1) {
                 return false;
             }
-            /* Skip excess bytes if payload was truncated */
+            // Skip excess bytes if payload was truncated
             if (rec->payload_len > plen) {
                 fseek(s_demo.file, rec->payload_len - plen, SEEK_CUR);
             }
@@ -263,7 +263,7 @@ bool qk_demo_play_tick(u32 current_tick) {
 
         switch (rec->type) {
         case QK_DEMO_RECORD_SNAPSHOT: {
-            if (plen < 40) break; /* 4+4+32 minimum */
+            if (plen < 40) break;  // 4+4+32 minimum
 
             u32 snap_tick, snap_entity_count;
             u64 snap_mask[QK_DEMO_MASK_U64S];
@@ -271,7 +271,7 @@ bool qk_demo_play_tick(u32 current_tick) {
             memcpy(&snap_entity_count, payload + 4, 4);
             memcpy(snap_mask, payload + 8, QK_DEMO_MASK_U64S * 8);
 
-            /* Reconstruct full entity array from sparse data */
+            // Reconstruct full entity array from sparse data
             n_entity_state_t entities[DEMO_MAX_ENTITIES];
             memset(entities, 0, sizeof(entities));
 
@@ -308,18 +308,18 @@ bool qk_demo_play_tick(u32 current_tick) {
             break;
         }
 
-        /* Peek next record */
+        // Peek next record
         if (fread(&s_demo.next_record, sizeof(qk_demo_record_t), 1,
                   s_demo.file) != 1) {
             s_demo.has_peeked = false;
-            return true; /* last record processed, no more data */
+            return true;  // last record processed, no more data
         }
     }
 
     return true;
 }
 
-/* ---- State queries ---- */
+// --- State queries ---
 
 bool qk_demo_is_recording(void) {
     return s_demo.mode == DEMO_RECORDING;

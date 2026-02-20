@@ -7,7 +7,7 @@
 
 #include "n_internal.h"
 
-/* ---- Packet header (8 bytes, little-endian) ---- */
+// --- Packet header (8 bytes, little-endian) ---
 
 void n_packet_header_write(u8 *buf, const n_packet_header_t *hdr) {
     buf[0] = (u8)(hdr->sequence & 0xFF);
@@ -29,19 +29,19 @@ void n_packet_header_read(const u8 *buf, n_packet_header_t *hdr) {
                       | ((u32)buf[7] << 24);
 }
 
-/* ---- Message framing ---- */
-/* 16 bits total: [type: 4 bits][length: 12 bits] */
+// --- Message framing ---
+// 16 bits total: [type: 4 bits][length: 12 bits]
 
-void n_msg_header_write(n_bitwriter_t *w, u8 type, u16 length) {
+void n_msg_header_write(n_bitwriter_t *writer, u8 type, u16 length) {
     u32 combined = ((u32)type & 0xF) | (((u32)length & 0xFFF) << 4);
-    n_write_bits(w, combined, 16);
+    n_write_bits(writer, combined, 16);
 }
 
-bool n_msg_header_read(n_bitreader_t *r, n_msg_header_t *hdr) {
-    if (n_bitreader_overflowed(r)) return false;
+bool n_msg_header_read(n_bitreader_t *reader, n_msg_header_t *hdr) {
+    if (n_bitreader_overflowed(reader)) return false;
 
-    u32 combined = n_read_bits(r, 16);
-    if (n_bitreader_overflowed(r)) return false;
+    u32 combined = n_read_bits(reader, 16);
+    if (n_bitreader_overflowed(reader)) return false;
 
     hdr->type = (u8)(combined & 0xF);
     hdr->length = (u16)((combined >> 4) & 0xFFF);

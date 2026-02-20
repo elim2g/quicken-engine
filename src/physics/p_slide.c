@@ -10,7 +10,7 @@
 #include "p_internal.h"
 #include "p_simd.h"
 
-/* ---- Clip velocity off a collision plane ---- */
+// --- Clip velocity off a collision plane ---
 
 vec3_t p_clip_velocity(vec3_t velocity, vec3_t normal, f32 overbounce) {
 #if P_USE_SSE2
@@ -26,7 +26,7 @@ vec3_t p_clip_velocity(vec3_t velocity, vec3_t normal, f32 overbounce) {
     result.y = velocity.y - normal.y * backoff;
     result.z = velocity.z - normal.z * backoff;
 
-    /* Ensure no tiny residual into-plane velocity (numerical cleanup) */
+    // Ensure no tiny residual into-plane velocity (numerical cleanup)
     f32 adjust = vec3_dot(result, normal);
     if (adjust < 0.0f) {
         result.x -= normal.x * adjust;
@@ -38,7 +38,7 @@ vec3_t p_clip_velocity(vec3_t velocity, vec3_t normal, f32 overbounce) {
 #endif
 }
 
-/* ---- SlideMove: move and clip against collision planes ---- */
+// --- SlideMove: move and clip against collision planes ---
 
 bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
                   f32 dt, i32 max_bumps) {
@@ -48,12 +48,12 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
     f32 time_left = dt;
 
 #if P_USE_SSE2
-    /* Keep SIMD versions of planes for fast dot products in inner loops */
+    // Keep SIMD versions of planes for fast dot products in inner loops
     __m128 simd_planes[P_MAX_CLIP_PLANES];
 #endif
 
     for (i32 bump = 0; bump < max_bumps; bump++) {
-        /* Where we want to go this sub-step */
+        // Where we want to go this sub-step
         vec3_t end;
         end.x = ps->origin.x + ps->velocity.x * time_left;
         end.y = ps->origin.y + ps->velocity.y * time_left;
@@ -63,28 +63,28 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
                                                  ps->mins, ps->maxs);
 
         if (trace.all_solid) {
-            /* Stuck in solid -- kill velocity */
+            // Stuck in solid -- kill velocity
             ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
             return true;
         }
 
         if (trace.fraction > 0.0f) {
-            /* Move to the contact point */
+            // Move to the contact point
             ps->origin = trace.end_pos;
         }
 
         if (trace.fraction == 1.0f) {
-            break; /* Moved the full distance without hitting anything */
+            break; // Moved the full distance without hitting anything
         }
 
-        /* Reduce remaining time */
+        // Reduce remaining time
         time_left -= time_left * trace.fraction;
 
-        /* Record this clip plane, but skip if nearly duplicate of an
-           existing plane. Curved surfaces decomposed into many small
-           brushes produce near-identical normals per frame; accumulating
-           them as separate clip planes causes the velocity to be killed
-           (classic "corner trap" between two nearly-parallel planes). */
+        // Record this clip plane, but skip if nearly duplicate of an
+        // existing plane. Curved surfaces decomposed into many small
+        // brushes produce near-identical normals per frame; accumulating
+        // them as separate clip planes causes the velocity to be killed
+        // (classic "corner trap" between two nearly-parallel planes).
         {
             bool duplicate = false;
 #if P_USE_SSE2
@@ -121,20 +121,20 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
 #endif
         num_planes++;
 
-        /* Try to clip velocity against all accumulated planes */
+        // Try to clip velocity against all accumulated planes
         i32 i, j;
         for (i = 0; i < num_planes; i++) {
             vec3_t clipped = p_clip_velocity(ps->velocity, planes[i],
                                              QK_PM_OVERCLIP);
 
-            /* Check that the clipped velocity doesn't re-enter any
-               previously recorded plane */
+            // Check that the clipped velocity doesn't re-enter any
+            // previously recorded plane
 #if P_USE_SSE2
             __m128 v_clipped = p_simd_load_vec3(clipped);
             for (j = 0; j < num_planes; j++) {
                 if (j == i) continue;
                 if (p_simd_dot3(v_clipped, simd_planes[j]) < 0.0f) {
-                    break; /* clips into another plane */
+                    break; // clips into another plane
                 }
             }
 #else
@@ -147,29 +147,29 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
 #endif
 
             if (j == num_planes) {
-                /* This clip works against all planes */
+                // This clip works against all planes
                 ps->velocity = clipped;
                 break;
             }
         }
 
         if (i == num_planes) {
-            /* Could not find a valid clip against a single plane.
-               Try sliding along the crease between the last two planes. */
+            // Could not find a valid clip against a single plane.
+            // Try sliding along the crease between the last two planes.
             if (num_planes == 2) {
                 vec3_t dir = vec3_cross(planes[0], planes[1]);
                 dir = vec3_normalize(dir);
                 f32 d = vec3_dot(dir, ps->velocity);
                 ps->velocity = vec3_scale(dir, d);
             } else {
-                /* Cornered by 3+ planes -- stop */
+                // Cornered by 3+ planes -- stop
                 ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
                 return true;
             }
         }
 
-        /* Don't accelerate past original speed (no speed gain from
-           bouncing off walls) */
+        // Don't accelerate past original speed (no speed gain from
+        // bouncing off walls)
         if (vec3_dot(ps->velocity, primal_velocity) <= 0.0f) {
             ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
             return true;
@@ -179,7 +179,7 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
     return (num_planes > 0);
 }
 
-/* ---- StepSlideMove: handle stepping up stairs/ledges ---- */
+// --- StepSlideMove: handle stepping up stairs/ledges ---
 
 /*
  * Q3-style step-slide: try a normal slide first, then attempt a
@@ -205,17 +205,17 @@ void p_step_slide_move(qk_player_state_t *ps,
     vec3_t start_origin = ps->origin;
     vec3_t start_velocity = ps->velocity;
 
-    /* Try normal slide first. If no collision, we're done --
-       no step-up needed. This avoids vertical oscillation on
-       flat ground that "step-up first" would cause. */
+    // Try normal slide first. If no collision, we're done --
+    // no step-up needed. This avoids vertical oscillation on
+    // flat ground that "step-up first" would cause.
     bool hit_wall = p_slide_move(ps, world, dt, 4);
 
     if (!hit_wall) {
         return;
     }
 
-    /* Never step up when still moving upward, UNLESS the player is
-       standing on walkable ground. */
+    // Never step up when still moving upward, UNLESS the player is
+    // standing on walkable ground.
     if (start_velocity.z > 0.0f) {
         vec3_t down_check = start_origin;
         down_check.z -= QK_PM_STEP_HEIGHT;
@@ -224,29 +224,29 @@ void p_step_slide_move(qk_player_state_t *ps,
 
         if (ground_trace.fraction == 1.0f ||
             ground_trace.hit_normal.z < QK_PM_MIN_WALK_NORMAL) {
-            /* Airborne with upward velocity -- don't step up.
-               Use the normal slide result. */
+            // Airborne with upward velocity -- don't step up.
+            // Use the normal slide result.
             return;
         }
     }
 
-    /* Hit something and step-up is allowed. Save the normal-slide
-       result for comparison. */
+    // Hit something and step-up is allowed. Save the normal-slide
+    // result for comparison.
     vec3_t normal_origin = ps->origin;
     vec3_t normal_velocity = ps->velocity;
 
-    /* Restore to start for step-up attempt */
+    // Restore to start for step-up attempt
     ps->origin = start_origin;
     ps->velocity = start_velocity;
 
-    /* Trace up by step height. Record actual distance achieved
-       (ceiling may limit it). */
+    // Trace up by step height. Record actual distance achieved
+    // (ceiling may limit it).
     vec3_t up_dest = start_origin;
     up_dest.z += QK_PM_STEP_HEIGHT;
     qk_trace_result_t trace = p_trace_world(world, ps->origin, up_dest,
                                              ps->mins, ps->maxs);
     if (trace.all_solid) {
-        /* Can't step up at all -- use normal slide result */
+        // Can't step up at all -- use normal slide result
         ps->origin = normal_origin;
         ps->velocity = normal_velocity;
         return;
@@ -255,12 +255,12 @@ void p_step_slide_move(qk_player_state_t *ps,
     f32 step_size = trace.end_pos.z - start_origin.z;
     ps->origin = trace.end_pos;
 
-    /* Slide from the stepped-up position */
+    // Slide from the stepped-up position
     p_slide_move(ps, world, dt, 4);
 
-    /* Step back down by the actual step distance (not the full
-       constant). This prevents pushing through floors when a
-       ceiling limited the upward trace. */
+    // Step back down by the actual step distance (not the full
+    // constant). This prevents pushing through floors when a
+    // ceiling limited the upward trace.
     vec3_t down_dest = ps->origin;
     down_dest.z -= step_size;
     trace = p_trace_world(world, ps->origin, down_dest,
@@ -269,9 +269,9 @@ void p_step_slide_move(qk_player_state_t *ps,
         ps->origin = trace.end_pos;
     }
 
-    /* Clip velocity against the landing surface (Q3 behavior).
-       Without this, a downward velocity component persists and
-       fights the ground plane on the next tick. */
+    // Clip velocity against the landing surface (Q3 behavior).
+    // Without this, a downward velocity component persists and
+    // fights the ground plane on the next tick.
     if (trace.fraction < 1.0f) {
         ps->velocity = p_clip_velocity(ps->velocity, trace.hit_normal,
                                         QK_PM_OVERCLIP);

@@ -53,43 +53,43 @@ bool n_snapshot_has_entity(const n_snapshot_t *snap, u8 id) {
     return (snap->entity_mask[word] & ((u64)1 << bit)) != 0;
 }
 
-/* Write full entity state to bitwriter */
-static void write_full_entity(n_bitwriter_t *w, const n_entity_state_t *e) {
-    n_write_u8(w, e->entity_type);
-    n_write_u8(w, e->flags);
-    n_write_i16(w, e->pos_x);
-    n_write_i16(w, e->pos_y);
-    n_write_i16(w, e->pos_z);
-    n_write_i16(w, e->vel_x);
-    n_write_i16(w, e->vel_y);
-    n_write_i16(w, e->vel_z);
-    n_write_u16(w, e->yaw);
-    n_write_u16(w, e->pitch);
-    n_write_u8(w, e->health);
-    n_write_u8(w, e->armor);
-    n_write_u8(w, e->weapon);
-    n_write_u8(w, e->ammo);
+// Write full entity state to bitwriter
+static void write_full_entity(n_bitwriter_t *writer, const n_entity_state_t *entity) {
+    n_write_u8(writer, entity->entity_type);
+    n_write_u8(writer, entity->flags);
+    n_write_i16(writer, entity->pos_x);
+    n_write_i16(writer, entity->pos_y);
+    n_write_i16(writer, entity->pos_z);
+    n_write_i16(writer, entity->vel_x);
+    n_write_i16(writer, entity->vel_y);
+    n_write_i16(writer, entity->vel_z);
+    n_write_u16(writer, entity->yaw);
+    n_write_u16(writer, entity->pitch);
+    n_write_u8(writer, entity->health);
+    n_write_u8(writer, entity->armor);
+    n_write_u8(writer, entity->weapon);
+    n_write_u8(writer, entity->ammo);
 }
 
-/* Read full entity state from bitreader */
-static void read_full_entity(n_bitreader_t *r, n_entity_state_t *e) {
-    e->entity_type = n_read_u8(r);
-    e->flags = n_read_u8(r);
-    e->pos_x = n_read_i16(r);
-    e->pos_y = n_read_i16(r);
-    e->pos_z = n_read_i16(r);
-    e->vel_x = n_read_i16(r);
-    e->vel_y = n_read_i16(r);
-    e->vel_z = n_read_i16(r);
-    e->yaw = n_read_u16(r);
-    e->pitch = n_read_u16(r);
-    e->health = n_read_u8(r);
-    e->armor = n_read_u8(r);
-    e->weapon = n_read_u8(r);
-    e->ammo = n_read_u8(r);
+// Read full entity state from bitreader
+static void read_full_entity(n_bitreader_t *reader, n_entity_state_t *entity) {
+    entity->entity_type = n_read_u8(reader);
+    entity->flags = n_read_u8(reader);
+    entity->pos_x = n_read_i16(reader);
+    entity->pos_y = n_read_i16(reader);
+    entity->pos_z = n_read_i16(reader);
+    entity->vel_x = n_read_i16(reader);
+    entity->vel_y = n_read_i16(reader);
+    entity->vel_z = n_read_i16(reader);
+    entity->yaw = n_read_u16(reader);
+    entity->pitch = n_read_u16(reader);
+    entity->health = n_read_u8(reader);
+    entity->armor = n_read_u8(reader);
+    entity->weapon = n_read_u8(reader);
+    entity->ammo = n_read_u8(reader);
 }
 
-/* Build 12-bit field bitmask: which fields differ between two entities */
+// Build 12-bit field bitmask: which fields differ between two entities
 static u16 entity_field_diff(const n_entity_state_t *a, const n_entity_state_t *b) {
     u16 mask = 0;
     if (a->pos_x != b->pos_x)                      mask |= (1 << 0);
@@ -107,64 +107,64 @@ static u16 entity_field_diff(const n_entity_state_t *a, const n_entity_state_t *
     return mask;
 }
 
-/* Write changed fields based on bitmask */
-static void write_delta_fields(n_bitwriter_t *w, const n_entity_state_t *e, u16 mask) {
-    if (mask & (1 << 0))  n_write_i16(w, e->pos_x);
-    if (mask & (1 << 1))  n_write_i16(w, e->pos_y);
-    if (mask & (1 << 2))  n_write_i16(w, e->pos_z);
-    if (mask & (1 << 3))  n_write_i16(w, e->vel_x);
-    if (mask & (1 << 4))  n_write_i16(w, e->vel_y);
-    if (mask & (1 << 5))  n_write_i16(w, e->vel_z);
-    if (mask & (1 << 6))  n_write_u16(w, e->yaw);
-    if (mask & (1 << 7))  n_write_u16(w, e->pitch);
-    if (mask & (1 << 8))  n_write_u8(w, e->flags);
-    if (mask & (1 << 9))  n_write_u8(w, e->health);
-    if (mask & (1 << 10)) n_write_u8(w, e->armor);
+// Write changed fields based on bitmask
+static void write_delta_fields(n_bitwriter_t *writer, const n_entity_state_t *entity, u16 mask) {
+    if (mask & (1 << 0))  n_write_i16(writer, entity->pos_x);
+    if (mask & (1 << 1))  n_write_i16(writer, entity->pos_y);
+    if (mask & (1 << 2))  n_write_i16(writer, entity->pos_z);
+    if (mask & (1 << 3))  n_write_i16(writer, entity->vel_x);
+    if (mask & (1 << 4))  n_write_i16(writer, entity->vel_y);
+    if (mask & (1 << 5))  n_write_i16(writer, entity->vel_z);
+    if (mask & (1 << 6))  n_write_u16(writer, entity->yaw);
+    if (mask & (1 << 7))  n_write_u16(writer, entity->pitch);
+    if (mask & (1 << 8))  n_write_u8(writer, entity->flags);
+    if (mask & (1 << 9))  n_write_u8(writer, entity->health);
+    if (mask & (1 << 10)) n_write_u8(writer, entity->armor);
     if (mask & (1 << 11)) {
-        n_write_u8(w, e->weapon);
-        n_write_u8(w, e->ammo);
+        n_write_u8(writer, entity->weapon);
+        n_write_u8(writer, entity->ammo);
     }
 }
 
-/* Read changed fields based on bitmask, applying to existing entity */
-static void read_delta_fields(n_bitreader_t *r, n_entity_state_t *e, u16 mask) {
-    if (mask & (1 << 0))  e->pos_x = n_read_i16(r);
-    if (mask & (1 << 1))  e->pos_y = n_read_i16(r);
-    if (mask & (1 << 2))  e->pos_z = n_read_i16(r);
-    if (mask & (1 << 3))  e->vel_x = n_read_i16(r);
-    if (mask & (1 << 4))  e->vel_y = n_read_i16(r);
-    if (mask & (1 << 5))  e->vel_z = n_read_i16(r);
-    if (mask & (1 << 6))  e->yaw = n_read_u16(r);
-    if (mask & (1 << 7))  e->pitch = n_read_u16(r);
-    if (mask & (1 << 8))  e->flags = n_read_u8(r);
-    if (mask & (1 << 9))  e->health = n_read_u8(r);
-    if (mask & (1 << 10)) e->armor = n_read_u8(r);
+// Read changed fields based on bitmask, applying to existing entity
+static void read_delta_fields(n_bitreader_t *reader, n_entity_state_t *entity, u16 mask) {
+    if (mask & (1 << 0))  entity->pos_x = n_read_i16(reader);
+    if (mask & (1 << 1))  entity->pos_y = n_read_i16(reader);
+    if (mask & (1 << 2))  entity->pos_z = n_read_i16(reader);
+    if (mask & (1 << 3))  entity->vel_x = n_read_i16(reader);
+    if (mask & (1 << 4))  entity->vel_y = n_read_i16(reader);
+    if (mask & (1 << 5))  entity->vel_z = n_read_i16(reader);
+    if (mask & (1 << 6))  entity->yaw = n_read_u16(reader);
+    if (mask & (1 << 7))  entity->pitch = n_read_u16(reader);
+    if (mask & (1 << 8))  entity->flags = n_read_u8(reader);
+    if (mask & (1 << 9))  entity->health = n_read_u8(reader);
+    if (mask & (1 << 10)) entity->armor = n_read_u8(reader);
     if (mask & (1 << 11)) {
-        e->weapon = n_read_u8(r);
-        e->ammo = n_read_u8(r);
+        entity->weapon = n_read_u8(reader);
+        entity->ammo = n_read_u8(reader);
     }
 }
 
 u32 n_snapshot_delta_encode(const n_snapshot_t *baseline, const n_snapshot_t *current,
                             u8 *out_buf, u32 max_bytes) {
-    n_bitwriter_t w;
-    n_bitwriter_init(&w, out_buf, max_bytes);
+    n_bitwriter_t writer;
+    n_bitwriter_init(&writer, out_buf, max_bytes);
 
-    /* Write entity mask delta (4 x 64-bit words) */
+    // Write entity mask delta (4 x 64-bit words)
     for (u32 word = 0; word < N_MAX_ENTITIES / 64; word++) {
         u64 base_mask = baseline ? baseline->entity_mask[word] : 0;
         u64 cur_mask = current->entity_mask[word];
 
         bool changed = (base_mask != cur_mask);
-        n_write_bool(&w, changed);
+        n_write_bool(&writer, changed);
         if (changed) {
-            /* Write the new mask word as two 32-bit halves */
-            n_write_u32(&w, (u32)(cur_mask & 0xFFFFFFFFu));
-            n_write_u32(&w, (u32)(cur_mask >> 32));
+            // Write the new mask word as two 32-bit halves
+            n_write_u32(&writer, (u32)(cur_mask & 0xFFFFFFFFu));
+            n_write_u32(&writer, (u32)(cur_mask >> 32));
         }
     }
 
-    /* Per-entity deltas */
+    // Per-entity deltas
     for (u32 id = 0; id < N_MAX_ENTITIES; id++) {
         bool in_base = baseline ? n_snapshot_has_entity(baseline, (u8)id) : false;
         bool in_cur = n_snapshot_has_entity(current, (u8)id);
@@ -172,33 +172,33 @@ u32 n_snapshot_delta_encode(const n_snapshot_t *baseline, const n_snapshot_t *cu
         if (!in_base && !in_cur) continue;
 
         if (in_cur && !in_base) {
-            /* Entity spawned: write full state */
-            write_full_entity(&w, &current->entities[id]);
+            // Entity spawned: write full state
+            write_full_entity(&writer, &current->entities[id]);
         } else if (in_base && !in_cur) {
-            /* Entity despawned: mask already encodes removal, nothing to write */
+            // Entity despawned: mask already encodes removal, nothing to write
         } else {
-            /* Entity in both: delta encode */
+            // Entity in both: delta encode
             u16 field_mask = entity_field_diff(&baseline->entities[id],
                                                &current->entities[id]);
             bool entity_changed = (field_mask != 0);
-            n_write_bool(&w, entity_changed);
+            n_write_bool(&writer, entity_changed);
             if (entity_changed) {
-                n_write_bits(&w, field_mask, N_ENTITY_FIELD_COUNT);
-                write_delta_fields(&w, &current->entities[id], field_mask);
+                n_write_bits(&writer, field_mask, N_ENTITY_FIELD_COUNT);
+                write_delta_fields(&writer, &current->entities[id], field_mask);
             }
         }
     }
 
-    return n_bitwriter_bytes_written(&w);
+    return n_bitwriter_bytes_written(&writer);
 }
 
 bool n_snapshot_delta_decode(const n_snapshot_t *baseline, n_snapshot_t *out,
                              const u8 *data, u32 data_len,
                              u32 current_tick) {
-    n_bitreader_t r;
-    n_bitreader_init(&r, data, data_len);
+    n_bitreader_t reader;
+    n_bitreader_init(&reader, data, data_len);
 
-    /* Start from baseline (or empty) */
+    // Start from baseline (or empty)
     if (baseline) {
         *out = *baseline;
     } else {
@@ -206,30 +206,30 @@ bool n_snapshot_delta_decode(const n_snapshot_t *baseline, n_snapshot_t *out,
     }
     out->tick = current_tick;
 
-    /* Read entity mask delta */
+    // Read entity mask delta
     for (u32 word = 0; word < N_MAX_ENTITIES / 64; word++) {
-        bool changed = n_read_bool(&r);
+        bool changed = n_read_bool(&reader);
         if (changed) {
-            u32 lo = n_read_u32(&r);
-            u32 hi = n_read_u32(&r);
+            u32 lo = n_read_u32(&reader);
+            u32 hi = n_read_u32(&reader);
             out->entity_mask[word] = (u64)lo | ((u64)hi << 32);
         }
     }
 
-    if (n_bitreader_overflowed(&r)) return false;
+    if (n_bitreader_overflowed(&reader)) return false;
 
-    /* Recount entities */
+    // Recount entities
     out->entity_count = 0;
     for (u32 word = 0; word < N_MAX_ENTITIES / 64; word++) {
         u64 mask = out->entity_mask[word];
-        /* Count set bits */
+        // Count set bits
         while (mask) {
             out->entity_count++;
             mask &= mask - 1;
         }
     }
 
-    /* Read per-entity deltas */
+    // Read per-entity deltas
     for (u32 id = 0; id < N_MAX_ENTITIES; id++) {
         bool in_base = baseline ? n_snapshot_has_entity(baseline, (u8)id) : false;
         bool in_cur = n_snapshot_has_entity(out, (u8)id);
@@ -237,20 +237,20 @@ bool n_snapshot_delta_decode(const n_snapshot_t *baseline, n_snapshot_t *out,
         if (!in_base && !in_cur) continue;
 
         if (in_cur && !in_base) {
-            /* Entity spawned: read full state */
-            read_full_entity(&r, &out->entities[id]);
+            // Entity spawned: read full state
+            read_full_entity(&reader, &out->entities[id]);
         } else if (in_base && !in_cur) {
-            /* Entity despawned: clear */
+            // Entity despawned: clear
             memset(&out->entities[id], 0, sizeof(n_entity_state_t));
         } else {
-            /* Entity in both: read delta */
-            bool entity_changed = n_read_bool(&r);
+            // Entity in both: read delta
+            bool entity_changed = n_read_bool(&reader);
             if (entity_changed) {
-                u16 field_mask = (u16)n_read_bits(&r, N_ENTITY_FIELD_COUNT);
-                read_delta_fields(&r, &out->entities[id], field_mask);
+                u16 field_mask = (u16)n_read_bits(&reader, N_ENTITY_FIELD_COUNT);
+                read_delta_fields(&reader, &out->entities[id], field_mask);
             }
         }
     }
 
-    return !n_bitreader_overflowed(&r);
+    return !n_bitreader_overflowed(&reader);
 }

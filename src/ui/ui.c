@@ -8,14 +8,14 @@
 
 #include "ui/qk_ui.h"
 
-/* Functions defined in ui_hud.c */
+// Functions defined in ui_hud.c
 extern void ui_hitmarker_trigger(i16 damage);
 extern void ui_hitmarker_tick(u32 dt_ms);
 extern void ui_killfeed_push(const char *attacker, const char *victim,
                               qk_weapon_id_t weapon);
 extern void ui_killfeed_tick(u32 dt_ms);
 
-/* ---- Event Push ---- */
+// --- Event Push ---
 
 void qk_ui_event_kill(const char *attacker, const char *victim,
                        qk_weapon_id_t weapon) {
@@ -26,7 +26,7 @@ void qk_ui_event_hit(i16 damage) {
     ui_hitmarker_trigger(damage);
 }
 
-/* ---- Tick ---- */
+// --- Tick ---
 
 void qk_ui_tick(u32 dt_ms) {
     ui_hitmarker_tick(dt_ms);

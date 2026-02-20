@@ -9,7 +9,7 @@
 
 #include "quicken.h"
 
-f64  qk_platform_time_now(void);    /* monotonic time in seconds */
+f64  qk_platform_time_now(void);    // monotonic time in seconds
 void qk_platform_sleep(u32 ms);
 
-#endif /* QK_PLATFORM_H */
+#endif // QK_PLATFORM_H

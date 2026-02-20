@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Temp pool and shared fence for one-shot commands */
+// Temp pool and shared fence for one-shot commands
 static VkCommandPool s_temp_pool = VK_NULL_HANDLE;
 static VkFence       s_temp_fence = VK_NULL_HANDLE;
 
@@ -14,7 +14,7 @@ qk_result_t r_commands_init(void)
 {
     VkDevice dev = g_r.device.handle;
 
-    /* Create a persistent temp pool for single-use commands */
+    // Create a persistent temp pool for single-use commands
     {
         VkCommandPoolCreateInfo pool_info = {
             .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -26,7 +26,7 @@ qk_result_t r_commands_init(void)
         if (vr != VK_SUCCESS) return QK_ERROR_VULKAN_INIT;
     }
 
-    /* Shared fence for single-use commands */
+    // Shared fence for single-use commands
     {
         VkFenceCreateInfo fence_info = {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
@@ -38,7 +38,7 @@ qk_result_t r_commands_init(void)
     for (u32 i = 0; i < R_FRAMES_IN_FLIGHT; i++) {
         r_frame_data_t *frame = &g_r.frames[i];
 
-        /* Command pool (one per frame for efficient reset) */
+        // Command pool (one per frame for efficient reset)
         VkCommandPoolCreateInfo pool_info = {
             .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .queueFamilyIndex = g_r.device.families.graphics,
@@ -47,7 +47,7 @@ qk_result_t r_commands_init(void)
         VkResult vr = vkCreateCommandPool(dev, &pool_info, NULL, &frame->command_pool);
         if (vr != VK_SUCCESS) return QK_ERROR_VULKAN_INIT;
 
-        /* Command buffer */
+        // Command buffer
         VkCommandBufferAllocateInfo alloc_info = {
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             .commandPool        = frame->command_pool,
@@ -57,21 +57,21 @@ qk_result_t r_commands_init(void)
         vr = vkAllocateCommandBuffers(dev, &alloc_info, &frame->command_buffer);
         if (vr != VK_SUCCESS) return QK_ERROR_VULKAN_INIT;
 
-        /* Semaphores */
+        // Semaphores
         VkSemaphoreCreateInfo sem_info = {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
         };
         vkCreateSemaphore(dev, &sem_info, NULL, &frame->image_available);
         vkCreateSemaphore(dev, &sem_info, NULL, &frame->render_finished);
 
-        /* Fence (start signaled so first wait doesn't block) */
+        // Fence (start signaled so first wait doesn't block)
         VkFenceCreateInfo fence_info = {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT
         };
         vkCreateFence(dev, &fence_info, NULL, &frame->in_flight);
 
-        /* View UBO (host-visible, persistently mapped) */
+        // View UBO (host-visible, persistently mapped)
         qk_result_t res = r_memory_create_buffer(
             sizeof(r_view_uniforms_t),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -82,7 +82,7 @@ qk_result_t r_commands_init(void)
         vkMapMemory(dev, frame->view_ubo_memory, 0, sizeof(r_view_uniforms_t), 0,
                     &frame->view_ubo_mapped);
 
-        /* Update view descriptor set */
+        // Update view descriptor set
         VkDescriptorBufferInfo buf_info_desc = {
             .buffer = frame->view_ubo,
             .offset = 0,
@@ -98,7 +98,7 @@ qk_result_t r_commands_init(void)
         };
         vkUpdateDescriptorSets(dev, 1, &write, 0, NULL);
 
-        /* UI vertex buffer (host-visible, persistently mapped) */
+        // UI vertex buffer (host-visible, persistently mapped)
         VkDeviceSize ui_vb_size = R_UI_MAX_QUADS * 4 * sizeof(r_ui_vertex_t);
         res = r_memory_create_buffer(
             ui_vb_size,

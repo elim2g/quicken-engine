@@ -25,4 +25,4 @@ f32             qk_input_get_pitch(void);
 f32             qk_input_get_yaw(void);
 void            qk_input_set_angles(f32 pitch, f32 yaw);
 
-#endif /* QK_INPUT_H */
+#endif // QK_INPUT_H

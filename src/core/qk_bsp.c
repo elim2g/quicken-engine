@@ -12,36 +12,44 @@
 #include <string.h>
 #include <math.h>
 
-/* ---- Q3 BSP format constants ---- */
+// --- Q3 BSP Format Constants ---
 
-#define BSP_MAGIC           0x50534249  /* "IBSP" little-endian */
-#define BSP_VERSION_46      46
-#define BSP_VERSION_47      47
 #define BSP_LUMP_COUNT      17
-
-#define LUMP_ENTITIES       0
-#define LUMP_TEXTURES       1
-#define LUMP_PLANES         2
-#define LUMP_MODELS         7
-#define LUMP_BRUSHES        8
-#define LUMP_BRUSHSIDES     9
-#define LUMP_VERTICES       10
-#define LUMP_MESHVERTS      11
-#define LUMP_FACES          13
-#define LUMP_LIGHTMAPS      14
-
 #define BSP_LM_PAGE_SIZE    128
 
-#define Q3_CONTENTS_SOLID       0x1
-#define Q3_CONTENTS_FOG         0x40
-#define Q3_CONTENTS_PLAYERCLIP  0x10000
+enum {
+    BSP_MAGIC      = 0x50534249,  // "IBSP" little-endian
+    BSP_VERSION_46 = 46,
+    BSP_VERSION_47 = 47,
+};
 
-#define Q3_SURF_NODRAW          0x80
-#define Q3_SURF_SKY             0x4
+enum {
+    LUMP_ENTITIES  = 0,
+    LUMP_TEXTURES  = 1,
+    LUMP_PLANES    = 2,
+    LUMP_MODELS    = 7,
+    LUMP_BRUSHES   = 8,
+    LUMP_BRUSHSIDES = 9,
+    LUMP_VERTICES  = 10,
+    LUMP_MESHVERTS = 11,
+    LUMP_FACES     = 13,
+    LUMP_LIGHTMAPS = 14,
+};
 
-#define BSP_PLANE_EPSILON   0.01f
+enum {
+    Q3_CONTENTS_SOLID      = 0x1,
+    Q3_CONTENTS_FOG        = 0x40,
+    Q3_CONTENTS_PLAYERCLIP = 0x10000,
+};
 
-/* ---- On-disk structures (packed to match BSP binary layout) ---- */
+enum {
+    Q3_SURF_NODRAW = 0x80,
+    Q3_SURF_SKY    = 0x4,
+};
+
+static const f32 BSP_PLANE_EPSILON = 0.01f;
+
+// --- On-disk structures (packed to match BSP binary layout) ---
 
 #pragma pack(push, 1)
 
@@ -125,7 +133,7 @@ _Static_assert(sizeof(bsp_meshvert_t) == 4,   "bsp_meshvert_t packing");
 _Static_assert(sizeof(bsp_face_t)     == 104, "bsp_face_t packing");
 _Static_assert(sizeof(bsp_header_t)   == 144, "bsp_header_t packing");
 
-/* ---- Lump access helper ---- */
+// --- Lump access helper ---
 
 static const void *get_lump(const u8 *data, u64 data_len,
                              const bsp_header_t *hdr, int lump_idx,
@@ -146,7 +154,7 @@ static const void *get_lump(const u8 *data, u64 data_len,
     return data + l->offset;
 }
 
-/* ---- Tool texture filter ---- */
+// --- Tool texture filter ---
 
 static bool is_tool_texture(const char *name) {
     return strstr(name, "skip") || strstr(name, "clip") ||
@@ -154,7 +162,7 @@ static bool is_tool_texture(const char *name) {
            strstr(name, "nodraw") || strstr(name, "caulk");
 }
 
-/* ---- World-space planar UV (for grid texture tiling) ---- */
+// --- World-space planar UV (for grid texture tiling) ---
 
 static void world_uv(const f32 *pos, const f32 *nrm, f32 *uv) {
     f32 ax = fabsf(nrm[0]), ay = fabsf(nrm[1]), az = fabsf(nrm[2]);
@@ -170,7 +178,7 @@ static void world_uv(const f32 *pos, const f32 *nrm, f32 *uv) {
     }
 }
 
-/* ---- Bezier patch tessellation ---- */
+// --- Bezier patch tessellation ---
 
 #define BSP_TESS_LEVEL 4
 #define BSP_TESS_VERTS ((BSP_TESS_LEVEL + 1) * (BSP_TESS_LEVEL + 1))
@@ -211,7 +219,7 @@ static void bezier_eval(const bsp_vertex_t *cp, i32 stride,
     }
 }
 
-/* ---- Build collision model from BSP brushes ---- */
+// --- Build collision model from BSP brushes ---
 
 static qk_result_t build_bsp_collision(
     const bsp_texture_t *textures, u32 tex_count,
@@ -220,7 +228,7 @@ static qk_result_t build_bsp_collision(
     const bsp_brushside_t *sides, u32 side_count,
     qk_collision_model_t *cm)
 {
-    /* Count solid brushes */
+    // Count solid brushes
     u32 solid_count = 0;
     for (u32 i = 0; i < brush_count; i++) {
         i32 ti = brushes[i].texture;
@@ -248,7 +256,7 @@ static qk_result_t build_bsp_collision(
         if (!ob->planes) return QK_ERROR_OUT_OF_MEMORY;
         ob->plane_count = (u32)bb->num_sides;
 
-        /* Copy planes from BSP (already outward-facing) */
+        // Copy planes from BSP (already outward-facing)
         for (i32 s = 0; s < bb->num_sides; s++) {
             const bsp_brushside_t *bs = &sides[bb->first_side + s];
             if (bs->plane < 0 || (u32)bs->plane >= plane_count) {
@@ -261,7 +269,7 @@ static qk_result_t build_bsp_collision(
             ob->planes[s].dist = bp->dist;
         }
 
-        /* Compute AABB from plane intersections */
+        // Compute AABB from plane intersections
         ob->mins = (vec3_t){ 1e18f,  1e18f,  1e18f};
         ob->maxs = (vec3_t){-1e18f, -1e18f, -1e18f};
         bool has_vertex = false;
@@ -286,7 +294,7 @@ static qk_result_t build_bsp_collision(
                             vec3_scale(ab_cross, ob->planes[c].dist)),
                         1.0f / denom);
 
-                    /* Check vertex is inside brush */
+                    // Check vertex is inside brush
                     bool valid = true;
                     for (u32 q = 0; q < ob->plane_count; q++) {
                         f32 d = vec3_dot(ob->planes[q].normal, v) - ob->planes[q].dist;
@@ -317,9 +325,9 @@ static qk_result_t build_bsp_collision(
     return QK_SUCCESS;
 }
 
-/* ---- Build patch collision (thin slab brushes from tessellated quads) ---- */
+// --- Build patch collision (thin slab brushes from tessellated quads) ---
 
-#define PATCH_SLAB_THICKNESS 2.0f
+static const f32 PATCH_SLAB_THICKNESS = 2.0f;
 
 static void build_patch_collision(
     const bsp_texture_t *textures, u32 tex_count,
@@ -327,7 +335,7 @@ static void build_patch_collision(
     const bsp_face_t *faces, u32 face_count,
     qk_collision_model_t *cm)
 {
-    /* Count how many quads we'll generate */
+    // Count how many quads we'll generate
     u32 total_quads = 0;
     for (u32 i = 0; i < face_count; i++) {
         const bsp_face_t *f = &faces[i];
@@ -340,7 +348,7 @@ static void build_patch_collision(
     }
     if (total_quads == 0) return;
 
-    /* Expand brush array to hold existing brushes + new patch brushes */
+    // Expand brush array to hold existing brushes + new patch brushes
     u32 old_count = cm->brush_count;
     u32 new_cap = old_count + total_quads;
     qk_brush_t *new_brushes = (qk_brush_t *)realloc(cm->brushes, new_cap * sizeof(qk_brush_t));
@@ -362,7 +370,7 @@ static void build_patch_collision(
             for (u32 pu = 0; pu < pu_count; pu++) {
                 const bsp_vertex_t *cp = &verts[f->vertex + (pv * 2) * cols + (pu * 2)];
 
-                /* Tessellate sub-patch into a grid of positions */
+                // Tessellate sub-patch into a grid of positions
                 f32 grid[BSP_TESS_VERTS][3];
                 i32 w = BSP_TESS_LEVEL + 1;
                 for (i32 tv = 0; tv <= BSP_TESS_LEVEL; tv++) {
@@ -374,7 +382,7 @@ static void build_patch_collision(
                     }
                 }
 
-                /* For each tessellated quad, create a thin slab brush */
+                // For each tessellated quad, create a thin slab brush
                 for (i32 tv = 0; tv < BSP_TESS_LEVEL; tv++) {
                     for (i32 tu = 0; tu < BSP_TESS_LEVEL; tu++) {
                         f32 *p0 = grid[tv * w + tu];
@@ -382,12 +390,12 @@ static void build_patch_collision(
                         f32 *p2 = grid[(tv + 1) * w + tu];
                         f32 *p3 = grid[(tv + 1) * w + tu + 1];
 
-                        /* Quad center and face normal */
+                        // Quad center and face normal
                         f32 cx = (p0[0]+p1[0]+p2[0]+p3[0]) * 0.25f;
                         f32 cy = (p0[1]+p1[1]+p2[1]+p3[1]) * 0.25f;
                         f32 cz = (p0[2]+p1[2]+p2[2]+p3[2]) * 0.25f;
 
-                        /* Cross product of diagonals for face normal */
+                        // Cross product of diagonals for face normal
                         f32 d1[3] = { p3[0]-p0[0], p3[1]-p0[1], p3[2]-p0[2] };
                         f32 d2[3] = { p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2] };
                         f32 nx = d1[1]*d2[2] - d1[2]*d2[1];
@@ -397,24 +405,24 @@ static void build_patch_collision(
                         if (len < 0.0001f) continue;
                         nx /= len; ny /= len; nz /= len;
 
-                        /* 6-plane slab brush */
+                        // 6-plane slab brush
                         qk_plane_t *pl = (qk_plane_t *)calloc(6, sizeof(qk_plane_t));
                         if (!pl) continue;
 
-                        /* Front plane (surface) */
+                        // Front plane (surface)
                         pl[0].normal = (vec3_t){nx, ny, nz};
                         pl[0].dist = nx*cx + ny*cy + nz*cz;
 
-                        /* Back plane (SLAB_THICKNESS behind surface) */
+                        // Back plane (SLAB_THICKNESS behind surface)
                         pl[1].normal = (vec3_t){-nx, -ny, -nz};
                         pl[1].dist = -(pl[0].dist - PATCH_SLAB_THICKNESS);
 
-                        /* 4 edge bevel planes */
+                        // 4 edge bevel planes
                         f32 *edges[4][2] = { {p0,p1}, {p1,p3}, {p3,p2}, {p2,p0} };
                         for (int e = 0; e < 4; e++) {
                             f32 *ea = edges[e][0], *eb = edges[e][1];
                             f32 ex = eb[0]-ea[0], ey = eb[1]-ea[1], ez = eb[2]-ea[2];
-                            /* Edge normal = cross(edge_dir, face_normal) */
+                            // Edge normal = cross(edge_dir, face_normal)
                             f32 enx = ey*nz - ez*ny;
                             f32 eny = ez*nx - ex*nz;
                             f32 enz = ex*ny - ey*nx;
@@ -429,7 +437,7 @@ static void build_patch_collision(
                         ob->planes = pl;
                         ob->plane_count = 6;
 
-                        /* AABB from the 4 quad corners + slab thickness */
+                        // AABB from the 4 quad corners + slab thickness
                         ob->mins.x = fminf(fminf(p0[0],p1[0]), fminf(p2[0],p3[0])) - PATCH_SLAB_THICKNESS;
                         ob->mins.y = fminf(fminf(p0[1],p1[1]), fminf(p2[1],p3[1])) - PATCH_SLAB_THICKNESS;
                         ob->mins.z = fminf(fminf(p0[2],p1[2]), fminf(p2[2],p3[2])) - PATCH_SLAB_THICKNESS;
@@ -445,7 +453,7 @@ static void build_patch_collision(
     }
 }
 
-/* ---- Check if a face should be rendered ---- */
+// --- Check if a face should be rendered ---
 
 static bool face_renderable(const bsp_face_t *f, const bsp_texture_t *textures, u32 tex_count) {
     if (f->texture < 0 || (u32)f->texture >= tex_count) return false;
@@ -455,15 +463,15 @@ static bool face_renderable(const bsp_face_t *f, const bsp_texture_t *textures, 
     return true;
 }
 
-/* ---- Deterministic color from texture name (packed RGBA8) ---- */
+// --- Deterministic color from texture name (packed RGBA8) ---
 
 static u32 texture_name_to_color(const char *name) {
-    /* djb2 hash */
+    // djb2 hash
     u32 h = 5381;
     for (const char *p = name; *p; p++)
         h = ((h << 5) + h) + (u8)*p;
 
-    /* Derive RGB with decent saturation (avoid near-black/near-white) */
+    // Derive RGB with decent saturation (avoid near-black/near-white)
     u8 r = (u8)(60 + (h % 180));
     u8 g = (u8)(60 + ((h >> 8) % 180));
     u8 b = (u8)(60 + ((h >> 16) % 180));
@@ -471,7 +479,7 @@ static u32 texture_name_to_color(const char *name) {
     return ((u32)r) | ((u32)g << 8) | ((u32)b << 16) | 0xFF000000u;
 }
 
-/* ---- Build render geometry from BSP faces ---- */
+// --- Build render geometry from BSP faces ---
 
 static qk_result_t build_bsp_render(
     const bsp_texture_t *textures, u32 tex_count,
@@ -483,7 +491,7 @@ static qk_result_t build_bsp_render(
     u32 **out_indices, u32 *out_idx_count,
     qk_draw_surface_t **out_surfaces, u32 *out_surf_count)
 {
-    /* Pre-count vertices, indices, and surfaces needed */
+    // Pre-count vertices, indices, and surfaces needed
     u32 total_indices = 0;
     u32 total_surfs = 0;
     u32 patch_verts = 0;
@@ -539,13 +547,13 @@ static qk_result_t build_bsp_render(
 
     u32 idx_cursor = 0;
     u32 surf_cursor = 0;
-    u32 vert_cursor = vert_count; /* extra verts for patches go here */
+    u32 vert_cursor = vert_count;  // extra verts for patches go here
 
     for (u32 i = 0; i < face_count; i++) {
         const bsp_face_t *f = &faces[i];
         if (!face_renderable(f, textures, tex_count)) continue;
 
-        /* ---- Type 1 (polygon) / Type 3 (mesh) ---- */
+        // --- Type 1 (polygon) / Type 3 (mesh) ---
         if ((f->type == 1 || f->type == 3) &&
             f->n_meshverts > 0 && f->n_meshverts % 3 == 0) {
 
@@ -553,12 +561,12 @@ static qk_result_t build_bsp_render(
             if ((u32)(f->vertex + f->n_verts) > vert_count) continue;
             if ((u32)(f->meshvert + f->n_meshverts) > mv_count) continue;
 
-            /* Stamp per-vertex color from texture name */
+            // Stamp per-vertex color from texture name
             u32 face_color = texture_name_to_color(textures[f->texture].name);
             for (i32 v = 0; v < f->n_verts; v++)
                 rv[f->vertex + v].texture_id = face_color;
 
-            /* Compute lightmap atlas UVs if lightmaps are present */
+            // Compute lightmap atlas UVs if lightmaps are present
             if (f->lm_index >= 0 && lm_pages_per_row > 0 && lm_atlas_w > 0) {
                 u32 page_col = (u32)f->lm_index % lm_pages_per_row;
                 u32 page_row = (u32)f->lm_index / lm_pages_per_row;
@@ -579,7 +587,7 @@ static qk_result_t build_bsp_render(
                 i32 v0 = f->vertex + meshverts[f->meshvert + m + 0].offset;
                 i32 v1 = f->vertex + meshverts[f->meshvert + m + 1].offset;
                 i32 v2 = f->vertex + meshverts[f->meshvert + m + 2].offset;
-                /* Q3 BSP uses CW winding; Vulkan expects CCW — swap v1/v2 */
+                // Q3 BSP uses CW winding; Vulkan expects CCW — swap v1/v2
                 ri[idx_cursor++] = (v0 >= 0 && (u32)v0 < vert_count) ? (u32)v0 : 0;
                 ri[idx_cursor++] = (v2 >= 0 && (u32)v2 < vert_count) ? (u32)v2 : 0;
                 ri[idx_cursor++] = (v1 >= 0 && (u32)v1 < vert_count) ? (u32)v1 : 0;
@@ -594,7 +602,7 @@ static qk_result_t build_bsp_render(
             surf_cursor++;
         }
 
-        /* ---- Type 2 (bezier patch) ---- */
+        // --- Type 2 (bezier patch) ---
         else if (f->type == 2 && f->size[0] >= 3 && f->size[1] >= 3) {
             i32 cols = f->size[0];
             i32 rows = f->size[1];
@@ -609,10 +617,10 @@ static qk_result_t build_bsp_render(
                 for (u32 pu = 0; pu < pu_count; pu++) {
                     const bsp_vertex_t *cp = &verts[f->vertex + (pv * 2) * cols + (pu * 2)];
 
-                    /* Tessellate: generate (N+1)x(N+1) grid of vertices */
+                    // Tessellate: generate (N+1)x(N+1) grid of vertices
                     u32 vbase = vert_cursor;
 
-                    /* Pre-compute lightmap atlas transform for this patch face */
+                    // Pre-compute lightmap atlas transform for this patch face
                     bool patch_has_lm = (f->lm_index >= 0 && lm_pages_per_row > 0 && lm_atlas_w > 0);
                     f32 p_u0 = 0, p_v0 = 0, p_su = 0, p_sv = 0;
                     if (patch_has_lm) {
@@ -643,7 +651,7 @@ static qk_result_t build_bsp_render(
                         }
                     }
 
-                    /* Generate triangle indices for the tessellated grid */
+                    // Generate triangle indices for the tessellated grid
                     u32 base_idx = idx_cursor;
                     i32 w = BSP_TESS_LEVEL + 1;
                     for (i32 tv = 0; tv < BSP_TESS_LEVEL; tv++) {
@@ -652,7 +660,7 @@ static qk_result_t build_bsp_render(
                             u32 i1 = i0 + 1;
                             u32 i2 = i0 + (u32)w;
                             u32 i3 = i2 + 1;
-                            /* CCW winding for Vulkan */
+                            // CCW winding for Vulkan
                             ri[idx_cursor++] = i0;
                             ri[idx_cursor++] = i1;
                             ri[idx_cursor++] = i2;
@@ -684,7 +692,7 @@ static qk_result_t build_bsp_render(
     return QK_SUCCESS;
 }
 
-/* ---- Parsed entity for BSP entity lump ---- */
+// --- Parsed entity for BSP entity lump ---
 
 #define BSP_MAX_ENTITIES 1024
 
@@ -698,7 +706,7 @@ typedef struct {
     bool    has_origin;
 } bsp_entity_parsed_t;
 
-/* ---- Parse all entities from BSP entity lump ---- */
+// --- Parse all entities from BSP entity lump ---
 
 static u32 parse_bsp_entity_lump(const char *text, u32 text_len,
                                    bsp_entity_parsed_t *ents, u32 max_ents) {
@@ -752,7 +760,7 @@ static u32 parse_bsp_entity_lump(const char *text, u32 text_len,
     return count;
 }
 
-/* ---- Find entity by targetname ---- */
+// --- Find entity by targetname ---
 
 static const bsp_entity_parsed_t *find_entity_by_targetname(
     const bsp_entity_parsed_t *ents, u32 count, const char *targetname) {
@@ -764,7 +772,7 @@ static const bsp_entity_parsed_t *find_entity_by_targetname(
     return NULL;
 }
 
-/* ---- Extract spawn points, teleporters, and jump pads from parsed entities ---- */
+// --- Extract spawn points, teleporters, and jump pads from parsed entities ---
 
 static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
                                   const bsp_model_t *models, u32 model_count,
@@ -785,7 +793,7 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
     for (u32 i = 0; i < ent_count; i++) {
         const bsp_entity_parsed_t *e = &ents[i];
 
-        /* Spawn points */
+        // Spawn points
         if (out->spawn_count < spawn_cap &&
             (strcmp(e->classname, "info_player_deathmatch") == 0 ||
              strcmp(e->classname, "info_player_start") == 0)) {
@@ -794,7 +802,7 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
             out->spawn_count++;
         }
 
-        /* Teleporters: trigger_teleport -> target -> misc_teleporter_dest/target_position */
+        // Teleporters: trigger_teleport -> target -> misc_teleporter_dest/target_position
         if (out->teleporter_count < tele_cap &&
             strcmp(e->classname, "trigger_teleport") == 0 &&
             e->target[0] != '\0') {
@@ -804,7 +812,7 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
                 tp->destination = dest->origin;
                 tp->dest_yaw = dest->angle;
 
-                /* Get trigger volume bounds from BSP model if available */
+                // Get trigger volume bounds from BSP model if available
                 if (e->model[0] == '*' && models) {
                     i32 model_idx = atoi(&e->model[1]);
                     if (model_idx >= 0 && (u32)model_idx < model_count) {
@@ -827,7 +835,7 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
             }
         }
 
-        /* Jump pads: trigger_push -> target -> target_position */
+        // Jump pads: trigger_push -> target -> target_position
         if (out->jump_pad_count < pad_cap &&
             strcmp(e->classname, "trigger_push") == 0 &&
             e->target[0] != '\0') {
@@ -859,13 +867,13 @@ static void extract_bsp_entities(const bsp_entity_parsed_t *ents, u32 ent_count,
         }
     }
 
-    /* Free empty arrays */
+    // Free empty arrays
     if (out->spawn_count == 0) { free(out->spawn_points); out->spawn_points = NULL; }
     if (out->teleporter_count == 0) { free(out->teleporters); out->teleporters = NULL; }
     if (out->jump_pad_count == 0) { free(out->jump_pads); out->jump_pads = NULL; }
 }
 
-/* ---- Public API ---- */
+// --- Public API ---
 
 qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
     if (!data || !out || data_len < sizeof(bsp_header_t))
@@ -883,7 +891,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
     fprintf(stderr, "[BSP] Loading IBSP v%d (%lu bytes)\n",
             hdr->version, (unsigned long)data_len);
 
-    /* Get lump pointers */
+    // Get lump pointers
     u32 tex_count = 0, plane_count = 0, brush_count = 0, side_count = 0;
     u32 vert_count = 0, mv_count = 0, face_count = 0, model_count = 0;
 
@@ -901,7 +909,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
     fprintf(stderr, "[BSP] %u vertices, %u meshverts, %u faces\n",
             vert_count, mv_count, face_count);
 
-    /* Build collision model (model 0 = worldspawn only; models 1+ are brush entities) */
+    // Build collision model (model 0 = worldspawn only; models 1+ are brush entities)
     if (brushes && sides && planes && textures && models && model_count > 0) {
         u32 m0_first_brush = (u32)models[0].first_brush;
         u32 m0_num_brushes = (u32)models[0].num_brushes;
@@ -918,7 +926,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
         }
     }
 
-    /* Add patch collision (thin slab brushes from bezier patches, model 0 only) */
+    // Add patch collision (thin slab brushes from bezier patches, model 0 only)
     if (verts && faces && textures && models && model_count > 0) {
         u32 m0_first_face = (u32)models[0].first_face;
         u32 m0_num_faces  = (u32)models[0].num_faces;
@@ -932,7 +940,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
             fprintf(stderr, "[BSP] Patch collision: %u slab brushes\n", patch_brushes);
     }
 
-    /* Read lightmap lump and build atlas */
+    // Read lightmap lump and build atlas
     u32 lm_pages_per_row = 0, lm_atlas_w = 0, lm_atlas_h = 0;
     {
         const bsp_lump_t *lm_lump = &hdr->lumps[LUMP_LIGHTMAPS];
@@ -943,7 +951,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
         u32 page_count = (lm_data && page_bytes > 0) ? lm_data_len / page_bytes : 0;
 
         if (page_count > 0) {
-            /* Grid layout for atlas */
+            // Grid layout for atlas
             u32 cols = 1;
             while (cols * cols < page_count) cols++;
             u32 rows = (page_count + cols - 1) / cols;
@@ -952,7 +960,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
             lm_atlas_w = cols * BSP_LM_PAGE_SIZE;
             lm_atlas_h = rows * BSP_LM_PAGE_SIZE;
 
-            /* Allocate RGBA8 atlas */
+            // Allocate RGBA8 atlas
             u32 atlas_bytes = lm_atlas_w * lm_atlas_h * 4;
             u8 *atlas = (u8 *)calloc(atlas_bytes, 1);
             if (atlas) {
@@ -988,7 +996,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
         }
     }
 
-    /* Build render geometry (with lightmap UVs if atlas was built) */
+    // Build render geometry (with lightmap UVs if atlas was built)
     if (verts && meshverts && faces && textures) {
         qk_result_t res = build_bsp_render(textures, tex_count,
                                             verts, vert_count,
@@ -1006,7 +1014,7 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
         }
     }
 
-    /* Parse entities for spawn points, teleporters, jump pads */
+    // Parse entities for spawn points, teleporters, jump pads
     u32 ent_len = 0;
     const char *ent_text = (const char *)get_lump(data, data_len, hdr,
                                                    LUMP_ENTITIES, 1, &ent_len);

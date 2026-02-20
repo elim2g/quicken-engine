@@ -4,13 +4,13 @@ A high-performance Arena FPS game engine built from scratch in C11.
 
 ## Philosophy
 
-QUICKEN is designed for **extreme performance**. The goal is to achieve 1000+ fps on modern high-end hardware while maintaining QUAKE-like movement mechanics and Arena FPS combat.
+QUICKEN is designed for **extreme performance**. The goal is to achieve 1000+ fps on modern high-end hardware (in 12v12 CA) while maintaining strafejumping and airstrafing movement mechanics in satisfying Arena FPS combat.
 
-This is not a general-purpose game engine. Every feature exists solely to serve the game.
+This is not a general-purpose game engine. Every feature exists solely to serve the game. That being said, I hope it serves as a great basis for anybody looking to build a quake-like.
 
 ## Features
 
-- **TURNT Movement**: Crouchsliding mechanics similar to QUAKE 4
+- **PQL Movement**: A mashup of the best bits from PQL (autohop) and CPM (slick, rocket groundboosts)
 - **Arena FPS Combat**: Fast-paced QUAKE LIVE-style combat
 - **QUAKE Map Support**: Compatible with QUAKE map formats
 - **Cross-Platform**: Windows and Linux support
@@ -66,16 +66,13 @@ quicken-engine/
 └── premake5.lua   # Build configuration
 ```
 
-## Development
-
-See `CLAUDE.md` for AI agent instructions and development guidelines.
-
 ## Performance Goals
 
-- **Frame Rate**: 1000+ fps on high-end hardware
+- **Frame Rate**: 1000+ fps on high-end hardware in 12v12 Clan Arena, 500+ fps for the average gaming rig
 - **Input Latency**: < 5ms from input to photon
 - **Memory**: Minimal allocations during gameplay
 - **CPU**: Efficient multi-threading for simulation and rendering
+- **Netcode**: Server-side input prediction. Only the lagger sees lag. Warpers be gone!
 
 ## License
 

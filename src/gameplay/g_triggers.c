@@ -11,7 +11,7 @@
 #include <math.h>
 #include <string.h>
 
-/* ---- Trigger storage (set during map load via g_triggers_load) ---- */
+// --- Trigger storage (set during map load via g_triggers_load) ---
 
 #define MAX_TELEPORTERS 64
 #define MAX_JUMP_PADS   64
@@ -22,14 +22,16 @@ static u32              s_teleporter_count;
 static qk_jump_pad_t   s_jump_pads[MAX_JUMP_PADS];
 static u32              s_jump_pad_count;
 
-/* Cooldown to prevent re-triggering on the same tick or immediately after */
-#define TELEPORT_COOLDOWN_TICKS  16  /* ~125ms at 128Hz */
-#define JUMP_PAD_COOLDOWN_TICKS  16
+// Cooldown to prevent re-triggering on the same tick or immediately after
+enum {
+    TELEPORT_COOLDOWN_TICKS = 16, // ~125ms at 128Hz
+    JUMP_PAD_COOLDOWN_TICKS = 16,
+};
 
 static u32 s_teleport_cooldown[QK_MAX_PLAYERS];
 static u32 s_jump_pad_cooldown[QK_MAX_PLAYERS];
 
-/* ---- Load triggers from map data ---- */
+// --- Load triggers from map data ---
 
 void g_triggers_load(const qk_teleporter_t *teleporters, u32 teleporter_count,
                      const qk_jump_pad_t *jump_pads, u32 jump_pad_count) {
@@ -59,7 +61,7 @@ void g_triggers_clear(void) {
     memset(s_jump_pad_cooldown, 0, sizeof(s_jump_pad_cooldown));
 }
 
-/* ---- AABB-AABB overlap test ---- */
+// --- AABB-AABB overlap test ---
 
 static bool aabb_overlap(vec3_t a_min, vec3_t a_max, vec3_t b_min, vec3_t b_max) {
     if (a_max.x < b_min.x || a_min.x > b_max.x) return false;
@@ -68,7 +70,7 @@ static bool aabb_overlap(vec3_t a_min, vec3_t a_max, vec3_t b_min, vec3_t b_max)
     return true;
 }
 
-/* ---- Player AABB from origin ---- */
+// --- Player AABB from origin ---
 
 static void player_aabb(const qk_player_state_t *ps, vec3_t *out_min, vec3_t *out_max) {
     out_min->x = ps->origin.x + ps->mins.x;
@@ -79,7 +81,7 @@ static void player_aabb(const qk_player_state_t *ps, vec3_t *out_min, vec3_t *ou
     out_max->z = ps->origin.z + ps->maxs.z;
 }
 
-/* ---- Teleporter check ---- */
+// --- Teleporter check ---
 
 static void g_check_teleporters(qk_game_state_t *gs) {
     if (s_teleporter_count == 0) return;
@@ -105,33 +107,33 @@ static void g_check_teleporters(qk_game_state_t *gs) {
 
             if (!aabb_overlap(pmin, pmax, tp->mins, tp->maxs)) continue;
 
-            /* Teleport: set origin to destination */
+            // Teleport: set origin to destination
             ps->origin = tp->destination;
 
-            /* Snap view angles to destination facing */
+            // Snap view angles to destination facing
             ps->yaw = tp->dest_yaw;
             ps->pitch = 0.0f;
 
-            /* Q3-style: fixed exit velocity in destination's facing direction.
-               No momentum carry. */
-            #define TELEPORT_EXIT_SPEED 400.0f
+            // Q3-style: fixed exit velocity in destination's facing direction.
+            // No momentum carry.
+            static const f32 TELEPORT_EXIT_SPEED = 400.0f;
             f32 yaw_rad = tp->dest_yaw * (3.14159265f / 180.0f);
             ps->velocity.x = TELEPORT_EXIT_SPEED * cosf(yaw_rad);
             ps->velocity.y = TELEPORT_EXIT_SPEED * sinf(yaw_rad);
             ps->velocity.z = 0.0f;
 
-            /* Toggle teleport bit — netcode detects via XOR between snapshots */
+            // Toggle teleport bit -- netcode detects via XOR between snapshots
             ps->teleport_bit ^= 1;
 
-            /* Cooldown to prevent immediate re-trigger */
+            // Cooldown to prevent immediate re-trigger
             s_teleport_cooldown[i] = TELEPORT_COOLDOWN_TICKS;
 
-            break; /* only one teleport per tick */
+            break; // only one teleport per tick
         }
     }
 }
 
-/* ---- Jump pad check ---- */
+// --- Jump pad check ---
 
 static void g_check_jump_pads(qk_game_state_t *gs) {
     if (s_jump_pad_count == 0) return;
@@ -157,23 +159,23 @@ static void g_check_jump_pads(qk_game_state_t *gs) {
 
             if (!aabb_overlap(pmin, pmax, jp->mins, jp->maxs)) continue;
 
-            /* Override player velocity with physics-calculated launch velocity */
+            // Override player velocity with physics-calculated launch velocity
             ps->velocity = qk_physics_jumppad_velocity(ps->origin, jp->target);
 
-            /* Take player off ground so air physics apply */
+            // Take player off ground so air physics apply
             ps->on_ground = false;
-            ps->jump_held = true; /* prevent immediate jump override */
-            ps->splash_slick_ticks = 3; /* prevent ground friction from eating launch velocity */
+            ps->jump_held = true; // prevent immediate jump override
+            ps->splash_slick_ticks = 3; // prevent ground friction from eating launch velocity
 
-            /* Cooldown */
+            // Cooldown
             s_jump_pad_cooldown[i] = JUMP_PAD_COOLDOWN_TICKS;
 
-            break; /* only one pad per tick */
+            break; // only one pad per tick
         }
     }
 }
 
-/* ---- Public tick function ---- */
+// --- Public tick function ---
 
 void g_triggers_tick(qk_game_state_t *gs) {
     g_check_teleporters(gs);

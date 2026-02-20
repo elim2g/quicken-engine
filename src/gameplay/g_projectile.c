@@ -7,7 +7,7 @@
 #include "g_internal.h"
 #include "physics/qk_physics.h"
 
-/* Projectile trace extents (small box, essentially a point trace) */
+// Projectile trace extents (small box, essentially a point trace)
 static const vec3_t PROJ_MINS = {-1.0f, -1.0f, -1.0f};
 static const vec3_t PROJ_MAXS = { 1.0f,  1.0f,  1.0f};
 
@@ -19,7 +19,7 @@ entity_t *g_projectile_spawn(qk_game_state_t *gs, entity_t *owner,
     entity_t *proj = g_entity_alloc(&gs->entities, ENTITY_PROJECTILE);
     if (!proj) return NULL;
 
-    /* small forward offset to avoid self-collision */
+    // small forward offset to avoid self-collision
     vec3_t spawn_origin = vec3_add(origin, vec3_scale(direction, 16.0f));
 
     projectile_t *p = &proj->data.projectile;
@@ -43,7 +43,7 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
         projectile_t *p = &e->data.projectile;
         const g_weapon_def_t *wdef = &g_weapon_defs[p->weapon];
 
-        /* check lifetime */
+        // check lifetime
         f32 elapsed = (f32)(gs->server_time_ms - p->spawn_time) / 1000.0f;
         if (elapsed >= wdef->projectile_lifetime) {
             g_entity_free(&gs->entities, e);
@@ -51,10 +51,10 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
             continue;
         }
 
-        /* desired new position */
+        // desired new position
         vec3_t new_origin = vec3_add(p->origin, vec3_scale(p->velocity, dt));
 
-        /* trace against world geometry */
+        // trace against world geometry
         f32 world_frac = 1.0f;
         bool hit_world = false;
         if (world) {
@@ -67,7 +67,7 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
             }
         }
 
-        /* trace against player entities */
+        // trace against player entities
         bool hit_player = false;
         entity_t *hit_ent = NULL;
         f32 best_player_frac = 1.0f;
@@ -90,11 +90,11 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
             }
         }
 
-        /* determine which hit is closer: world or player */
+        // determine which hit is closer: world or player
         bool player_hit_first = hit_player && (!hit_world ||
                                                 best_player_frac <= world_frac);
 
-        /* Normalized velocity for explosion direction */
+        // Normalized velocity for explosion direction
         f32 vel_len = sqrtf(p->velocity.x * p->velocity.x +
                             p->velocity.y * p->velocity.y +
                             p->velocity.z * p->velocity.z);
@@ -103,39 +103,39 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
             : (vec3_t){0.0f, 1.0f, 0.0f};
 
         if (player_hit_first && hit_ent) {
-            /* direct hit on player */
+            // direct hit on player
             vec3_t hit_point = vec3_add(p->origin,
                                          vec3_scale(ray, best_player_frac));
             vec3_t hit_dir = vec3_normalize(
                 vec3_sub(hit_ent->data.player.origin, hit_point));
 
-            damage_event_t dmg = {0};
-            dmg.attacker_id = p->owner;
-            dmg.victim_id = hit_ent->id;
-            dmg.damage = (i16)p->damage;
-            dmg.dir = hit_dir;
-            dmg.knockback = wdef->knockback;
-            dmg.weapon = p->weapon;
-            dmg.is_self = false;
+            damage_event_t dmg = {
+                .attacker_id = p->owner,
+                .victim_id = hit_ent->id,
+                .damage = (i16)p->damage,
+                .dir = hit_dir,
+                .knockback = wdef->knockback,
+                .weapon = p->weapon,
+                .is_self = false,
+            };
             g_combat_apply_damage(gs, &dmg);
 
-            /* splash at hit point (skip direct-hit target) */
+            // splash at hit point (skip direct-hit target)
             if (p->splash_radius > 0.0f) {
                 g_combat_splash_damage(gs, hit_point, p->splash_radius,
                                         p->splash_damage, wdef->knockback,
                                         p->owner, p->weapon, hit_ent->id);
             }
 
-            game_event_t evt = {0};
-            evt.type = GEVT_EXPLOSION;
-            evt.server_time = gs->server_time_ms;
-            evt.data.explosion.pos[0] = hit_point.x;
-            evt.data.explosion.pos[1] = hit_point.y;
-            evt.data.explosion.pos[2] = hit_point.z;
-            evt.data.explosion.dir[0] = vel_dir.x;
-            evt.data.explosion.dir[1] = vel_dir.y;
-            evt.data.explosion.dir[2] = vel_dir.z;
-            evt.data.explosion.radius = p->splash_radius;
+            game_event_t evt = {
+                .type = GEVT_EXPLOSION,
+                .server_time = gs->server_time_ms,
+                .data.explosion = {
+                    .pos = { hit_point.x, hit_point.y, hit_point.z },
+                    .dir = { vel_dir.x, vel_dir.y, vel_dir.z },
+                    .radius = p->splash_radius,
+                },
+            };
             g_event_push(&gs->events, &evt);
 
             g_entity_free(&gs->entities, e);
@@ -144,27 +144,26 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
         }
 
         if (hit_world) {
-            /* explode on world surface */
+            // explode on world surface
             vec3_t hit_point = vec3_add(p->origin,
                                          vec3_scale(ray, world_frac));
 
             if (p->splash_radius > 0.0f) {
-                /* splash damage includes self-damage to owner */
+                // splash damage includes self-damage to owner
                 g_combat_splash_damage(gs, hit_point, p->splash_radius,
                                         p->splash_damage, wdef->knockback,
                                         p->owner, p->weapon, 0xFF);
             }
 
-            game_event_t evt = {0};
-            evt.type = GEVT_EXPLOSION;
-            evt.server_time = gs->server_time_ms;
-            evt.data.explosion.pos[0] = hit_point.x;
-            evt.data.explosion.pos[1] = hit_point.y;
-            evt.data.explosion.pos[2] = hit_point.z;
-            evt.data.explosion.dir[0] = vel_dir.x;
-            evt.data.explosion.dir[1] = vel_dir.y;
-            evt.data.explosion.dir[2] = vel_dir.z;
-            evt.data.explosion.radius = p->splash_radius;
+            game_event_t evt = {
+                .type = GEVT_EXPLOSION,
+                .server_time = gs->server_time_ms,
+                .data.explosion = {
+                    .pos = { hit_point.x, hit_point.y, hit_point.z },
+                    .dir = { vel_dir.x, vel_dir.y, vel_dir.z },
+                    .radius = p->splash_radius,
+                },
+            };
             g_event_push(&gs->events, &evt);
 
             g_entity_free(&gs->entities, e);
@@ -172,7 +171,7 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
             continue;
         }
 
-        /* no collision, advance position */
+        // no collision, advance position
         p->origin = new_origin;
         e = next;
     }

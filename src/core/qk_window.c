@@ -105,9 +105,9 @@ bool qk_window_is_fullscreen(qk_window_t *window) {
     return (SDL_GetWindowFlags(window->sdl_window) & SDL_WINDOW_FULLSCREEN) != 0;
 }
 
-#else /* QK_HEADLESS */
+#else  // QK_HEADLESS
 
-/* Headless: no window support */
+// Headless: no window support
 struct qk_window { u32 dummy; };
 
 qk_result_t qk_window_create(const qk_window_config_t *config, qk_window_t **out) {
@@ -132,4 +132,4 @@ bool qk_window_is_fullscreen(qk_window_t *window) {
     QK_UNUSED(window); return false;
 }
 
-#endif /* QK_HEADLESS */
+#endif  // QK_HEADLESS

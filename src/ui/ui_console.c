@@ -15,33 +15,34 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
-/* ---- Constants ---- */
+// --- Constants ---
 
-#define CON_INPUT_LEN       256
+#define CON_INPUT_LEN        256
 #define CON_SCROLLBACK_LINES 1024
-#define CON_LINE_LEN        256
-#define CON_HISTORY_SIZE    64
-#define CON_MAX_COMMANDS    128
-#define CON_MAX_TOKENS      32
-#define CON_FONT_SIZE       14.0f
-#define CON_SLIDE_SPEED     8.0f    /* 1/seconds to fully open (~125ms) */
-#define CON_BG_COLOR        0x1A1A1ACC  /* dark semi-transparent */
-#define CON_BORDER_COLOR    0xFF8800FF  /* orange */
-#define CON_TEXT_COLOR       0xCCCCCCFF  /* light gray */
-#define CON_INPUT_COLOR     0xFFFFFFFF  /* white */
-#define CON_ECHO_COLOR      0x88FF88FF  /* green for echoed commands */
-#define CON_ERROR_COLOR     0xFF4444FF  /* red for errors */
-#define CON_CVAR_COLOR      0xFFCC44FF  /* yellow for cvar info */
-#define CON_PROMPT_CHAR     ']'
+#define CON_LINE_LEN         256
+#define CON_HISTORY_SIZE     64
+#define CON_MAX_COMMANDS     128
+#define CON_MAX_TOKENS       32
 
-/* ---- Scrollback line ---- */
+static const f32 CON_FONT_SIZE    = 14.0f;
+static const f32 CON_SLIDE_SPEED  = 8.0f;  // 1/seconds to fully open (~125ms)
+static const u32 CON_BG_COLOR     = 0x1A1A1ACC; // dark semi-transparent
+static const u32 CON_BORDER_COLOR = 0xFF8800FF;  // orange
+static const u32 CON_TEXT_COLOR   = 0xCCCCCCFF;  // light gray
+static const u32 CON_INPUT_COLOR  = 0xFFFFFFFF;  // white
+static const u32 CON_ECHO_COLOR   = 0x88FF88FF;  // green for echoed commands
+static const u32 CON_ERROR_COLOR  = 0xFF4444FF;  // red for errors
+static const u32 CON_CVAR_COLOR   = 0xFFCC44FF;  // yellow for cvar info
+static const char CON_PROMPT_CHAR = ']';
+
+// --- Scrollback line ---
 
 typedef struct {
     char text[CON_LINE_LEN];
     u32  color;
 } con_line_t;
 
-/* ---- Registered command ---- */
+// --- Registered command ---
 
 typedef struct {
     char                    name[64];
@@ -50,54 +51,54 @@ typedef struct {
     bool                    in_use;
 } con_cmd_t;
 
-/* ---- Console state (all static, zero cost when not used) ---- */
+// --- Console state (all static, zero cost when not used) ---
 
 static struct {
     bool        open;
-    f32         slide_frac;         /* 0 = closed, 1 = fully open */
+    f32         slide_frac;         // 0 = closed, 1 = fully open
 
-    /* Input line */
+    // Input line
     char        input[CON_INPUT_LEN];
     u32         input_len;
     u32         cursor;
 
-    /* Scrollback */
+    // Scrollback
     con_line_t  lines[CON_SCROLLBACK_LINES];
-    u32         line_head;          /* next write position (ring) */
-    u32         line_count;         /* total lines written (up to max) */
-    i32         scroll_offset;      /* lines scrolled up from bottom */
+    u32         line_head;          // next write position (ring)
+    u32         line_count;         // total lines written (up to max)
+    i32         scroll_offset;      // lines scrolled up from bottom
 
-    /* History */
+    // History
     char        history[CON_HISTORY_SIZE][CON_INPUT_LEN];
     u32         history_head;
     u32         history_count;
-    i32         history_pos;        /* -1 = not browsing, 0..N = browsing */
-    char        history_saved[CON_INPUT_LEN]; /* saved input when browsing */
+    i32         history_pos;        // -1 = not browsing, 0..N = browsing
+    char        history_saved[CON_INPUT_LEN]; // saved input when browsing
 
-    /* Tab completion */
+    // Tab completion
     char        tab_prefix[CON_INPUT_LEN];
-    i32         tab_index;          /* -1 = no tab state */
+    i32         tab_index;          // -1 = no tab state
     bool        tab_active;
 
-    /* Commands */
+    // Commands
     con_cmd_t   commands[CON_MAX_COMMANDS];
     u32         command_count;
 
-    /* Tilde suppression */
+    // Tilde suppression
     bool        suppress_next_text;
 
-    /* Cursor blink */
+    // Cursor blink
     f32         cursor_blink_timer;
 
     bool        initialized;
 } s_con;
 
-/* ---- Forward declarations ---- */
+// --- Forward declarations ---
 
 static void con_execute(const char *text);
 static void con_push_history(const char *text);
 
-/* ---- Built-in commands ---- */
+// --- Built-in commands ---
 
 static void cmd_help(i32 argc, const char **argv) {
     QK_UNUSED(argc);
@@ -122,7 +123,7 @@ static void cmd_clear(i32 argc, const char **argv) {
 static void cmd_quit(i32 argc, const char **argv) {
     QK_UNUSED(argc);
     QK_UNUSED(argv);
-    /* Post an SDL quit event */
+    // Post an SDL quit event
     SDL_Event e;
     e.type = SDL_EVENT_QUIT;
     SDL_PushEvent(&e);
@@ -173,7 +174,7 @@ static void cmd_echo(i32 argc, const char **argv) {
     qk_console_print(buf);
 }
 
-/* ---- Lifecycle ---- */
+// --- Lifecycle ---
 
 void qk_console_init(void) {
     memset(&s_con, 0, sizeof(s_con));
@@ -196,7 +197,7 @@ void qk_console_shutdown(void) {
     s_con.initialized = false;
 }
 
-/* ---- State ---- */
+// --- State ---
 
 bool qk_console_is_open(void) {
     return s_con.open;
@@ -209,7 +210,7 @@ void qk_console_toggle(void) {
     s_con.tab_index = -1;
 }
 
-/* ---- Output ---- */
+// --- Output ---
 
 static void con_push_line(const char *text, u32 color) {
     con_line_t *line = &s_con.lines[s_con.line_head % CON_SCROLLBACK_LINES];
@@ -218,14 +219,14 @@ static void con_push_line(const char *text, u32 color) {
     s_con.line_head++;
     if (s_con.line_count < CON_SCROLLBACK_LINES) s_con.line_count++;
 
-    /* Auto-scroll to bottom when new text arrives */
+    // Auto-scroll to bottom when new text arrives
     s_con.scroll_offset = 0;
 }
 
 void qk_console_print(const char *text) {
     if (!text) return;
 
-    /* Handle multi-line: split on newlines */
+    // Handle multi-line: split on newlines
     const char *start = text;
     for (const char *p = text; ; p++) {
         if (*p == '\n' || *p == '\0') {
@@ -250,7 +251,7 @@ void qk_console_printf(const char *fmt, ...) {
     qk_console_print(buf);
 }
 
-/* ---- Command registration ---- */
+// --- Command registration ---
 
 void qk_console_register_cmd(const char *name, qk_console_cmd_func_t func,
                                const char *desc) {
@@ -263,7 +264,7 @@ void qk_console_register_cmd(const char *name, qk_console_cmd_func_t func,
     cmd->func = func;
 }
 
-/* ---- Tokenizer (Q3 style: space-delimited, quoted strings) ---- */
+// --- Tokenizer (Q3 style: space-delimited, quoted strings) ---
 
 static i32 con_tokenize(const char *text, const char *tokens[], char *token_buf,
                           u32 buf_size) {
@@ -272,7 +273,7 @@ static i32 con_tokenize(const char *text, const char *tokens[], char *token_buf,
     const char *p = text;
 
     while (*p && argc < CON_MAX_TOKENS) {
-        /* Skip whitespace */
+        // Skip whitespace
         while (*p == ' ' || *p == '\t') p++;
         if (*p == '\0') break;
 
@@ -280,7 +281,7 @@ static i32 con_tokenize(const char *text, const char *tokens[], char *token_buf,
         u32 len;
 
         if (*p == '"') {
-            /* Quoted string */
+            // Quoted string
             p++;
             start = p;
             while (*p && *p != '"') p++;
@@ -302,26 +303,26 @@ static i32 con_tokenize(const char *text, const char *tokens[], char *token_buf,
     return argc;
 }
 
-/* ---- Command execution ---- */
+// --- Command execution ---
 
 static void con_execute(const char *text) {
     if (!text || !text[0]) return;
 
-    /* Echo command in green */
+    // Echo command in green
     char echo_buf[CON_LINE_LEN];
     snprintf(echo_buf, sizeof(echo_buf), "] %s", text);
     con_push_line(echo_buf, CON_ECHO_COLOR);
 
-    /* Push to history */
+    // Push to history
     con_push_history(text);
 
-    /* Tokenize */
+    // Tokenize
     const char *tokens[CON_MAX_TOKENS];
     char token_buf[1024];
     i32 argc = con_tokenize(text, tokens, token_buf, sizeof(token_buf));
     if (argc == 0) return;
 
-    /* 1. Try registered commands first */
+    // 1. Try registered commands first
     for (u32 i = 0; i < s_con.command_count; i++) {
         if (!s_con.commands[i].in_use) continue;
         if (strcmp(s_con.commands[i].name, tokens[0]) == 0) {
@@ -330,11 +331,11 @@ static void con_execute(const char *text) {
         }
     }
 
-    /* 2. Try cvar lookup */
+    // 2. Try cvar lookup
     qk_cvar_t *cv = qk_cvar_find(tokens[0]);
     if (cv) {
         if (argc == 1) {
-            /* Print current value */
+            // Print current value
             char val_buf[64];
             qk_cvar_to_string(cv, val_buf, sizeof(val_buf));
             char range_buf[64] = "";
@@ -347,7 +348,7 @@ static void con_execute(const char *text) {
                 con_push_line(range_buf, CON_TEXT_COLOR);
             }
         } else {
-            /* Set value from string */
+            // Set value from string
             if (cv->flags & QK_CVAR_READONLY) {
                 con_push_line("Cvar is read-only.", CON_ERROR_COLOR);
             } else if (qk_cvar_set_from_string(cv, tokens[1])) {
@@ -363,18 +364,18 @@ static void con_execute(const char *text) {
         return;
     }
 
-    /* 3. Unknown */
+    // 3. Unknown
     char err_buf[CON_LINE_LEN];
     snprintf(err_buf, sizeof(err_buf), "Unknown command: %s", tokens[0]);
     con_push_line(err_buf, CON_ERROR_COLOR);
 }
 
-/* ---- History ---- */
+// --- History ---
 
 static void con_push_history(const char *text) {
     if (!text || !text[0]) return;
 
-    /* Don't push duplicates of the last entry */
+    // Don't push duplicates of the last entry
     if (s_con.history_count > 0) {
         u32 last = (s_con.history_head + CON_HISTORY_SIZE - 1) % CON_HISTORY_SIZE;
         if (strcmp(s_con.history[last], text) == 0) return;
@@ -390,7 +391,7 @@ static void con_history_up(void) {
     if (s_con.history_count == 0) return;
 
     if (s_con.history_pos == -1) {
-        /* Save current input */
+        // Save current input
         snprintf(s_con.history_saved, CON_INPUT_LEN, "%s", s_con.input);
         s_con.history_pos = 0;
     } else if (s_con.history_pos < (i32)s_con.history_count - 1) {
@@ -399,7 +400,7 @@ static void con_history_up(void) {
         return;
     }
 
-    /* Get entry: history_head - 1 - history_pos */
+    // Get entry: history_head - 1 - history_pos
     u32 idx = (s_con.history_head + CON_HISTORY_SIZE - 1 - (u32)s_con.history_pos) % CON_HISTORY_SIZE;
     snprintf(s_con.input, CON_INPUT_LEN, "%s", s_con.history[idx]);
     s_con.input_len = (u32)strlen(s_con.input);
@@ -411,7 +412,7 @@ static void con_history_down(void) {
 
     s_con.history_pos--;
     if (s_con.history_pos < 0) {
-        /* Restore saved input */
+        // Restore saved input
         snprintf(s_con.input, CON_INPUT_LEN, "%s", s_con.history_saved);
         s_con.input_len = (u32)strlen(s_con.input);
         s_con.cursor = s_con.input_len;
@@ -425,10 +426,10 @@ static void con_history_down(void) {
     s_con.cursor = s_con.input_len;
 }
 
-/* ---- Tab Completion ---- */
+// --- Tab Completion ---
 
 static void con_tab_complete(void) {
-    /* Build prefix from input if not already in tab mode */
+    // Build prefix from input if not already in tab mode
     if (!s_con.tab_active) {
         snprintf(s_con.tab_prefix, CON_INPUT_LEN, "%s", s_con.input);
         s_con.tab_index = -1;
@@ -438,7 +439,7 @@ static void con_tab_complete(void) {
     u32 prefix_len = (u32)strlen(s_con.tab_prefix);
     if (prefix_len == 0) return;
 
-    /* Build a list of matches: commands first, then cvars */
+    // Build a list of matches: commands first, then cvars
     const char *matches[256];
     u32 match_count = 0;
 
@@ -460,21 +461,21 @@ static void con_tab_complete(void) {
 
     if (match_count == 0) return;
 
-    /* Cycle through matches */
+    // Cycle through matches
     s_con.tab_index = (s_con.tab_index + 1) % (i32)match_count;
 
-    /* Fill input with match + trailing space */
+    // Fill input with match + trailing space
     snprintf(s_con.input, CON_INPUT_LEN, "%s ", matches[s_con.tab_index]);
     s_con.input_len = (u32)strlen(s_con.input);
     s_con.cursor = s_con.input_len;
 }
 
-/* ---- Input handling ---- */
+// --- Input handling ---
 
 void qk_console_key_event(u32 scancode, bool pressed) {
     if (!pressed) return;
 
-    /* Reset tab state on any key except Tab */
+    // Reset tab state on any key except Tab
     if (scancode != SDL_SCANCODE_TAB) {
         s_con.tab_active = false;
         s_con.tab_index = -1;
@@ -493,7 +494,7 @@ void qk_console_key_event(u32 scancode, bool pressed) {
 
     case SDL_SCANCODE_BACKSPACE:
         if (s_con.cursor > 0) {
-            /* Shift characters left */
+            // Shift characters left
             memmove(&s_con.input[s_con.cursor - 1],
                     &s_con.input[s_con.cursor],
                     s_con.input_len - s_con.cursor + 1);
@@ -563,20 +564,20 @@ void qk_console_key_event(u32 scancode, bool pressed) {
 void qk_console_text_event(const char *text) {
     if (!text) return;
 
-    /* Suppress tilde/backtick that triggered the toggle */
+    // Suppress tilde/backtick that triggered the toggle
     if (s_con.suppress_next_text) {
         s_con.suppress_next_text = false;
         if (text[0] == '`' || text[0] == '~') return;
     }
 
-    /* Insert text at cursor */
+    // Insert text at cursor
     u32 text_len = (u32)strlen(text);
     for (u32 i = 0; i < text_len; i++) {
         char ch = text[i];
-        if (ch < 32 || ch > 126) continue;  /* printable ASCII only */
+        if (ch < 32 || ch > 126) continue;  // printable ASCII only
         if (s_con.input_len >= CON_INPUT_LEN - 1) break;
 
-        /* Insert at cursor position */
+        // Insert at cursor position
         memmove(&s_con.input[s_con.cursor + 1],
                 &s_con.input[s_con.cursor],
                 s_con.input_len - s_con.cursor + 1);
@@ -586,17 +587,17 @@ void qk_console_text_event(const char *text) {
     }
     s_con.input[s_con.input_len] = '\0';
 
-    /* Reset tab state on text input */
+    // Reset tab state on text input
     s_con.tab_active = false;
     s_con.tab_index = -1;
 }
 
-/* ---- Rendering ---- */
+// --- Rendering ---
 
 void qk_console_draw(f32 screen_w, f32 screen_h, f32 dt) {
     if (!s_con.initialized) return;
 
-    /* Animate slide */
+    // Animate slide
     f32 target = s_con.open ? 1.0f : 0.0f;
     if (s_con.slide_frac < target) {
         s_con.slide_frac += dt * CON_SLIDE_SPEED;
@@ -606,38 +607,38 @@ void qk_console_draw(f32 screen_w, f32 screen_h, f32 dt) {
         if (s_con.slide_frac < 0.0f) s_con.slide_frac = 0.0f;
     }
 
-    /* Zero cost when fully closed */
+    // Zero cost when fully closed
     if (s_con.slide_frac <= 0.0f) return;
 
     f32 con_height = screen_h * 0.5f * s_con.slide_frac;
     f32 line_height = CON_FONT_SIZE + 2.0f;
     f32 padding = 6.0f;
 
-    /* Background */
+    // Background
     qk_ui_draw_rect(0, 0, screen_w, con_height, CON_BG_COLOR);
 
-    /* Bottom border */
+    // Bottom border
     qk_ui_draw_rect(0, con_height - 2.0f, screen_w, 2.0f, CON_BORDER_COLOR);
 
-    /* Input line at bottom of console */
+    // Input line at bottom of console
     f32 input_y = con_height - line_height - padding;
 
-    /* Draw prompt ']' */
+    // Draw prompt ']'
     char prompt[2] = { CON_PROMPT_CHAR, '\0' };
     qk_ui_draw_text(padding, input_y, prompt, CON_FONT_SIZE, CON_BORDER_COLOR);
 
-    /* Draw input text */
+    // Draw input text
     f32 prompt_w = qk_ui_text_width(prompt, CON_FONT_SIZE);
     f32 text_x = padding + prompt_w + 2.0f;
     if (s_con.input_len > 0) {
         qk_ui_draw_text(text_x, input_y, s_con.input, CON_FONT_SIZE, CON_INPUT_COLOR);
     }
 
-    /* Blinking cursor */
+    // Blinking cursor
     s_con.cursor_blink_timer += dt;
     if (s_con.cursor_blink_timer > 1.0f) s_con.cursor_blink_timer -= 1.0f;
     if (s_con.open && s_con.cursor_blink_timer < 0.5f) {
-        /* Measure width up to cursor position */
+        // Measure width up to cursor position
         char tmp[CON_INPUT_LEN];
         memcpy(tmp, s_con.input, s_con.cursor);
         tmp[s_con.cursor] = '\0';
@@ -645,16 +646,16 @@ void qk_console_draw(f32 screen_w, f32 screen_h, f32 dt) {
         qk_ui_draw_rect(cursor_x, input_y, 2.0f, CON_FONT_SIZE, CON_INPUT_COLOR);
     }
 
-    /* Separator line above input */
+    // Separator line above input
     f32 sep_y = input_y - 4.0f;
     qk_ui_draw_rect(0, sep_y, screen_w, 1.0f, CON_BORDER_COLOR);
 
-    /* Draw scrollback lines (bottom-up) */
+    // Draw scrollback lines (bottom-up)
     f32 y = sep_y - line_height;
     u32 visible_lines = 0;
 
     if (s_con.line_count > 0) {
-        /* Start from the newest visible line, adjusted by scroll offset */
+        // Start from the newest visible line, adjusted by scroll offset
         i32 start_idx = (i32)s_con.line_head - 1 - s_con.scroll_offset;
 
         for (i32 i = start_idx; i >= 0 && y >= 0; i--, visible_lines++) {
@@ -666,9 +667,9 @@ void qk_console_draw(f32 screen_w, f32 screen_h, f32 dt) {
             y -= line_height;
         }
 
-        /* If we started with high line_head, also render wrapped entries */
+        // If we started with high line_head, also render wrapped entries
         if (s_con.line_count >= CON_SCROLLBACK_LINES && start_idx < 0) {
-            /* wrapped case: line_head has wrapped around the ring buffer */
+            // wrapped case: line_head has wrapped around the ring buffer
             for (i32 i = (i32)CON_SCROLLBACK_LINES + start_idx; i >= (i32)s_con.line_head && y >= 0; i--, visible_lines++) {
                 u32 ring_idx = (u32)i % CON_SCROLLBACK_LINES;
                 con_line_t *line = &s_con.lines[ring_idx];
@@ -682,7 +683,7 @@ void qk_console_draw(f32 screen_w, f32 screen_h, f32 dt) {
 
     QK_UNUSED(visible_lines);
 
-    /* Scroll indicator */
+    // Scroll indicator
     if (s_con.scroll_offset > 0) {
         char scroll_buf[32];
         snprintf(scroll_buf, sizeof(scroll_buf), "^ %d more ^", s_con.scroll_offset);

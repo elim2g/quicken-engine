@@ -10,7 +10,7 @@
     #include <sys/stat.h>
 #endif
 
-/* ---- Pipeline Cache ---- */
+// --- Pipeline Cache ---
 
 #define PIPELINE_CACHE_FILENAME "quicken_pipeline_cache.bin"
 
@@ -25,7 +25,7 @@ static void r_pipeline_cache_build_path(void)
     if (appdata) {
         snprintf(s_cache_path, sizeof(s_cache_path), "%s\\QUICKEN\\%s",
                  appdata, PIPELINE_CACHE_FILENAME);
-        /* Ensure directory exists */
+        // Ensure directory exists
         char dir[512];
         snprintf(dir, sizeof(dir), "%s\\QUICKEN", appdata);
         CreateDirectoryA(dir, NULL);
@@ -40,7 +40,7 @@ static void r_pipeline_cache_build_path(void)
         snprintf(s_cache_path, sizeof(s_cache_path), "%s/.cache/quicken/%s",
                  home, PIPELINE_CACHE_FILENAME);
     }
-    /* Ensure directory exists (best-effort) */
+    // Ensure directory exists (best-effort)
     if (s_cache_path[0]) {
         char dir[512];
         if (cache_home)
@@ -64,7 +64,7 @@ qk_result_t r_pipeline_cache_init(void)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO
     };
 
-    /* Try to load existing cache */
+    // Try to load existing cache
     FILE *f = fopen(s_cache_path, "rb");
     void *cache_data = NULL;
     if (f) {
@@ -88,7 +88,7 @@ qk_result_t r_pipeline_cache_init(void)
     free(cache_data);
 
     if (vr != VK_SUCCESS) {
-        /* Try without initial data */
+        // Try without initial data
         cache_info.initialDataSize = 0;
         cache_info.pInitialData = NULL;
         vr = vkCreatePipelineCache(g_r.device.handle, &cache_info, NULL,
@@ -130,7 +130,7 @@ void r_pipeline_cache_shutdown(void)
     }
 }
 
-/* ---- Shader Module Loading ---- */
+// --- Shader Module Loading ---
 
 VkShaderModule r_pipeline_load_shader(const char *path)
 {
@@ -149,7 +149,7 @@ VkShaderModule r_pipeline_load_shader(const char *path)
         return VK_NULL_HANDLE;
     }
 
-    /* SPIR-V requires 4-byte alignment */
+    // SPIR-V requires 4-byte alignment
     u32 *code = malloc((size_t)size);
     if (!code) {
         fclose(f);
@@ -181,7 +181,7 @@ VkShaderModule r_pipeline_load_shader(const char *path)
     return module;
 }
 
-/* ---- World Pipeline ---- */
+// --- World Pipeline ---
 
 qk_result_t r_pipeline_create_world(void)
 {
@@ -192,7 +192,7 @@ qk_result_t r_pipeline_create_world(void)
         fprintf(stderr, "[Renderer] World shader compilation required. Using stub pipeline.\n");
         if (vert) vkDestroyShaderModule(g_r.device.handle, vert, NULL);
         if (frag) vkDestroyShaderModule(g_r.device.handle, frag, NULL);
-        /* Pipeline is optional at this stage; draw_world will skip if no pipeline */
+        // Pipeline is optional at this stage; draw_world will skip if no pipeline
         return QK_SUCCESS;
     }
 
@@ -211,7 +211,7 @@ qk_result_t r_pipeline_create_world(void)
         }
     };
 
-    /* Vertex input */
+    // Vertex input
     VkVertexInputBindingDescription binding = {
         .binding   = 0,
         .stride    = sizeof(r_world_vertex_t),
@@ -294,7 +294,7 @@ qk_result_t r_pipeline_create_world(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Pipeline layout: set 0 = view UBO, set 1 = bindless textures, set 2 = light SSBOs */
+    // Pipeline layout: set 0 = view UBO, set 1 = bindless textures, set 2 = light SSBOs
     VkDescriptorSetLayout set_layouts[] = {
         g_r.view_set_layout, g_r.bindless_set_layout, g_r.lights.light_set_layout
     };
@@ -347,7 +347,7 @@ qk_result_t r_pipeline_create_world(void)
     return QK_SUCCESS;
 }
 
-/* ---- Entity Pipeline ---- */
+// --- Entity Pipeline ---
 
 qk_result_t r_pipeline_create_entity(void)
 {
@@ -450,14 +450,14 @@ qk_result_t r_pipeline_create_entity(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Push constants: mat4 model (64 bytes) + vec4 color (16 bytes) = 80 bytes */
+    // Push constants: mat4 model (64 bytes) + vec4 color (16 bytes) = 80 bytes
     VkPushConstantRange push_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset     = 0,
         .size       = sizeof(r_entity_push_constants_t)
     };
 
-    /* set 0 = view UBO, set 1 = light SSBOs */
+    // set 0 = view UBO, set 1 = light SSBOs
     VkDescriptorSetLayout entity_sets[] = { g_r.view_set_layout, g_r.lights.light_set_layout };
 
     VkPipelineLayoutCreateInfo layout_info = {
@@ -502,7 +502,7 @@ qk_result_t r_pipeline_create_entity(void)
     return QK_SUCCESS;
 }
 
-/* ---- FX Pipeline (additive blending, depth test ON, depth write OFF) ---- */
+// --- FX Pipeline (additive blending, depth test ON, depth write OFF) ---
 
 qk_result_t r_pipeline_create_fx(void)
 {
@@ -575,7 +575,7 @@ qk_result_t r_pipeline_create_fx(void)
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
     };
 
-    /* Depth test ON, depth write OFF -- beams occlude behind geometry but don't block each other */
+    // Depth test ON, depth write OFF -- beams occlude behind geometry but don't block each other
     VkPipelineDepthStencilStateCreateInfo depth_stencil = {
         .sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable  = VK_TRUE,
@@ -583,7 +583,7 @@ qk_result_t r_pipeline_create_fx(void)
         .depthCompareOp   = VK_COMPARE_OP_LESS
     };
 
-    /* Additive blending: src ONE + dst ONE */
+    // Additive blending: src ONE + dst ONE
     VkPipelineColorBlendAttachmentState blend_attachment = {
         .blendEnable         = VK_TRUE,
         .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
@@ -613,7 +613,7 @@ qk_result_t r_pipeline_create_fx(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Layout: set 0 = view UBO (same as entity pipeline), no push constants */
+    // Layout: set 0 = view UBO (same as entity pipeline), no push constants
     VkPipelineLayoutCreateInfo layout_info = {
         .sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
@@ -654,7 +654,7 @@ qk_result_t r_pipeline_create_fx(void)
     return QK_SUCCESS;
 }
 
-/* ---- UI Pipeline ---- */
+// --- UI Pipeline ---
 
 qk_result_t r_pipeline_create_ui(void)
 {
@@ -733,7 +733,7 @@ qk_result_t r_pipeline_create_ui(void)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
     };
 
-    /* Alpha blending (pre-multiplied) */
+    // Alpha blending (pre-multiplied)
     VkPipelineColorBlendAttachmentState blend_attachment = {
         .blendEnable         = VK_TRUE,
         .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
@@ -763,7 +763,7 @@ qk_result_t r_pipeline_create_ui(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Push constants for screen size */
+    // Push constants for screen size
     VkPushConstantRange push_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset     = 0,
@@ -812,7 +812,7 @@ qk_result_t r_pipeline_create_ui(void)
     return QK_SUCCESS;
 }
 
-/* ---- Composition Pipeline ---- */
+// --- Composition Pipeline ---
 
 qk_result_t r_pipeline_create_compose(void)
 {
@@ -841,7 +841,7 @@ qk_result_t r_pipeline_create_compose(void)
         }
     };
 
-    /* No vertex input (fullscreen triangle generated in shader) */
+    // No vertex input (fullscreen triangle generated in shader)
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
     };
@@ -895,7 +895,7 @@ qk_result_t r_pipeline_create_compose(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Push constants for viewport params */
+    // Push constants for viewport params
     VkPushConstantRange push_range = {
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset     = 0,
@@ -944,7 +944,7 @@ qk_result_t r_pipeline_create_compose(void)
     return QK_SUCCESS;
 }
 
-/* ---- Cleanup ---- */
+// --- Cleanup ---
 
 void r_pipeline_destroy_all(void)
 {

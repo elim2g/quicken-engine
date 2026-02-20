@@ -26,4 +26,4 @@ void        qk_window_set_size(qk_window_t *window, u32 width, u32 height);
 void        qk_window_set_fullscreen(qk_window_t *window, bool fullscreen);
 bool        qk_window_is_fullscreen(qk_window_t *window);
 
-#endif /* QK_WINDOW_H */
+#endif // QK_WINDOW_H

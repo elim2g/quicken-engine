@@ -12,7 +12,7 @@
 #include "qk_math.h"
 #include "qk_types.h"
 
-/* Entity types */
+// Entity types
 typedef enum {
     ENTITY_NONE = 0,
     ENTITY_PLAYER,
@@ -20,7 +20,7 @@ typedef enum {
     ENTITY_TYPE_COUNT
 } entity_type_t;
 
-/* Projectile data */
+// Projectile data
 typedef struct {
     vec3_t          origin;
     vec3_t          velocity;
@@ -32,7 +32,7 @@ typedef struct {
     f32             splash_damage;
 } projectile_t;
 
-/* Entity (tagged union) */
+// Entity (tagged union)
 typedef struct {
     entity_type_t   type;
     u8              id;
@@ -43,14 +43,14 @@ typedef struct {
     } data;
 } entity_t;
 
-/* Entity pool */
+// Entity pool
 typedef struct {
     entity_t    entities[QK_MAX_ENTITIES];
     u32         count;
     u32         high_water;
 } entity_pool_t;
 
-/* Round state for Clan Arena */
+// Round state for Clan Arena
 typedef enum {
     CA_STATE_WARMUP = 0,
     CA_STATE_COUNTDOWN,
@@ -59,7 +59,7 @@ typedef enum {
     CA_STATE_MATCH_END
 } ca_round_state_t;
 
-/* Weapon definition table entry */
+// Weapon definition table entry
 typedef struct {
     qk_weapon_id_t  id;
     const char     *name;
@@ -67,7 +67,7 @@ typedef struct {
     f32             damage;
     f32             splash_damage;
     f32             splash_radius;
-    f32             speed;          /* projectile speed, 0 for hitscan */
+    f32             speed;          // projectile speed, 0 for hitscan
     u16             start_ammo;
 } weapon_def_t;
 

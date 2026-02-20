@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 
-/* ---- Light submission (public API) ---- */
+// --- Light submission (public API) ---
 
 void qk_renderer_submit_light(const qk_dynamic_light_t *light)
 {
@@ -24,19 +24,19 @@ void qk_renderer_submit_light(const qk_dynamic_light_t *light)
     dst->intensity = light->intensity;
 }
 
-/* ---- Depth Pre-Pass ---- */
+// --- Depth Pre-Pass ---
 
 static qk_result_t depth_prepass_init(void)
 {
     VkFormat depth_format = VK_FORMAT_D32_SFLOAT;
-    /* Try D32 first, fall back to D24 */
+    // Try D32 first, fall back to D24
     VkFormatProperties props;
     vkGetPhysicalDeviceFormatProperties(g_r.device.physical, depth_format, &props);
     if (!(props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
         depth_format = VK_FORMAT_D24_UNORM_S8_UINT;
     }
 
-    /* Depth-only render pass: store depth so compute can sample it */
+    // Depth-only render pass: store depth so compute can sample it
     VkAttachmentDescription attachment = {
         .format         = depth_format,
         .samples        = VK_SAMPLE_COUNT_1_BIT,
@@ -82,7 +82,7 @@ static qk_result_t depth_prepass_init(void)
                                       &g_r.depth_prepass.render_pass);
     if (vr != VK_SUCCESS) return QK_ERROR_PIPELINE;
 
-    /* Framebuffer using the world target's depth image */
+    // Framebuffer using the world target's depth image
     VkFramebufferCreateInfo fb_info = {
         .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
         .renderPass      = g_r.depth_prepass.render_pass,
@@ -96,7 +96,7 @@ static qk_result_t depth_prepass_init(void)
                               &g_r.depth_prepass.framebuffer);
     if (vr != VK_SUCCESS) return QK_ERROR_OUT_OF_MEMORY;
 
-    /* Depth pre-pass pipeline: same vertex input as world, no fragment shader */
+    // Depth pre-pass pipeline: same vertex input as world, no fragment shader
     VkShaderModule vert = r_pipeline_load_shader("src/renderer/shaders/compiled/world.vert.spv");
     if (!vert) return QK_ERROR_PIPELINE;
 
@@ -167,7 +167,7 @@ static qk_result_t depth_prepass_init(void)
         .pDynamicStates    = dyn_states
     };
 
-    /* Layout: only needs view UBO (set 0) for the VP matrix */
+    // Layout: only needs view UBO (set 0) for the VP matrix
     VkPipelineLayoutCreateInfo layout_info = {
         .sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
@@ -204,12 +204,12 @@ static qk_result_t depth_prepass_init(void)
     return QK_SUCCESS;
 }
 
-/* ---- SSBO Setup ---- */
+// --- SSBO Setup ---
 
 static qk_result_t ssbo_init(void)
 {
-    /* Light SSBO (host-visible, persistently mapped) */
-    /* Header: 4 uints (count + 3 padding) + lights array */
+    // Light SSBO (host-visible, persistently mapped)
+    // Header: 4 uints (count + 3 padding) + lights array
     VkDeviceSize light_size = 16 + R_MAX_DYNAMIC_LIGHTS * sizeof(r_dynamic_light_t);
     qk_result_t res = r_memory_create_buffer(
         light_size,
@@ -221,7 +221,7 @@ static qk_result_t ssbo_init(void)
     vkMapMemory(g_r.device.handle, g_r.lights.light_memory, 0, light_size, 0,
                 &g_r.lights.light_mapped);
 
-    /* Tile SSBO (device-local) */
+    // Tile SSBO (device-local)
     u32 tile_x = (g_r.config.render_width + R_TILE_SIZE - 1) / R_TILE_SIZE;
     u32 tile_y = (g_r.config.render_height + R_TILE_SIZE - 1) / R_TILE_SIZE;
     g_r.lights.tile_count_x = tile_x;
@@ -238,7 +238,7 @@ static qk_result_t ssbo_init(void)
     return QK_SUCCESS;
 }
 
-/* ---- Compute Pipeline ---- */
+// --- Compute Pipeline ---
 
 static qk_result_t compute_pipeline_init(void)
 {
@@ -299,7 +299,7 @@ static qk_result_t compute_pipeline_init(void)
     vkCreateDescriptorSetLayout(g_r.device.handle, &light_layout_info, NULL,
                                  &g_r.lights.light_set_layout);
 
-    /* Allocate compute descriptor set */
+    // Allocate compute descriptor set
     {
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -311,7 +311,7 @@ static qk_result_t compute_pipeline_init(void)
                                   &g_r.lights.cull_descriptor_set);
     }
 
-    /* Allocate fragment light descriptor set */
+    // Allocate fragment light descriptor set
     {
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -323,7 +323,7 @@ static qk_result_t compute_pipeline_init(void)
                                   &g_r.lights.light_descriptor_set);
     }
 
-    /* Write compute descriptor set */
+    // Write compute descriptor set
     VkDeviceSize light_size = 16 + R_MAX_DYNAMIC_LIGHTS * sizeof(r_dynamic_light_t);
     VkDeviceSize tile_size = (VkDeviceSize)g_r.lights.tile_count_x * g_r.lights.tile_count_y *
                              (R_MAX_LIGHTS_PER_TILE + 1) * sizeof(u32);
@@ -372,7 +372,7 @@ static qk_result_t compute_pipeline_init(void)
     };
     vkUpdateDescriptorSets(g_r.device.handle, 3, writes, 0, NULL);
 
-    /* Write fragment light descriptor set */
+    // Write fragment light descriptor set
     VkWriteDescriptorSet frag_writes[2] = {
         {
             .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -393,7 +393,7 @@ static qk_result_t compute_pipeline_init(void)
     };
     vkUpdateDescriptorSets(g_r.device.handle, 2, frag_writes, 0, NULL);
 
-    /* Compute pipeline layout */
+    // Compute pipeline layout
     VkPushConstantRange push_range = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .offset     = 0,
@@ -409,7 +409,7 @@ static qk_result_t compute_pipeline_init(void)
     vkCreatePipelineLayout(g_r.device.handle, &pipe_layout_info, NULL,
                            &g_r.lights.cull_layout);
 
-    /* Compute pipeline */
+    // Compute pipeline
     VkShaderModule comp = r_pipeline_load_shader("src/renderer/shaders/compiled/light_cull.comp.spv");
     if (!comp) return QK_ERROR_PIPELINE;
 
@@ -434,7 +434,7 @@ static qk_result_t compute_pipeline_init(void)
     return QK_SUCCESS;
 }
 
-/* ---- Public Functions ---- */
+// --- Public Functions ---
 
 qk_result_t r_compute_init(void)
 {
@@ -459,7 +459,7 @@ void r_compute_shutdown(void)
     VkDevice dev = g_r.device.handle;
     if (!dev) return;
 
-    /* Depth pre-pass */
+    // Depth pre-pass
     if (g_r.depth_prepass.pipeline.handle)
         vkDestroyPipeline(dev, g_r.depth_prepass.pipeline.handle, NULL);
     if (g_r.depth_prepass.pipeline.layout)
@@ -470,19 +470,19 @@ void r_compute_shutdown(void)
         vkDestroyRenderPass(dev, g_r.depth_prepass.render_pass, NULL);
     memset(&g_r.depth_prepass, 0, sizeof(g_r.depth_prepass));
 
-    /* Compute pipeline */
+    // Compute pipeline
     if (g_r.lights.cull_pipeline)
         vkDestroyPipeline(dev, g_r.lights.cull_pipeline, NULL);
     if (g_r.lights.cull_layout)
         vkDestroyPipelineLayout(dev, g_r.lights.cull_layout, NULL);
 
-    /* Descriptor layouts (sets freed with pool) */
+    // Descriptor layouts (sets freed with pool)
     if (g_r.lights.cull_set_layout)
         vkDestroyDescriptorSetLayout(dev, g_r.lights.cull_set_layout, NULL);
     if (g_r.lights.light_set_layout)
         vkDestroyDescriptorSetLayout(dev, g_r.lights.light_set_layout, NULL);
 
-    /* SSBOs */
+    // SSBOs
     if (g_r.lights.light_ssbo) vkDestroyBuffer(dev, g_r.lights.light_ssbo, NULL);
     if (g_r.lights.light_memory) {
         vkUnmapMemory(dev, g_r.lights.light_memory);
@@ -498,7 +498,7 @@ void r_compute_upload_lights(void)
 {
     if (!g_r.lights.initialized || !g_r.lights.light_mapped) return;
 
-    /* Write header: [count, pad, pad, pad] then light array */
+    // Write header: [count, pad, pad, pad] then light array
     u32 *header = (u32 *)g_r.lights.light_mapped;
     header[0] = g_r.lights.light_count;
     header[1] = 0;
@@ -577,7 +577,7 @@ void r_compute_record_cull(VkCommandBuffer cmd, const f32 *inv_projection)
 
     r_debug_begin_label(cmd, "Light Cull", 0.8f, 0.8f, 0.2f);
 
-    /* Barrier: depth attachment -> shader read */
+    // Barrier: depth attachment -> shader read
     VkImageMemoryBarrier depth_barrier = {
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask       = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
@@ -619,7 +619,7 @@ void r_compute_record_cull(VkCommandBuffer cmd, const f32 *inv_projection)
 
     vkCmdDispatch(cmd, g_r.lights.tile_count_x, g_r.lights.tile_count_y, 1);
 
-    /* Barrier: tile SSBO write -> fragment shader read */
+    // Barrier: tile SSBO write -> fragment shader read
     VkBufferMemoryBarrier tile_barrier = {
         .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
         .srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT,

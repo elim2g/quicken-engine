@@ -19,7 +19,7 @@
 #include "netcode/qk_netcode.h"
 #include "gameplay/qk_gameplay.h"
 
-/* ---- Shutdown signal ---- */
+// --- Shutdown signal ---
 
 static volatile int s_running = 1;
 
@@ -40,7 +40,7 @@ static void signal_handler(int sig) {
 }
 #endif
 
-/* ---- Remote player tracking ---- */
+// --- Remote player tracking ---
 
 static bool s_client_ready[QK_MAX_PLAYERS];
 
@@ -63,10 +63,10 @@ static void detect_remote_players(void) {
     }
 }
 
-/* ---- Server tick ---- */
+// --- Server tick ---
 
 static void server_tick(qk_phys_world_t *phys_world) {
-    /* Read inputs from all connected clients */
+    // Read inputs from all connected clients
     for (u8 i = 0; i < QK_MAX_PLAYERS; i++) {
         qk_usercmd_t cmd;
         if (qk_net_server_get_input(i, &cmd)) {
@@ -74,10 +74,10 @@ static void server_tick(qk_phys_world_t *phys_world) {
         }
     }
 
-    /* Run gameplay tick */
+    // Run gameplay tick
     qk_game_tick(phys_world, QK_TICK_DT);
 
-    /* Pack entity states for netcode */
+    // Pack entity states for netcode
     for (u32 i = 0; i < qk_game_get_entity_count(); i++) {
         n_entity_state_t net_state;
         qk_game_pack_entity((u8)i, &net_state);
@@ -88,11 +88,11 @@ static void server_tick(qk_phys_world_t *phys_world) {
         }
     }
 
-    /* Netcode broadcasts snapshots */
+    // Netcode broadcasts snapshots
     qk_net_server_tick();
 }
 
-/* ---- Main ---- */
+// --- Main ---
 
 int main(int argc, char *argv[]) {
     printf("QUICKEN Dedicated Server v%d.%d.%d\n",
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
     printf("Build: Release\n\n");
 #endif
 
-    /* ---- Parse arguments ---- */
+    // --- Parse arguments ---
     const char *map_name = NULL;
     u16 port = 27960;
     u32 max_clients = QK_MAX_PLAYERS;
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* ---- Install signal handler ---- */
+    // --- Install signal handler ---
 #ifdef QK_PLATFORM_WINDOWS
     SetConsoleCtrlHandler(console_handler, TRUE);
 #else
@@ -134,7 +134,7 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, signal_handler);
 #endif
 
-    /* ---- Load map ---- */
+    // --- Load map ---
     char path[512];
     bool found = false;
 
@@ -161,8 +161,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    qk_map_data_t map_data;
-    memset(&map_data, 0, sizeof(map_data));
+    qk_map_data_t map_data = {0};
     qk_result_t res = qk_map_load(path, &map_data);
     if (res != QK_SUCCESS) {
         fprintf(stderr, "FATAL: Failed to load map '%s' (%d)\n", path, res);
@@ -170,7 +169,7 @@ int main(int argc, char *argv[]) {
     }
     printf("Map loaded: %s\n", path);
 
-    /* ---- Init physics ---- */
+    // --- Init physics ---
     qk_phys_world_t *phys_world = NULL;
     if (map_data.collision.brush_count > 0)
         phys_world = qk_physics_world_create(&map_data.collision);
@@ -178,7 +177,7 @@ int main(int argc, char *argv[]) {
         phys_world = qk_physics_world_create_test_room();
     printf("Physics world: OK (%u brushes)\n", map_data.collision.brush_count);
 
-    /* ---- Init gameplay ---- */
+    // --- Init gameplay ---
     qk_game_config_t gc = {0};
     res = qk_game_init(&gc);
     if (res != QK_SUCCESS) {
@@ -190,11 +189,12 @@ int main(int argc, char *argv[]) {
                            map_data.jump_pads, map_data.jump_pad_count);
     printf("Gameplay: OK\n");
 
-    /* ---- Init netcode ---- */
-    qk_net_server_config_t nsc = {0};
-    nsc.server_port = port;
-    nsc.max_clients = max_clients;
-    nsc.tick_rate = (f64)QK_TICK_RATE;
+    // --- Init netcode ---
+    qk_net_server_config_t nsc = {
+        .server_port = port,
+        .max_clients = max_clients,
+        .tick_rate = (f64)QK_TICK_RATE,
+    };
 
     res = qk_net_server_init(&nsc);
     if (res != QK_SUCCESS) {
@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
     qk_net_server_set_map(path);
     printf("Server listening on port %u (max %u clients)\n", (u32)port, max_clients);
 
-    /* ---- Tick loop ---- */
+    // --- Tick loop ---
     printf("\nServer running. Press Ctrl+C to stop.\n\n");
 
     memset(s_client_ready, 0, sizeof(s_client_ready));
@@ -237,7 +237,7 @@ int main(int argc, char *argv[]) {
 
     printf("\nShutting down...\n");
 
-    /* ---- Shutdown ---- */
+    // --- Shutdown ---
 shutdown:
     qk_net_server_shutdown();
     qk_game_shutdown();

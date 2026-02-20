@@ -18,17 +18,18 @@
 #include <math.h>
 #include <ctype.h>
 
-/* ---- Internal limits ---- */
+// --- Internal limits ---
 
 #define MAX_FACE_PLANES     32
 #define MAX_FACE_VERTS      64
 #define MAX_FACES_PER_BRUSH 32
 #define MAX_BRUSHES         QK_MAP_MAX_BRUSHES
 #define MAX_ENTITIES        1024
-#define EPSILON             0.001f
-#define PLANE_EPSILON       0.01f
 
-/* ---- Internal types ---- */
+static const f32 EPSILON       = 0.001f;
+static const f32 PLANE_EPSILON = 0.01f;
+
+// --- Internal types ---
 
 typedef struct {
     vec3_t normal;
@@ -36,7 +37,7 @@ typedef struct {
 } plane_t;
 
 typedef struct {
-    vec3_t  points[3];      /* three points defining the plane */
+    vec3_t  points[3];  // three points defining the plane
     plane_t plane;
     char    texture[64];
     f32     offset_x, offset_y;
@@ -62,14 +63,14 @@ typedef struct {
     u32         brush_count;
 } map_entity_t;
 
-/* ---- Parsed map ---- */
+// --- Parsed map ---
 
 typedef struct {
     map_entity_t entities[MAX_ENTITIES];
     u32          entity_count;
 } parsed_map_t;
 
-/* ---- Parse helpers ---- */
+// --- Parse helpers ---
 
 static const char *skip_whitespace(const char *p) {
     while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
@@ -85,7 +86,7 @@ static const char *skip_to_eol(const char *p) {
 static const char *read_token(const char *p, char *buf, u32 buf_size) {
     p = skip_whitespace(p);
 
-    /* Handle quoted strings */
+    // Handle quoted strings
     if (*p == '"') {
         p++;
         u32 i = 0;
@@ -97,7 +98,7 @@ static const char *read_token(const char *p, char *buf, u32 buf_size) {
         return p;
     }
 
-    /* Regular token */
+    // Regular token
     u32 i = 0;
     while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && i < buf_size - 1) {
         buf[i++] = *p++;
@@ -119,7 +120,7 @@ static f32 parse_f32(const char **pp) {
     return (f32)atof(buf);
 }
 
-/* ---- Plane from three points ---- */
+// --- Plane from three points ---
 
 static plane_t plane_from_points(vec3_t p0, vec3_t p1, vec3_t p2) {
     vec3_t e1 = vec3_sub(p1, p0);
@@ -143,16 +144,16 @@ static const char *parse_face(const char *p, map_face_t *face) {
     for (int i = 0; i < 3; i++) {
         p = skip_whitespace(p);
         if (*p != '(') return NULL;
-        p++; /* skip ( */
+        p++;  // skip (
         face->points[i].x = parse_f32(&p);
         face->points[i].y = parse_f32(&p);
         face->points[i].z = parse_f32(&p);
         p = skip_whitespace(p);
         if (*p != ')') return NULL;
-        p++; /* skip ) */
+        p++;  // skip )
     }
 
-    /* Texture name */
+    // Texture name
     p = read_token(p, face->texture, sizeof(face->texture));
 
     /* Texture params -- Q3 format may have brackets or bare numbers.
@@ -160,12 +161,12 @@ static const char *parse_face(const char *p, map_face_t *face) {
     p = skip_whitespace(p);
 
     if (*p == '[') {
-        /* Valve 220 format: [ ux uy uz offset ] [ vx vy vz offset ] rotation scaleX scaleY */
-        /* Skip the U axis bracket */
+        // Valve 220 format: [ ux uy uz offset ] [ vx vy vz offset ] rotation scaleX scaleY
+        // Skip the U axis bracket
         while (*p && *p != ']') p++;
         if (*p == ']') p++;
         p = skip_whitespace(p);
-        /* Skip the V axis bracket */
+        // Skip the V axis bracket
         if (*p == '[') {
             while (*p && *p != ']') p++;
             if (*p == ']') p++;
@@ -177,7 +178,7 @@ static const char *parse_face(const char *p, map_face_t *face) {
         face->offset_x = 0.0f;
         face->offset_y = 0.0f;
     } else {
-        /* Standard format: offsetX offsetY rotation scaleX scaleY */
+        // Standard format: offsetX offsetY rotation scaleX scaleY
         face->offset_x = parse_f32(&p);
         face->offset_y = parse_f32(&p);
         face->rotation = parse_f32(&p);
@@ -185,16 +186,16 @@ static const char *parse_face(const char *p, map_face_t *face) {
         face->scale_y = parse_f32(&p);
     }
 
-    /* Skip remaining tokens on line (content/surface flags in Q3 format) */
+    // Skip remaining tokens on line (content/surface flags in Q3 format)
     p = skip_to_eol(p);
 
-    /* Compute plane */
+    // Compute plane
     face->plane = plane_from_points(face->points[0], face->points[1], face->points[2]);
 
     return p;
 }
 
-/* ---- Parse the .map text ---- */
+// --- Parse the .map text ---
 
 static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
     memset(map, 0, sizeof(*map));
@@ -204,13 +205,13 @@ static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
         p = skip_whitespace(p);
         if (*p == '\0') break;
 
-        /* Skip comments */
+        // Skip comments
         if (*p == '/' && *(p + 1) == '/') {
             p = skip_to_eol(p);
             continue;
         }
 
-        /* Entity open */
+        // Entity open
         if (*p == '{') {
             p++;
             if (map->entity_count >= MAX_ENTITIES) {
@@ -225,17 +226,17 @@ static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
                 p = skip_whitespace(p);
                 if (*p == '}') { p++; break; }
 
-                /* Skip comments */
+                // Skip comments
                 if (*p == '/' && *(p + 1) == '/') {
                     p = skip_to_eol(p);
                     continue;
                 }
 
-                /* Brush */
+                // Brush
                 if (*p == '{') {
                     p++;
                     if (ent->brush_count >= 64) {
-                        /* skip brush */
+                        // skip brush
                         int depth = 1;
                         while (*p && depth > 0) {
                             if (*p == '{') depth++;
@@ -252,13 +253,13 @@ static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
                         p = skip_whitespace(p);
                         if (*p == '}') { p++; break; }
 
-                        /* Skip comments */
+                        // Skip comments
                         if (*p == '/' && *(p + 1) == '/') {
                             p = skip_to_eol(p);
                             continue;
                         }
 
-                        /* Face line starts with ( */
+                        // Face line starts with (
                         if (*p == '(') {
                             if (brush->face_count < MAX_FACES_PER_BRUSH) {
                                 const char *next = parse_face(p, &brush->faces[brush->face_count]);
@@ -280,7 +281,7 @@ static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
                         ent->brush_count++;
                     }
                 }
-                /* Key-value pair */
+                // Key-value pair
                 else if (*p == '"') {
                     char key[64], value[256];
                     p = read_token(p, key, sizeof(key));
@@ -311,9 +312,9 @@ static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
     return QK_SUCCESS;
 }
 
-/* ---- Brush to polygon generation ---- */
+// --- Brush to polygon generation ---
 
-/* Intersect three planes, returning the intersection point if valid */
+// Intersect three planes, returning the intersection point if valid
 static bool intersect_3_planes(plane_t a, plane_t b, plane_t c, vec3_t *out) {
     vec3_t bc = vec3_cross(b.normal, c.normal);
     f32 denom = vec3_dot(a.normal, bc);
@@ -331,7 +332,7 @@ static bool intersect_3_planes(plane_t a, plane_t b, plane_t c, vec3_t *out) {
     return true;
 }
 
-/* Check if a point is on the inside of all planes of a brush */
+// Check if a point is on the inside of all planes of a brush
 static bool point_inside_brush(vec3_t point, const map_face_t *faces, u32 face_count) {
     for (u32 i = 0; i < face_count; i++) {
         f32 d = vec3_dot(faces[i].plane.normal, point) - faces[i].plane.dist;
@@ -340,24 +341,24 @@ static bool point_inside_brush(vec3_t point, const map_face_t *faces, u32 face_c
     return true;
 }
 
-/* Sort face vertices in winding order around the face normal */
+// Sort face vertices in winding order around the face normal
 static void sort_face_verts(vec3_t *verts, u32 count, vec3_t normal, vec3_t center) {
     if (count < 3) return;
 
-    /* Compute tangent basis for the face plane */
+    // Compute tangent basis for the face plane
     vec3_t ref = (fabsf(normal.z) < 0.9f) ?
         (vec3_t){0, 0, 1} : (vec3_t){1, 0, 0};
     vec3_t u = vec3_normalize(vec3_cross(normal, ref));
     vec3_t v = vec3_cross(normal, u);
 
-    /* Compute angle of each vertex relative to center in the tangent plane */
+    // Compute angle of each vertex relative to center in the tangent plane
     f32 angles[MAX_FACE_VERTS];
     for (u32 i = 0; i < count; i++) {
         vec3_t d = vec3_sub(verts[i], center);
         angles[i] = atan2f(vec3_dot(d, v), vec3_dot(d, u));
     }
 
-    /* Simple insertion sort by angle */
+    // Simple insertion sort by angle
     for (u32 i = 1; i < count; i++) {
         vec3_t key_v = verts[i];
         f32 key_a = angles[i];
@@ -372,43 +373,43 @@ static void sort_face_verts(vec3_t *verts, u32 count, vec3_t normal, vec3_t cent
     }
 }
 
-/* ---- Texture color from name hash ---- */
+// --- Texture color from name hash ---
 
 static u32 hash_texture_color(const char *name) {
-    /* Skip common path prefixes */
+    // Skip common path prefixes
     const char *base = name;
     const char *slash = strrchr(name, '/');
     if (slash) base = slash + 1;
 
-    /* FNV-1a hash */
+    // FNV-1a hash
     u32 hash = 2166136261u;
     for (const char *c = base; *c; c++) {
         hash ^= (u32)(u8)*c;
         hash *= 16777619u;
     }
 
-    /* Convert to a visible color (avoid too dark) */
+    // Convert to a visible color (avoid too dark)
     u8 r = (u8)(((hash >> 0) & 0xFF) / 2 + 64);
     u8 g = (u8)(((hash >> 8) & 0xFF) / 2 + 64);
     u8 b = (u8)(((hash >> 16) & 0xFF) / 2 + 64);
 
-    /* Skip known tool textures */
+    // Skip known tool textures
     if (strstr(name, "skip") || strstr(name, "clip") || strstr(name, "trigger") ||
         strstr(name, "hint") || strstr(name, "nodraw")) {
-        return 0; /* invisible */
+        return 0;  // invisible
     }
 
     return ((u32)r << 24) | ((u32)g << 16) | ((u32)b << 8) | 0xFF;
 }
 
-/* ---- Build collision model ---- */
+// --- Build collision model ---
 
 static qk_result_t build_collision_model(const parsed_map_t *parsed, qk_collision_model_t *cm) {
-    /* Count total brushes across worldspawn entity (entity 0) */
+    // Count total brushes across worldspawn entity (entity 0)
     u32 total_brushes = 0;
     for (u32 e = 0; e < parsed->entity_count; e++) {
         const map_entity_t *ent = &parsed->entities[e];
-        /* Only worldspawn contributes to the collision model */
+        // Only worldspawn contributes to the collision model
         if (e == 0 || strcmp(ent->classname, "worldspawn") == 0 ||
             strcmp(ent->classname, "func_wall") == 0) {
             total_brushes += ent->brush_count;
@@ -471,7 +472,7 @@ static qk_result_t build_collision_model(const parsed_map_t *parsed, qk_collisio
                 }
             }
 
-            /* Initialize AABB to extreme values */
+            // Initialize AABB to extreme values
             brush->mins = (vec3_t){ 1e18f,  1e18f,  1e18f};
             brush->maxs = (vec3_t){-1e18f, -1e18f, -1e18f};
 
@@ -489,7 +490,7 @@ static qk_result_t build_collision_model(const parsed_map_t *parsed, qk_collisio
                         if (!intersect_3_planes(pi, pj, pk, &v)) {
                             continue;
                         }
-                        /* Check vertex is inside brush (on negative side of all planes) */
+                        // Check vertex is inside brush (on negative side of all planes)
                         bool valid = true;
                         for (u32 q = 0; q < brush->plane_count; q++) {
                             f32 d = vec3_dot(brush->planes[q].normal, v)
@@ -501,7 +502,7 @@ static qk_result_t build_collision_model(const parsed_map_t *parsed, qk_collisio
                         }
                         if (!valid) continue;
 
-                        /* Expand AABB */
+                        // Expand AABB
                         if (v.x < brush->mins.x) brush->mins.x = v.x;
                         if (v.y < brush->mins.y) brush->mins.y = v.y;
                         if (v.z < brush->mins.z) brush->mins.z = v.z;
@@ -526,9 +527,9 @@ static qk_result_t build_collision_model(const parsed_map_t *parsed, qk_collisio
     return QK_SUCCESS;
 }
 
-/* ---- Build render geometry ---- */
+// --- Build render geometry ---
 
-/* Temporary vertex/index arrays for geometry building */
+// Temporary vertex/index arrays for geometry building
 typedef struct {
     qk_world_vertex_t *vertices;
     u32                *indices;
@@ -562,7 +563,7 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
         return QK_ERROR_OUT_OF_MEMORY;
     }
 
-    /* Process worldspawn and func_wall brushes */
+    // Process worldspawn and func_wall brushes
     for (u32 e = 0; e < parsed->entity_count; e++) {
         const map_entity_t *ent = &parsed->entities[e];
         if (e != 0 && strcmp(ent->classname, "worldspawn") != 0 &&
@@ -573,12 +574,12 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
         for (u32 b = 0; b < ent->brush_count; b++) {
             const map_brush_t *mb = &ent->brushes[b];
 
-            /* For each face, compute the polygon by intersecting with all other planes */
+            // For each face, compute the polygon by intersecting with all other planes
             for (u32 f = 0; f < mb->face_count; f++) {
                 u32 tex_color = hash_texture_color(mb->faces[f].texture);
-                if (tex_color == 0) continue; /* skip tool textures */
+                if (tex_color == 0) continue;  // skip tool textures
 
-                /* Collect vertices on this face */
+                // Collect vertices on this face
                 vec3_t face_verts[MAX_FACE_VERTS];
                 u32 fv_count = 0;
 
@@ -595,7 +596,7 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
                         if (!point_inside_brush(v, mb->faces, mb->face_count)) {
                             continue;
                         }
-                        /* De-duplicate */
+                        // De-duplicate
                         bool dup = false;
                         for (u32 d = 0; d < fv_count; d++) {
                             vec3_t diff = vec3_sub(face_verts[d], v);
@@ -612,22 +613,22 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
 
                 if (fv_count < 3) continue;
 
-                /* Compute face center */
+                // Compute face center
                 vec3_t center = {0, 0, 0};
                 for (u32 i = 0; i < fv_count; i++) {
                     center = vec3_add(center, face_verts[i]);
                 }
                 center = vec3_scale(center, 1.0f / (f32)fv_count);
 
-                /* Sort vertices in winding order */
+                // Sort vertices in winding order
                 sort_face_verts(face_verts, fv_count, mb->faces[f].plane.normal, center);
 
-                /* Check capacity */
+                // Check capacity
                 if (gb.vert_count + fv_count > gb.vert_cap) continue;
                 if (gb.idx_count + (fv_count - 2) * 3 > gb.idx_cap) continue;
                 if (gb.surf_count >= gb.surf_cap) continue;
 
-                /* Emit vertices */
+                // Emit vertices
                 u32 base_vert = gb.vert_count;
                 f32 nr = (f32)((tex_color >> 24) & 0xFF) / 255.0f;
                 f32 ng = (f32)((tex_color >> 16) & 0xFF) / 255.0f;
@@ -638,11 +639,11 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
                     wv->position[0] = face_verts[i].x;
                     wv->position[1] = face_verts[i].y;
                     wv->position[2] = face_verts[i].z;
-                    /* Use face normal */
+                    // Use face normal
                     wv->normal[0] = mb->faces[f].plane.normal.x;
                     wv->normal[1] = mb->faces[f].plane.normal.y;
                     wv->normal[2] = mb->faces[f].plane.normal.z;
-                    /* Simple planar UV projection */
+                    // Simple planar UV projection
                     vec3_t n = mb->faces[f].plane.normal;
                     f32 ax = fabsf(n.x), ay = fabsf(n.y), az = fabsf(n.z);
                     if (az >= ax && az >= ay) {
@@ -660,7 +661,7 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
                     wv->texture_id = tex_color;
                 }
 
-                /* Emit triangle fan indices */
+                // Emit triangle fan indices
                 u32 base_idx = gb.idx_count;
                 for (u32 i = 1; i + 1 < fv_count; i++) {
                     gb.indices[gb.idx_count++] = base_vert;
@@ -668,14 +669,14 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
                     gb.indices[gb.idx_count++] = base_vert + i + 1;
                 }
 
-                /* Emit surface */
+                // Emit surface
                 qk_draw_surface_t *surf = &gb.surfaces[gb.surf_count++];
                 surf->index_offset = base_idx;
                 surf->index_count = gb.idx_count - base_idx;
                 surf->vertex_offset = base_vert;
                 surf->texture_index = tex_color;
 
-                /* Store color in normal channels for flat shading */
+                // Store color in normal channels for flat shading
                 for (u32 i = base_vert; i < gb.vert_count; i++) {
                     gb.vertices[i].normal[0] = nr;
                     gb.vertices[i].normal[1] = ng;
@@ -700,7 +701,7 @@ static qk_result_t build_render_geometry(const parsed_map_t *parsed,
     return QK_SUCCESS;
 }
 
-/* ---- Extract entity key-value helpers ---- */
+// --- Extract entity key-value helpers ---
 
 static const char *ent_get_value(const map_entity_t *ent, const char *key) {
     for (u32 k = 0; k < ent->kv_count; k++) {
@@ -730,7 +731,7 @@ static const map_entity_t *find_by_targetname(const parsed_map_t *parsed, const 
     return NULL;
 }
 
-/* ---- Extract spawn points, teleporters, and jump pads ---- */
+// --- Extract spawn points, teleporters, and jump pads ---
 
 static void extract_map_entities(const parsed_map_t *parsed, qk_map_data_t *out) {
     u32 spawn_cap = QK_MAP_MAX_SPAWN_POINTS;
@@ -749,7 +750,7 @@ static void extract_map_entities(const parsed_map_t *parsed, qk_map_data_t *out)
     for (u32 e = 0; e < parsed->entity_count; e++) {
         const map_entity_t *ent = &parsed->entities[e];
 
-        /* Spawn points */
+        // Spawn points
         if (out->spawn_count < spawn_cap &&
             (strcmp(ent->classname, "info_player_deathmatch") == 0 ||
              strcmp(ent->classname, "info_player_start") == 0)) {
@@ -758,7 +759,7 @@ static void extract_map_entities(const parsed_map_t *parsed, qk_map_data_t *out)
             out->spawn_count++;
         }
 
-        /* Teleporters */
+        // Teleporters
         if (out->teleporter_count < tele_cap &&
             strcmp(ent->classname, "trigger_teleport") == 0) {
             const char *target = ent_get_value(ent, "target");
@@ -774,7 +775,7 @@ static void extract_map_entities(const parsed_map_t *parsed, qk_map_data_t *out)
             }
         }
 
-        /* Jump pads */
+        // Jump pads
         if (out->jump_pad_count < pad_cap &&
             strcmp(ent->classname, "trigger_push") == 0) {
             const char *target = ent_get_value(ent, "target");
@@ -790,19 +791,19 @@ static void extract_map_entities(const parsed_map_t *parsed, qk_map_data_t *out)
         }
     }
 
-    /* Free empty arrays */
+    // Free empty arrays
     if (out->spawn_count == 0) { free(out->spawn_points); out->spawn_points = NULL; }
     if (out->teleporter_count == 0) { free(out->teleporters); out->teleporters = NULL; }
     if (out->jump_pad_count == 0) { free(out->jump_pads); out->jump_pads = NULL; }
 }
 
-/* ---- Public API ---- */
+// --- Public API ---
 
 qk_result_t qk_map_load_from_memory(const char *data, u64 data_len, qk_map_data_t *out) {
     if (!data || !out || data_len == 0) return QK_ERROR_INVALID_PARAM;
     memset(out, 0, sizeof(*out));
 
-    /* Parse the text */
+    // Parse the text
     parsed_map_t *parsed = (parsed_map_t *)calloc(1, sizeof(parsed_map_t));
     if (!parsed) return QK_ERROR_OUT_OF_MEMORY;
 
@@ -816,23 +817,23 @@ qk_result_t qk_map_load_from_memory(const char *data, u64 data_len, qk_map_data_
 
     fprintf(stderr, "[MapLoader] Parsed %u entities\n", parsed->entity_count);
 
-    /* Count total brushes */
+    // Count total brushes
     u32 total_brushes = 0;
     for (u32 e = 0; e < parsed->entity_count; e++) {
         total_brushes += parsed->entities[e].brush_count;
     }
     fprintf(stderr, "[MapLoader] Total brushes: %u\n", total_brushes);
 
-    /* Build collision model */
+    // Build collision model
     res = build_collision_model(parsed, &out->collision);
     if (res != QK_SUCCESS) {
         fprintf(stderr, "[MapLoader] Warning: collision model build failed (%d)\n", res);
-        /* Continue -- we can still have render geometry */
+        // Continue -- we can still have render geometry
     } else {
         fprintf(stderr, "[MapLoader] Collision model: %u brushes\n", out->collision.brush_count);
     }
 
-    /* Build render geometry */
+    // Build render geometry
     res = build_render_geometry(parsed,
         &out->vertices, &out->vertex_count,
         &out->indices, &out->index_count,
@@ -844,7 +845,7 @@ qk_result_t qk_map_load_from_memory(const char *data, u64 data_len, qk_map_data_
                 out->vertex_count, out->index_count, out->surface_count);
     }
 
-    /* Extract spawn points, teleporters, jump pads */
+    // Extract spawn points, teleporters, jump pads
     extract_map_entities(parsed, out);
     fprintf(stderr, "[MapLoader] Spawn points: %u, Teleporters: %u, Jump pads: %u\n",
             out->spawn_count, out->teleporter_count, out->jump_pad_count);
@@ -883,7 +884,7 @@ qk_result_t qk_map_load(const char *filepath, qk_map_data_t *out) {
 
     fprintf(stderr, "[MapLoader] Loading: %s (%ld bytes)\n", filepath, size);
 
-    /* Detect BSP format by magic bytes */
+    // Detect BSP format by magic bytes
     if (read >= 4 && memcmp(data, "IBSP", 4) == 0) {
         qk_result_t res = qk_bsp_load((const u8 *)data, (u64)read, out);
         free(data);
@@ -898,7 +899,7 @@ qk_result_t qk_map_load(const char *filepath, qk_map_data_t *out) {
 void qk_map_free(qk_map_data_t *map) {
     if (!map) return;
 
-    /* Free collision model */
+    // Free collision model
     if (map->collision.brushes) {
         for (u32 i = 0; i < map->collision.brush_count; i++) {
             free(map->collision.brushes[i].planes);
@@ -906,16 +907,16 @@ void qk_map_free(qk_map_data_t *map) {
         free(map->collision.brushes);
     }
 
-    /* Free render data */
+    // Free render data
     free(map->vertices);
     free(map->indices);
     free(map->surfaces);
     free(map->lightmap_atlas);
 
-    /* Free spawn points */
+    // Free spawn points
     free(map->spawn_points);
 
-    /* Free teleporters and jump pads */
+    // Free teleporters and jump pads
     free(map->teleporters);
     free(map->jump_pads);
 

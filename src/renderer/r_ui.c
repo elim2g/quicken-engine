@@ -36,7 +36,7 @@ qk_result_t r_ui_init(void)
 
     vkUnmapMemory(g_r.device.handle, staging_mem);
 
-    /* Create device-local index buffer */
+    // Create device-local index buffer
     res = r_memory_create_buffer(
         ib_size,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -48,7 +48,7 @@ qk_result_t r_ui_init(void)
         return res;
     }
 
-    /* Copy */
+    // Copy
     VkCommandBuffer cmd = r_commands_begin_single();
     VkBufferCopy copy = { .size = ib_size };
     vkCmdCopyBuffer(cmd, staging_buf, g_r.ui_index_buffer, 1, &copy);
@@ -73,7 +73,7 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
 {
     if (!g_r.ui_pipeline.handle || g_r.ui_quad_count == 0) return;
 
-    /* Sort quads by texture_id for batching (insertion sort -- count is small) */
+    // Sort quads by texture_id for batching (insertion sort -- count is small)
     for (u32 i = 1; i < g_r.ui_quad_count; i++) {
         r_ui_quad_t key = g_r.ui_quads[i];
         u32 j = i;
@@ -86,7 +86,7 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
 
     r_frame_data_t *frame = &g_r.frames[frame_index];
 
-    /* Write vertices into the frame's mapped buffer */
+    // Write vertices into the frame's mapped buffer
     r_ui_vertex_t *verts = (r_ui_vertex_t *)frame->ui_vertex_mapped;
     u32 vertex_count = 0;
 
@@ -98,7 +98,7 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
         f32 x1 = q->x + q->w;
         f32 y1 = q->y + q->h;
 
-        /* 4 vertices per quad: TL, TR, BR, BL */
+        // 4 vertices per quad: TL, TR, BR, BL
         verts[vertex_count + 0] = (r_ui_vertex_t){
             .position = { x0, y0 }, .uv = { q->u0, q->v0 }, .color = q->color
         };
@@ -115,7 +115,7 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
         vertex_count += 4;
     }
 
-    /* Bind pipeline */
+    // Bind pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g_r.ui_pipeline.handle);
 
     VkViewport viewport = {
@@ -134,7 +134,7 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
     };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    /* Push screen size */
+    // Push screen size
     f32 screen_size[2] = {
         (f32)g_r.config.render_width,
         (f32)g_r.config.render_height
@@ -142,12 +142,12 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
     vkCmdPushConstants(cmd, g_r.ui_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT,
                        0, sizeof(screen_size), screen_size);
 
-    /* Bind vertex/index buffers */
+    // Bind vertex/index buffers
     VkDeviceSize vb_offset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame->ui_vertex_buffer, &vb_offset);
     vkCmdBindIndexBuffer(cmd, g_r.ui_index_buffer, 0, VK_INDEX_TYPE_UINT16);
 
-    /* Draw quads batched by texture */
+    // Draw quads batched by texture
     u32 batch_start = 0;
     u32 current_texture = g_r.ui_quads[0].texture_id;
 

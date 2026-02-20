@@ -8,7 +8,7 @@
 #include "p_simd.h"
 #include <stdlib.h>
 
-/* ---- Compute tight AABB from brush plane intersections ---- */
+// --- Compute tight AABB from brush plane intersections ---
 
 void p_brush_compute_aabb(qk_brush_t *brush) {
     /*
@@ -30,20 +30,20 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
     for (u32 i = 0; i < n; i++) {
         for (u32 j = i + 1; j < n; j++) {
             for (u32 k = j + 1; k < n; k++) {
-                /* Solve the 3x3 linear system:
-                   n_i . p = d_i
-                   n_j . p = d_j
-                   n_k . p = d_k
-                   Using Cramer's rule. */
+                // Solve the 3x3 linear system:
+                //   n_i . p = d_i
+                //   n_j . p = d_j
+                //   n_k . p = d_k
+                // Using Cramer's rule.
                 const vec3_t *ni = &brush->planes[i].normal;
                 const vec3_t *nj = &brush->planes[j].normal;
                 const vec3_t *nk = &brush->planes[k].normal;
 
-                /* Determinant = ni . (nj x nk) */
+                // Determinant = ni . (nj x nk)
                 vec3_t jxk = vec3_cross(*nj, *nk);
                 f32 det = vec3_dot(*ni, jxk);
 
-                /* If det is near zero, planes are coplanar or parallel */
+                // If det is near zero, planes are coplanar or parallel
                 if (det > -1e-6f && det < 1e-6f) continue;
 
                 f32 inv_det = 1.0f / det;
@@ -51,7 +51,7 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
                 f32 dj = brush->planes[j].dist;
                 f32 dk = brush->planes[k].dist;
 
-                /* p = (di * (nj x nk) + dj * (nk x ni) + dk * (ni x nj)) / det */
+                // p = (di * (nj x nk) + dj * (nk x ni) + dk * (ni x nj)) / det
                 vec3_t kxi = vec3_cross(*nk, *ni);
                 vec3_t ixj = vec3_cross(*ni, *nj);
 
@@ -60,8 +60,8 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
                 pt.y = (di * jxk.y + dj * kxi.y + dk * ixj.y) * inv_det;
                 pt.z = (di * jxk.z + dj * kxi.z + dk * ixj.z) * inv_det;
 
-                /* Verify this point is inside (or on boundary of) all planes.
-                   A point is inside plane m if: nm . pt <= dm + epsilon */
+                // Verify this point is inside (or on boundary of) all planes.
+                // A point is inside plane m if: nm . pt <= dm + epsilon
                 bool inside = true;
 #if P_USE_SSE2
                 __m128 v_pt = p_simd_load_vec3(pt);
@@ -77,7 +77,7 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
                 for (u32 m = 0; m < n; m++) {
                     f32 d = vec3_dot(brush->planes[m].normal, pt)
                             - brush->planes[m].dist;
-                    if (d > 0.1f) { /* tolerance for float imprecision */
+                    if (d > 0.1f) { // tolerance for float imprecision
                         inside = false;
                         break;
                     }
@@ -86,7 +86,7 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
 
                 if (!inside) continue;
 
-                /* Expand AABB to include this vertex */
+                // Expand AABB to include this vertex
                 if (pt.x < brush->mins.x) brush->mins.x = pt.x;
                 if (pt.y < brush->mins.y) brush->mins.y = pt.y;
                 if (pt.z < brush->mins.z) brush->mins.z = pt.z;
@@ -99,13 +99,13 @@ void p_brush_compute_aabb(qk_brush_t *brush) {
     }
 
     if (!found_vertex) {
-        /* Degenerate brush (e.g. fewer than 4 planes). Zero-size AABB at origin. */
+        // Degenerate brush (e.g. fewer than 4 planes). Zero-size AABB at origin.
         brush->mins = (vec3_t){ 0.0f, 0.0f, 0.0f };
         brush->maxs = (vec3_t){ 0.0f, 0.0f, 0.0f };
     }
 }
 
-/* ---- Add axial bevel planes to a brush ---- */
+// --- Add axial bevel planes to a brush ---
 
 void p_brush_add_bevels(qk_brush_t *brush) {
     /*
@@ -130,7 +130,7 @@ void p_brush_add_bevels(qk_brush_t *brush) {
         if (n->z < -0.999f) has_neg_z = true;
     }
 
-    /* Count how many bevels we need to add */
+    // Count how many bevels we need to add
     u32 bevels_needed = 0;
     if (!has_pos_x) bevels_needed++;
     if (!has_neg_x) bevels_needed++;
@@ -141,11 +141,11 @@ void p_brush_add_bevels(qk_brush_t *brush) {
 
     if (bevels_needed == 0) return;
 
-    /* Reallocate planes array to accommodate bevels */
+    // Reallocate planes array to accommodate bevels
     u32 new_count = brush->plane_count + bevels_needed;
     qk_plane_t *new_planes = (qk_plane_t *)realloc(
         brush->planes, new_count * sizeof(qk_plane_t));
-    if (!new_planes) return; /* allocation failed, skip bevels */
+    if (!new_planes) return; // allocation failed, skip bevels
 
     brush->planes = new_planes;
     u32 idx = brush->plane_count;
@@ -184,7 +184,7 @@ void p_brush_add_bevels(qk_brush_t *brush) {
     brush->plane_count = idx;
 }
 
-/* ---- AABB overlap test ---- */
+// --- AABB overlap test ---
 
 bool p_aabb_overlap(vec3_t a_mins, vec3_t a_maxs,
                     vec3_t b_mins, vec3_t b_maxs) {
@@ -199,7 +199,7 @@ bool p_aabb_overlap(vec3_t a_mins, vec3_t a_maxs,
 #endif
 }
 
-/* ---- Compute swept AABB for a moving box ---- */
+// --- Compute swept AABB for a moving box ---
 
 void p_compute_swept_aabb(vec3_t start, vec3_t end,
                           vec3_t mins, vec3_t maxs,
@@ -214,8 +214,8 @@ void p_compute_swept_aabb(vec3_t start, vec3_t end,
     *out_mins = p_simd_store_vec3(r_mins);
     *out_maxs = p_simd_store_vec3(r_maxs);
 #else
-    /* The swept AABB covers both the start and end positions,
-       expanded by the box extents. */
+    // The swept AABB covers both the start and end positions,
+    // expanded by the box extents.
     f32 sx0 = start.x + mins.x;
     f32 sx1 = start.x + maxs.x;
     f32 ex0 = end.x + mins.x;

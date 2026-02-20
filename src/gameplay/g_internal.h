@@ -13,14 +13,14 @@
 #include "physics/qk_physics.h"
 #include <string.h>
 
-/* ---- Weapon fire mode ---- */
+// --- Weapon fire mode ---
 typedef enum {
     FIRE_HITSCAN = 0,
     FIRE_PROJECTILE,
     FIRE_BEAM
 } fire_mode_t;
 
-/* ---- Extended weapon definition ---- */
+// --- Extended weapon definition ---
 typedef struct {
     qk_weapon_id_t  id;
     const char     *name;
@@ -40,10 +40,10 @@ typedef struct {
     f32             range;
 } g_weapon_def_t;
 
-/* Global weapon definitions table (defined in g_weapons.c) */
+// Global weapon definitions table (defined in g_weapons.c)
 extern const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT];
 
-/* ---- Game Event Types ---- */
+// --- Game Event Types ---
 typedef enum {
     GEVT_KILL = 0,
     GEVT_HIT,
@@ -74,7 +74,7 @@ typedef struct {
     u32 count;
 } game_event_queue_t;
 
-/* ---- Damage Event ---- */
+// --- Damage Event ---
 typedef struct {
     u8              attacker_id;
     u8              victim_id;
@@ -85,16 +85,16 @@ typedef struct {
     bool            is_self;
 } damage_event_t;
 
-/* ---- Game State (opaque struct definition) ---- */
+// --- Game State (opaque struct definition) ---
 struct qk_game_state {
     entity_pool_t       entities;
     qk_ca_state_t       ca;
     game_event_queue_t  events;
     u32                 server_time_ms;
     u8                  num_clients;
-    i32                 player_entity[QK_MAX_PLAYERS]; /* entity index per client, -1 = none */
+    i32                 player_entity[QK_MAX_PLAYERS]; // entity index per client, -1 = none
 
-    /* config (copied from init) */
+    // config (copied from init)
     u8                  max_players;
     u8                  rounds_to_win;
     u32                 round_time_limit_ms;
@@ -102,7 +102,7 @@ struct qk_game_state {
 
 };
 
-/* ---- Entity functions (g_entity.c) ---- */
+// --- Entity functions (g_entity.c) ---
 void      g_entity_pool_init(entity_pool_t *pool);
 entity_t *g_entity_alloc(entity_pool_t *pool, entity_type_t type);
 void      g_entity_free(entity_pool_t *pool, entity_t *ent);
@@ -110,17 +110,17 @@ entity_t *g_entity_find(entity_pool_t *pool, u8 id);
 entity_t *g_entity_first(entity_pool_t *pool, entity_type_t type);
 entity_t *g_entity_next(entity_pool_t *pool, entity_t *after, entity_type_t type);
 
-/* ---- Player functions (g_player.c) ---- */
+// --- Player functions (g_player.c) ---
 void g_player_spawn_ca(entity_t *ent, vec3_t spawn_origin, f32 spawn_yaw);
 void g_player_apply_armor(qk_player_state_t *ps, i16 raw_damage,
                            i16 *out_health_dmg, i16 *out_armor_dmg);
 
-/* ---- Weapon functions (g_weapons.c) ---- */
+// --- Weapon functions (g_weapons.c) ---
 void g_weapon_tick(qk_game_state_t *gs, entity_t *player_ent, u32 tick_dt_ms);
 bool g_weapon_fire(qk_game_state_t *gs, entity_t *player_ent);
 void g_weapon_switch(entity_t *player_ent, qk_weapon_id_t new_weapon);
 
-/* ---- Combat functions (g_combat.c) ---- */
+// --- Combat functions (g_combat.c) ---
 void g_combat_apply_damage(qk_game_state_t *gs, const damage_event_t *dmg);
 void g_combat_kill(qk_game_state_t *gs, u8 attacker_id, u8 victim_id,
                     qk_weapon_id_t weapon);
@@ -135,14 +135,14 @@ void g_combat_splash_damage(qk_game_state_t *gs, vec3_t origin,
                              u8 attacker_id, qk_weapon_id_t weapon,
                              u8 skip_id);
 
-/* ---- Projectile functions (g_projectile.c) ---- */
+// --- Projectile functions (g_projectile.c) ---
 entity_t *g_projectile_spawn(qk_game_state_t *gs, entity_t *owner,
                               qk_weapon_id_t weapon, vec3_t origin,
                               vec3_t direction);
 void g_projectile_tick(qk_game_state_t *gs, f32 dt,
                        const qk_phys_world_t *world);
 
-/* ---- Clan Arena functions (g_ca.c) ---- */
+// --- Clan Arena functions (g_ca.c) ---
 void g_ca_init(qk_game_state_t *gs);
 void g_ca_tick(qk_game_state_t *gs, u32 dt_ms);
 void g_ca_start_countdown(qk_game_state_t *gs);
@@ -151,29 +151,29 @@ void g_ca_end_round(qk_game_state_t *gs);
 void g_ca_end_round_timeout(qk_game_state_t *gs);
 void g_ca_count_alive(qk_game_state_t *gs);
 
-/* ---- Event functions (g_event.c) ---- */
+// --- Event functions (g_event.c) ---
 void g_event_push(game_event_queue_t *queue, const game_event_t *event);
 void g_event_clear(game_event_queue_t *queue);
 
-/* ---- Trigger functions (g_triggers.c) ---- */
+// --- Trigger functions (g_triggers.c) ---
 void g_triggers_load(const qk_teleporter_t *teleporters, u32 teleporter_count,
                      const qk_jump_pad_t *jump_pads, u32 jump_pad_count);
 void g_triggers_clear(void);
 void g_triggers_tick(qk_game_state_t *gs);
 
-/* ---- Process commands (gameplay.c) ---- */
+// --- Process commands (gameplay.c) ---
 void g_process_commands(qk_game_state_t *gs, u32 tick_dt_ms);
 
-/* ---- Utility ---- */
+// --- Utility ---
 static inline u32 min_u32(u32 a, u32 b) { return a < b ? a : b; }
 
-/* Forward direction from angles (pitch=x, yaw=y in degrees) */
+// Forward direction from angles (pitch=x, yaw=y in degrees)
 static inline vec3_t angles_to_forward(f32 pitch, f32 yaw) {
-    f32 cp = cosf(pitch * 3.14159265f / 180.0f);
-    f32 sp = sinf(pitch * 3.14159265f / 180.0f);
-    f32 cy = cosf(yaw * 3.14159265f / 180.0f);
-    f32 sy = sinf(yaw * 3.14159265f / 180.0f);
-    return (vec3_t){ cp * cy, cp * sy, sp };
+    f32 cos_pitch = cosf(pitch * 3.14159265f / 180.0f);
+    f32 sin_pitch = sinf(pitch * 3.14159265f / 180.0f);
+    f32 cos_yaw   = cosf(yaw * 3.14159265f / 180.0f);
+    f32 sin_yaw   = sinf(yaw * 3.14159265f / 180.0f);
+    return (vec3_t){ cos_pitch * cos_yaw, cos_pitch * sin_yaw, sin_pitch };
 }
 
 /*
@@ -187,7 +187,7 @@ static inline bool ray_aabb_intersect(vec3_t ray_origin, vec3_t ray_dir,
     f32 tmin = 0.0f;
     f32 tmax = max_t;
 
-    /* X slab */
+    // X slab
     if (ray_dir.x != 0.0f) {
         f32 inv = 1.0f / ray_dir.x;
         f32 t1 = (aabb_min.x - ray_origin.x) * inv;
@@ -200,7 +200,7 @@ static inline bool ray_aabb_intersect(vec3_t ray_origin, vec3_t ray_dir,
         if (ray_origin.x < aabb_min.x || ray_origin.x > aabb_max.x) return false;
     }
 
-    /* Y slab */
+    // Y slab
     if (ray_dir.y != 0.0f) {
         f32 inv = 1.0f / ray_dir.y;
         f32 t1 = (aabb_min.y - ray_origin.y) * inv;
@@ -213,7 +213,7 @@ static inline bool ray_aabb_intersect(vec3_t ray_origin, vec3_t ray_dir,
         if (ray_origin.y < aabb_min.y || ray_origin.y > aabb_max.y) return false;
     }
 
-    /* Z slab */
+    // Z slab
     if (ray_dir.z != 0.0f) {
         f32 inv = 1.0f / ray_dir.z;
         f32 t1 = (aabb_min.z - ray_origin.z) * inv;
