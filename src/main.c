@@ -869,6 +869,9 @@ int main(int argc, char *argv[]) {
                              "Connect to a remote server (connect <ip>:<port>)");
     qk_console_register_cmd("disconnect", cmd_disconnect,
                              "Disconnect from remote server");
+    
+    /* Manually fire off the r_ambient callback since the renderer is already init */
+    cb_ambient_changed(s_cvar_r_ambient);
 
     /* ---- Initial world (test room as baseline) ---- */
     qk_map_data_t map_data;

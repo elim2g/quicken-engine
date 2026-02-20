@@ -27,7 +27,7 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     g_r.config.window_height = config->window_height;
     g_r.config.aspect_fit    = config->aspect_fit;
     g_r.config.vsync         = config->vsync;
-    g_r.ambient              = 0.15f;
+    g_r.ambient              = 0.0125f;
 
     qk_result_t res;
 
