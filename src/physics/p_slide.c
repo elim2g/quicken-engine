@@ -181,6 +181,25 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
 
 /* ---- StepSlideMove: handle stepping up stairs/ledges ---- */
 
+/*
+ * Q3-style step-slide: try a normal slide first, then attempt a
+ * step-up if blocked. Key behaviors matching Q3's PM_StepSlideMove:
+ *
+ * 1. Skip step-up when velocity.z > 0 AND not on walkable ground.
+ *    This lets the player's upward trajectory do the work of climbing
+ *    stairs during skim-gliding -- step-up only fires when coming DOWN
+ *    onto a step or standing on ground, producing the "pop" effect at
+ *    the apex of a jump.
+ *
+ * 2. Step-down uses the actual distance we managed to step up (which
+ *    may be less than STEP_HEIGHT if a ceiling is in the way), not the
+ *    full constant.
+ *
+ * 3. Clip velocity against the landing surface after step-down, so
+ *    the player doesn't retain a downward velocity component that
+ *    fights the ground.
+ */
+
 void p_step_slide_move(qk_player_state_t *ps,
                        const qk_phys_world_t *world, f32 dt) {
     vec3_t start_origin = ps->origin;
@@ -195,7 +214,24 @@ void p_step_slide_move(qk_player_state_t *ps,
         return;
     }
 
-    /* Hit something. Save the normal-slide result. */
+    /* Never step up when still moving upward, UNLESS the player is
+       standing on walkable ground. */
+    if (start_velocity.z > 0.0f) {
+        vec3_t down_check = start_origin;
+        down_check.z -= QK_PM_STEP_HEIGHT;
+        qk_trace_result_t ground_trace = p_trace_world(
+            world, start_origin, down_check, ps->mins, ps->maxs);
+
+        if (ground_trace.fraction == 1.0f ||
+            ground_trace.hit_normal.z < QK_PM_MIN_WALK_NORMAL) {
+            /* Airborne with upward velocity -- don't step up.
+               Use the normal slide result. */
+            return;
+        }
+    }
+
+    /* Hit something and step-up is allowed. Save the normal-slide
+       result for comparison. */
     vec3_t normal_origin = ps->origin;
     vec3_t normal_velocity = ps->velocity;
 
@@ -203,34 +239,41 @@ void p_step_slide_move(qk_player_state_t *ps,
     ps->origin = start_origin;
     ps->velocity = start_velocity;
 
-    /* Trace up by step height */
+    /* Trace up by step height. Record actual distance achieved
+       (ceiling may limit it). */
     vec3_t up_dest = start_origin;
     up_dest.z += QK_PM_STEP_HEIGHT;
     qk_trace_result_t trace = p_trace_world(world, ps->origin, up_dest,
                                              ps->mins, ps->maxs);
-    if (!trace.all_solid) {
-        ps->origin = trace.end_pos;
+    if (trace.all_solid) {
+        /* Can't step up at all -- use normal slide result */
+        ps->origin = normal_origin;
+        ps->velocity = normal_velocity;
+        return;
     }
+
+    f32 step_size = trace.end_pos.z - start_origin.z;
+    ps->origin = trace.end_pos;
 
     /* Slide from the stepped-up position */
     p_slide_move(ps, world, dt, 4);
 
-    /* Step back down */
+    /* Step back down by the actual step distance (not the full
+       constant). This prevents pushing through floors when a
+       ceiling limited the upward trace. */
     vec3_t down_dest = ps->origin;
-    down_dest.z -= QK_PM_STEP_HEIGHT;
+    down_dest.z -= step_size;
     trace = p_trace_world(world, ps->origin, down_dest,
                           ps->mins, ps->maxs);
     if (!trace.all_solid) {
         ps->origin = trace.end_pos;
     }
 
-    /* If step-up landed on walkable ground, use it */
-    if (trace.fraction < 1.0f &&
-        trace.hit_normal.z >= QK_PM_MIN_WALK_NORMAL) {
-        return;
+    /* Clip velocity against the landing surface (Q3 behavior).
+       Without this, a downward velocity component persists and
+       fights the ground plane on the next tick. */
+    if (trace.fraction < 1.0f) {
+        ps->velocity = p_clip_velocity(ps->velocity, trace.hit_normal,
+                                        QK_PM_OVERCLIP);
     }
-
-    /* Step-up didn't find walkable ground -- use normal slide result */
-    ps->origin = normal_origin;
-    ps->velocity = normal_velocity;
 }

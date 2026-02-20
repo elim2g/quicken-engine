@@ -19,7 +19,7 @@
 
 /* ---- Entity limits ---- */
 #define QK_MAX_ENTITIES         256
-#define QK_MAX_PLAYERS          16
+#define QK_MAX_PLAYERS          32
 
 /* ---- Physics constants ---- */
 #define QK_PM_GROUND_ACCEL      10.0f
@@ -43,8 +43,8 @@
 #define QK_PM_CPM_STRAFE_ACCEL      70.0f   /* Strafe-only air acceleration */
 #define QK_PM_CPM_GROUND_ACCEL      15.0f   /* CPM ground acceleration (higher than VQ3) */
 #define QK_PM_CPM_GROUND_SPEED      320.0f  /* CPM ground speed */
-#define QK_PM_CPM_DOUBLE_JUMP_WINDOW  200   /* ms window for double-jump after last jump */
-#define QK_PM_CPM_DOUBLE_JUMP_BOOST   1.2f  /* Multiplier on jump velocity for double-jump */
+#define QK_PM_CPM_DOUBLE_JUMP_WINDOW  400   /* ms window for double-jump after last jump */
+#define QK_PM_CPM_DOUBLE_JUMP_BOOST   100   /* Additive impulse for double jumps */
 
 /* ---- Player bounding box ---- */
 #define QK_PLAYER_MINS_X        (-15.0f)

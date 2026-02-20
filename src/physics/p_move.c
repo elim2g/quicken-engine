@@ -82,7 +82,7 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
                           since_jump <= P_CPM_DOUBLE_JUMP_TICKS);
 
         f32 amount = is_double
-            ? QK_PM_JUMP_VELOCITY * QK_PM_CPM_DOUBLE_JUMP_BOOST
+            ? QK_PM_JUMP_VELOCITY + QK_PM_CPM_DOUBLE_JUMP_BOOST
             : QK_PM_JUMP_VELOCITY;
 
         /* Additive impulse with floor: preserves upward momentum from
@@ -285,6 +285,22 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     if (ps->on_ground && ps->skim_ticks == 0) {
         ps->velocity = p_clip_velocity(ps->velocity, ps->ground_normal,
                                         QK_PM_OVERCLIP);
+    }
+
+    /* Stair-glide override: while rising, don't let flat stair treads
+       ground us.  Skim handles velocity preservation for ~195ms, but
+       the upward phase of a regular jump lasts ~340ms — after skim
+       expires, treads still ground the player and zero vz, consuming
+       the double-jump window partway up the staircase.  Restore
+       pre-collision vz (which already includes gravity) so the arc
+       continues naturally until the apex.
+
+       ground_normal.z > 0.99 limits this to near-flat surfaces (stair
+       treads) so ramps with angled normals still interact normally. */
+    if (pre_collision_vz > 0.0f && ps->on_ground &&
+        ps->ground_normal.z > 0.99f) {
+        ps->on_ground = false;
+        ps->velocity.z = pre_collision_vz;
     }
 
     /* Skim velocity restore: preserve speed through wall clips.
