@@ -66,4 +66,15 @@ u32  qk_game_get_entity_count(void);
 /* Diagnostics: raw f32 entity origin (before quantization) */
 bool qk_game_get_entity_origin(u8 entity_id, f32 *x, f32 *y, f32 *z);
 
+/* Explosion event (produced by projectile system, consumed for visuals) */
+typedef struct {
+    f32     pos[3];
+    f32     dir[3];     /* normalized projectile travel direction at impact */
+    f32     radius;
+} qk_explosion_event_t;
+
+/* Returns the number of explosions that occurred this tick.
+   Fills out_events up to max_events. */
+u32 qk_game_get_explosions(qk_explosion_event_t *out_events, u32 max_events);
+
 #endif /* QK_GAMEPLAY_H */

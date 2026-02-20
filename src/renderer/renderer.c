@@ -27,6 +27,7 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     g_r.config.window_height = config->window_height;
     g_r.config.aspect_fit    = config->aspect_fit;
     g_r.config.vsync         = config->vsync;
+    g_r.ambient              = 0.15f;
 
     qk_result_t res;
 
@@ -78,6 +79,12 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_pipeline_cache_init();
     if (res != QK_SUCCESS) return res;
 
+    /* Forward+ compute (SSBOs, depth pre-pass, light culling).
+     * MUST be before pipeline creation: world and entity pipeline layouts
+     * reference g_r.lights.light_set_layout created here. */
+    res = r_compute_init();
+    if (res != QK_SUCCESS) return res;
+
     /* Pipelines */
     res = r_pipeline_create_world();
     if (res != QK_SUCCESS) return res;
@@ -113,6 +120,10 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_fx_init();
     if (res != QK_SUCCESS) return res;
 
+    /* Bloom mip chain */
+    res = r_bloom_init();
+    if (res != QK_SUCCESS) return res;
+
     /* Debug timers */
     r_debug_init();
 
@@ -131,6 +142,8 @@ void qk_renderer_shutdown(void)
     vkDeviceWaitIdle(g_r.device.handle);
 
     r_debug_shutdown();
+    r_bloom_shutdown();
+    r_compute_shutdown();
     r_fx_shutdown();
     r_entity_shutdown();
     r_world_shutdown();
@@ -184,8 +197,13 @@ void qk_renderer_set_render_resolution(u32 width, u32 height)
     g_r.config.render_width = width;
     g_r.config.render_height = height;
 
+    r_bloom_shutdown();
+    r_compute_shutdown();
     r_destroy_render_targets();
     r_create_render_targets();
+
+    /* Forward+ compute (needs render targets for depth pre-pass) */
+    r_compute_init();
 
     /* Re-create pipelines that reference render targets */
     r_pipeline_destroy_all();
@@ -195,12 +213,18 @@ void qk_renderer_set_render_resolution(u32 width, u32 height)
     r_pipeline_create_ui();
     r_pipeline_create_compose();
 
+    r_bloom_init();
     r_compose_update_descriptors();
 }
 
 void qk_renderer_set_aspect_mode(bool aspect_fit)
 {
     g_r.config.aspect_fit = aspect_fit;
+}
+
+void qk_renderer_set_ambient(f32 ambient)
+{
+    g_r.ambient = ambient;
 }
 
 void qk_renderer_set_vsync(bool vsync)
@@ -316,11 +340,56 @@ qk_texture_id_t qk_renderer_upload_texture(
     return r_texture_upload(pixels, width, height, channels);
 }
 
+qk_result_t qk_renderer_upload_lightmap_atlas(const u8 *pixels, u32 w, u32 h)
+{
+    if (!g_r.initialized || !pixels || w == 0 || h == 0)
+        return QK_ERROR_INVALID_PARAM;
+
+    r_staging_reset();
+    u32 tex_id = r_texture_upload(pixels, w, h, 4);
+    if (tex_id == 0) return QK_ERROR_OUT_OF_MEMORY;
+
+    g_r.lightmap_texture_id = tex_id;
+    g_r.has_lightmaps = true;
+    return QK_SUCCESS;
+}
+
 void qk_renderer_free_world(void)
 {
     if (!g_r.initialized) return;
     vkDeviceWaitIdle(g_r.device.handle);
     r_world_shutdown();
+}
+
+/* ---- Matrix inverse (for light culling) ---- */
+
+static void mat4_inverse(const f32 *m, f32 *out)
+{
+    f32 inv[16];
+    inv[ 0] =  m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+    inv[ 4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+    inv[ 8] =  m[4]*m[ 9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[ 9];
+    inv[12] = -m[4]*m[ 9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[ 9];
+    inv[ 1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+    inv[ 5] =  m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+    inv[ 9] = -m[0]*m[ 9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[ 9];
+    inv[13] =  m[0]*m[ 9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[ 9];
+    inv[ 2] =  m[1]*m[ 6]*m[15] - m[1]*m[ 7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[ 7] - m[13]*m[3]*m[ 6];
+    inv[ 6] = -m[0]*m[ 6]*m[15] + m[0]*m[ 7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[ 7] + m[12]*m[3]*m[ 6];
+    inv[10] =  m[0]*m[ 5]*m[15] - m[0]*m[ 7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[ 7] - m[12]*m[3]*m[ 5];
+    inv[14] = -m[0]*m[ 5]*m[14] + m[0]*m[ 6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[ 6] + m[12]*m[2]*m[ 5];
+    inv[ 3] = -m[1]*m[ 6]*m[11] + m[1]*m[ 7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[ 9]*m[2]*m[ 7] + m[ 9]*m[3]*m[ 6];
+    inv[ 7] =  m[0]*m[ 6]*m[11] - m[0]*m[ 7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[ 8]*m[2]*m[ 7] - m[ 8]*m[3]*m[ 6];
+    inv[11] = -m[0]*m[ 5]*m[11] + m[0]*m[ 7]*m[ 9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[ 9] - m[ 8]*m[1]*m[ 7] + m[ 8]*m[3]*m[ 5];
+    inv[15] =  m[0]*m[ 5]*m[10] - m[0]*m[ 6]*m[ 9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[ 9] + m[ 8]*m[1]*m[ 6] - m[ 8]*m[2]*m[ 5];
+
+    f32 det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+    if (det == 0.0f) {
+        memset(out, 0, sizeof(f32) * 16);
+        return;
+    }
+    f32 inv_det = 1.0f / det;
+    for (int i = 0; i < 16; i++) out[i] = inv[i] * inv_det;
 }
 
 /* ---- Frame Rendering ---- */
@@ -382,7 +451,14 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
         memcpy(uniforms.camera_pos, camera->position, sizeof(f32) * 3);
         u64 now = SDL_GetPerformanceCounter();
         uniforms.time = (f32)((f64)(now - s_start_ticks) / (f64)SDL_GetPerformanceFrequency());
+        uniforms.tile_count_x  = g_r.lights.tile_count_x;
+        uniforms.screen_width  = g_r.config.render_width;
+        uniforms.screen_height = g_r.config.render_height;
+        uniforms._pad = 0;
         memcpy(frame->view_ubo_mapped, &uniforms, sizeof(uniforms));
+
+        /* Cache inverse VP for compute light culling */
+        mat4_inverse(camera->view_projection, g_r.inv_view_projection);
     }
 
     /* Reset per-frame draw lists */
@@ -390,6 +466,7 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
     g_r.entities.draw_count = 0;
     g_r.fx.draw_count = 0;
     g_r.fx.vertex_count = 0;
+    g_r.lights.light_count = 0;
     g_r.stats_draw_calls = 0;
     g_r.stats_triangles = 0;
 }
@@ -441,6 +518,15 @@ void qk_renderer_end_frame(void)
     /* Timestamp: frame start */
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0);
 
+    /* Upload dynamic lights to GPU SSBO */
+    r_compute_upload_lights();
+
+    /* ---- Depth Pre-Pass ---- */
+    r_depth_prepass_record(cmd, fi);
+
+    /* ---- Light Cull Compute (always dispatch to keep tile SSBO valid) ---- */
+    r_compute_record_cull(cmd, g_r.inv_view_projection);
+
     /* ---- Pass 1: World + UI ---- */
     r_debug_begin_label(cmd, "World Pass", 0.2f, 0.8f, 0.2f);
     {
@@ -470,7 +556,10 @@ void qk_renderer_end_frame(void)
     /* Timestamp: after world + UI */
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 1);
 
-    /* Timestamp slot 2: unused (kept for GPU timer array compatibility) */
+    /* ---- Bloom pass ---- */
+    r_bloom_record_commands(cmd);
+
+    /* Timestamp: after bloom */
     r_debug_timestamp_write(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 2);
 
     /* ---- Pass 2: Composition ---- */

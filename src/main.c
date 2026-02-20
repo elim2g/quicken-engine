@@ -64,6 +64,7 @@ static qk_cvar_t *s_cvar_r_windowwidth;
 static qk_cvar_t *s_cvar_r_windowheight;
 static qk_cvar_t *s_cvar_r_fullscreen;
 static qk_cvar_t *s_cvar_r_perflog;
+static qk_cvar_t *s_cvar_r_ambient;
 
 /* Window pointer for cvar callbacks */
 static qk_window_t *s_window;
@@ -72,6 +73,10 @@ static qk_window_t *s_window;
 
 static void cb_perflog_changed(qk_cvar_t *cvar) {
     qk_perf_set_enabled(cvar->value.b);
+}
+
+static void cb_ambient_changed(qk_cvar_t *cvar) {
+    qk_renderer_set_ambient(cvar->value.f);
 }
 
 /* ---- vid_restart callback ---- */
@@ -372,6 +377,7 @@ typedef struct {
     u32  entity_id;
     bool active;
     f32  last_pos[3];
+    f32  last_dir[3];   /* normalized travel direction (for explosion offset) */
     u32  last_tick;
 } rocket_smoke_tracker_t;
 
@@ -384,6 +390,7 @@ static rocket_smoke_tracker_t s_rocket_trackers[MAX_TRACKED_ROCKETS];
 
 typedef struct {
     f32  pos[3];
+    f32  dir[3];    /* normalized travel direction at impact */
     f32  radius;
     f64  birth_time;
     bool active;
@@ -396,6 +403,7 @@ static u32         s_explosion_next;
 
 static FILE *s_diag_file;
 static u32   s_diag_frame;
+static u32   s_diag_last_phys_tick;
 
 static void cmd_diag(i32 argc, const char **argv) {
     if (argc < 2) {
@@ -533,6 +541,26 @@ static void server_tick(qk_phys_world_t *phys_world) {
 
     /* 2. Run gameplay tick (mode logic, weapons, physics, combat) */
     qk_game_tick(phys_world, QK_TICK_DT);
+
+    /* 2b. Read explosion events from gameplay (covers ALL rocket deaths,
+       including same-tick spawn+destroy that interpolation never sees) */
+    {
+        qk_explosion_event_t expl_events[32];
+        u32 expl_count = qk_game_get_explosions(expl_events, 32);
+        for (u32 i = 0; i < expl_count; i++) {
+            explosion_t *ex = &s_explosions[s_explosion_next % MAX_EXPLOSIONS];
+            s_explosion_next++;
+            ex->active = true;
+            ex->pos[0] = expl_events[i].pos[0];
+            ex->pos[1] = expl_events[i].pos[1];
+            ex->pos[2] = expl_events[i].pos[2];
+            ex->dir[0] = expl_events[i].dir[0];
+            ex->dir[1] = expl_events[i].dir[1];
+            ex->dir[2] = expl_events[i].dir[2];
+            ex->radius = expl_events[i].radius;
+            ex->birth_time = qk_platform_time_now();
+        }
+    }
 
     /* 3. Pack entity states for netcode snapshot */
     for (u32 i = 0; i < qk_game_get_entity_count(); i++) {
@@ -818,6 +846,9 @@ int main(int argc, char *argv[]) {
                                                   cb_fullscreen_changed);
     s_cvar_r_perflog = qk_cvar_register_bool("r_perflog", false, 0,
                                                cb_perflog_changed);
+    s_cvar_r_ambient = qk_cvar_register_float("r_ambient", 0.175f, 0.0f, 2.0f,
+                                                QK_CVAR_ARCHIVE,
+                                                cb_ambient_changed);
 
     qk_perf_init();
     qk_demo_init();
@@ -1031,6 +1062,14 @@ int main(int argc, char *argv[]) {
                                                   map_data.surfaces, map_data.surface_count);
                     }
 
+                    /* Lightmap atlas */
+                    if (map_data.lightmap_atlas) {
+                        qk_renderer_upload_lightmap_atlas(
+                            map_data.lightmap_atlas,
+                            map_data.lightmap_atlas_width,
+                            map_data.lightmap_atlas_height);
+                    }
+
                     /* Game state (clean init) */
                     qk_game_config_t gc = {0};
                     qk_game_init(&gc);
@@ -1185,6 +1224,14 @@ int main(int argc, char *argv[]) {
                                 qk_renderer_upload_world(map_data.vertices, map_data.vertex_count,
                                                           map_data.indices, map_data.index_count,
                                                           map_data.surfaces, map_data.surface_count);
+                            }
+
+                            /* Lightmap atlas */
+                            if (map_data.lightmap_atlas) {
+                                qk_renderer_upload_lightmap_atlas(
+                                    map_data.lightmap_atlas,
+                                    map_data.lightmap_atlas_width,
+                                    map_data.lightmap_atlas_height);
                             }
 
                             /* Game state */
@@ -1473,6 +1520,15 @@ int main(int argc, char *argv[]) {
                     qk_renderer_draw_sphere(ie->pos_x, ie->pos_y, ie->pos_z,
                                              4.0f, 0xFF8800FF);
 
+                    /* Rocket projectile emits an orange point light */
+                    qk_dynamic_light_t rocket_light = {
+                        .position  = { ie->pos_x, ie->pos_y, ie->pos_z },
+                        .radius    = 200.0f,
+                        .color     = { 1.0f, 0.5f, 0.1f },
+                        .intensity = 1.5f
+                    };
+                    qk_renderer_submit_light(&rocket_light);
+
                     /* Smoke trail: spawn particles when tick advances */
                     u32 cur_tick = qk_net_server_get_tick();
                     rocket_smoke_tracker_t *tracker = NULL;
@@ -1491,6 +1547,9 @@ int main(int argc, char *argv[]) {
                                 tracker->last_pos[0] = ie->pos_x;
                                 tracker->last_pos[1] = ie->pos_y;
                                 tracker->last_pos[2] = ie->pos_z;
+                                tracker->last_dir[0] = 0.0f;
+                                tracker->last_dir[1] = 1.0f;
+                                tracker->last_dir[2] = 0.0f;
                                 tracker->last_tick = cur_tick;
                                 break;
                             }
@@ -1501,6 +1560,13 @@ int main(int argc, char *argv[]) {
                         f32 dy = ie->pos_y - tracker->last_pos[1];
                         f32 dz = ie->pos_z - tracker->last_pos[2];
                         f32 dist = sqrtf(dx*dx + dy*dy + dz*dz);
+
+                        if (dist > 0.1f) {
+                            f32 inv = 1.0f / dist;
+                            tracker->last_dir[0] = dx * inv;
+                            tracker->last_dir[1] = dy * inv;
+                            tracker->last_dir[2] = dz * inv;
+                        }
 
                         u32 num_puffs = (dist > 0.1f)
                             ? (u32)(dist / SMOKE_SPAWN_SPACING) + 1 : 1;
@@ -1531,22 +1597,13 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Expire rocket trackers -- spawn explosion when rocket disappears */
+            /* Expire rocket trackers (explosion spawning is handled in
+               server_tick via pre/post entity comparison) */
             for (u32 t = 0; t < MAX_TRACKED_ROCKETS; t++) {
                 if (!s_rocket_trackers[t].active) continue;
                 u32 eid = s_rocket_trackers[t].entity_id;
                 const qk_interp_entity_t *ie = &interp->entities[eid];
                 if (!ie->active || ie->entity_type != 2) {
-                    /* Rocket just disappeared -- spawn explosion at last known pos */
-                    explosion_t *ex = &s_explosions[s_explosion_next % MAX_EXPLOSIONS];
-                    s_explosion_next++;
-                    ex->active = true;
-                    ex->pos[0] = s_rocket_trackers[t].last_pos[0];
-                    ex->pos[1] = s_rocket_trackers[t].last_pos[1];
-                    ex->pos[2] = s_rocket_trackers[t].last_pos[2];
-                    ex->radius = 120.0f; /* rocket splash radius */
-                    ex->birth_time = now;
-
                     s_rocket_trackers[t].active = false;
                 }
             }
@@ -1585,7 +1642,13 @@ int main(int argc, char *argv[]) {
                 continue;
             }
             f32 fade = 1.0f - (age / EXPLOSION_LIFETIME);
-            qk_renderer_draw_explosion(e->pos[0], e->pos[1], e->pos[2],
+            /* Offset explosion origin back along travel direction so the
+               dynamic light isn't coplanar with the impacted surface. */
+            const f32 EX_OFFSET = 8.0f;
+            f32 ex_x = e->pos[0] - e->dir[0] * EX_OFFSET;
+            f32 ex_y = e->pos[1] - e->dir[1] * EX_OFFSET;
+            f32 ex_z = e->pos[2] - e->dir[2] * EX_OFFSET;
+            qk_renderer_draw_explosion(ex_x, ex_y, ex_z,
                                         /*e->radius*/e->radius*0.5f, age,
                                         1.0f, 0.6f, 0.1f, fade);
         }
@@ -1847,6 +1910,37 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            /* Movement physics state (from client prediction, one line per physics tick) */
+            if (cl_has_prediction && cl_predicted_ps.command_time != s_diag_last_phys_tick) {
+                s_diag_last_phys_tick = cl_predicted_ps.command_time;
+                f32 hspeed = sqrtf(cl_predicted_ps.velocity.x * cl_predicted_ps.velocity.x +
+                                   cl_predicted_ps.velocity.y * cl_predicted_ps.velocity.y);
+                u32 since_jump = cl_predicted_ps.command_time - cl_predicted_ps.last_jump_tick;
+                fprintf(s_diag_file,
+                    "  PHYS pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) "
+                    "hspeed=%.1f vz=%.1f ground=%d gnorm=(%.3f,%.3f,%.3f) "
+                    "skim=%u jump_held=%d last_jump=%u since_jump=%u djwin=%u "
+                    "cmd_time=%u\n",
+                    (double)cl_predicted_ps.origin.x,
+                    (double)cl_predicted_ps.origin.y,
+                    (double)cl_predicted_ps.origin.z,
+                    (double)cl_predicted_ps.velocity.x,
+                    (double)cl_predicted_ps.velocity.y,
+                    (double)cl_predicted_ps.velocity.z,
+                    (double)hspeed,
+                    (double)cl_predicted_ps.velocity.z,
+                    cl_predicted_ps.on_ground,
+                    (double)cl_predicted_ps.ground_normal.x,
+                    (double)cl_predicted_ps.ground_normal.y,
+                    (double)cl_predicted_ps.ground_normal.z,
+                    cl_predicted_ps.skim_ticks,
+                    cl_predicted_ps.jump_held,
+                    cl_predicted_ps.last_jump_tick,
+                    since_jump,
+                    (u32)((u32)(QK_PM_CPM_DOUBLE_JUMP_WINDOW * QK_TICK_RATE / 1000)),
+                    cl_predicted_ps.command_time);
+            }
+
             s_diag_frame++;
             if (s_diag_frame % 128 == 0) fflush(s_diag_file);
         }
@@ -1873,6 +1967,10 @@ int main(int argc, char *argv[]) {
             char speed_buf[32];
             snprintf(speed_buf, sizeof(speed_buf), "%.0f ups", (double)speed);
             qk_ui_draw_text(10.0f, 30.0f, speed_buf, 16.0f, 0xFFFF00FF);
+
+            char vz_buf[32];
+            snprintf(vz_buf, sizeof(vz_buf), "vz %.0f", (double)cl_predicted_ps.velocity.z);
+            qk_ui_draw_text(10.0f, 48.0f, vz_buf, 16.0f, 0x00FFFFFF);
         }
 
         /* ---- 11. Console overlay ---- */

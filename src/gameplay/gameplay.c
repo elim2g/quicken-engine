@@ -255,6 +255,25 @@ bool qk_game_get_entity_origin(u8 entity_id, f32 *x, f32 *y, f32 *z) {
     return true;
 }
 
+/* ---- Explosion Event Query ---- */
+
+u32 qk_game_get_explosions(qk_explosion_event_t *out_events, u32 max_events) {
+    u32 count = 0;
+    for (u32 i = 0; i < s_gs.events.count && count < max_events; i++) {
+        if (s_gs.events.events[i].type == GEVT_EXPLOSION) {
+            out_events[count].pos[0] = s_gs.events.events[i].data.explosion.pos[0];
+            out_events[count].pos[1] = s_gs.events.events[i].data.explosion.pos[1];
+            out_events[count].pos[2] = s_gs.events.events[i].data.explosion.pos[2];
+            out_events[count].dir[0] = s_gs.events.events[i].data.explosion.dir[0];
+            out_events[count].dir[1] = s_gs.events.events[i].data.explosion.dir[1];
+            out_events[count].dir[2] = s_gs.events.events[i].data.explosion.dir[2];
+            out_events[count].radius = s_gs.events.events[i].data.explosion.radius;
+            count++;
+        }
+    }
+    return count;
+}
+
 /* ---- Process Commands (called during tick) ---- */
 
 void g_process_commands(qk_game_state_t *gs, u32 tick_dt_ms) {

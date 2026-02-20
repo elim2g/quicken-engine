@@ -94,6 +94,14 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
         bool player_hit_first = hit_player && (!hit_world ||
                                                 best_player_frac <= world_frac);
 
+        /* Normalized velocity for explosion direction */
+        f32 vel_len = sqrtf(p->velocity.x * p->velocity.x +
+                            p->velocity.y * p->velocity.y +
+                            p->velocity.z * p->velocity.z);
+        vec3_t vel_dir = (vel_len > 0.1f)
+            ? vec3_scale(p->velocity, 1.0f / vel_len)
+            : (vec3_t){0.0f, 1.0f, 0.0f};
+
         if (player_hit_first && hit_ent) {
             /* direct hit on player */
             vec3_t hit_point = vec3_add(p->origin,
@@ -118,6 +126,18 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
                                         p->owner, p->weapon, hit_ent->id);
             }
 
+            game_event_t evt = {0};
+            evt.type = GEVT_EXPLOSION;
+            evt.server_time = gs->server_time_ms;
+            evt.data.explosion.pos[0] = hit_point.x;
+            evt.data.explosion.pos[1] = hit_point.y;
+            evt.data.explosion.pos[2] = hit_point.z;
+            evt.data.explosion.dir[0] = vel_dir.x;
+            evt.data.explosion.dir[1] = vel_dir.y;
+            evt.data.explosion.dir[2] = vel_dir.z;
+            evt.data.explosion.radius = p->splash_radius;
+            g_event_push(&gs->events, &evt);
+
             g_entity_free(&gs->entities, e);
             e = next;
             continue;
@@ -134,6 +154,18 @@ void g_projectile_tick(qk_game_state_t *gs, f32 dt,
                                         p->splash_damage, wdef->knockback,
                                         p->owner, p->weapon, 0xFF);
             }
+
+            game_event_t evt = {0};
+            evt.type = GEVT_EXPLOSION;
+            evt.server_time = gs->server_time_ms;
+            evt.data.explosion.pos[0] = hit_point.x;
+            evt.data.explosion.pos[1] = hit_point.y;
+            evt.data.explosion.pos[2] = hit_point.z;
+            evt.data.explosion.dir[0] = vel_dir.x;
+            evt.data.explosion.dir[1] = vel_dir.y;
+            evt.data.explosion.dir[2] = vel_dir.z;
+            evt.data.explosion.radius = p->splash_radius;
+            g_event_push(&gs->events, &evt);
 
             g_entity_free(&gs->entities, e);
             e = next;

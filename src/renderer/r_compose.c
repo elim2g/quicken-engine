@@ -16,6 +16,8 @@ static r_compose_push_constants_t compute_viewport(
     r_compose_push_constants_t pc;
     memset(&pc, 0, sizeof(pc));
     pc.mode = aspect_fit ? 1 : 0;
+    pc.exposure = 1.0f;
+    pc.bloom_strength = 0.04f;
 
     if (!aspect_fit) {
         pc.viewport[0] = 0.0f;
@@ -56,8 +58,12 @@ void r_compose_shutdown(void)
 
 void r_compose_update_descriptors(void)
 {
-    /* UI is now drawn in the world pass, so both bindings point to world target.
-       Binding 1 is unused by the shader but must be a valid descriptor. */
+    /* Binding 0 = HDR world target, Binding 1 = bloom result (mip 0).
+       If bloom not initialized, binding 1 falls back to world target (valid descriptor). */
+    VkImageView bloom_view = g_r.bloom.initialized
+        ? g_r.bloom.mip_views[0]
+        : g_r.world_target.color_view;
+
     VkDescriptorImageInfo images[2] = {
         {
             .sampler     = g_r.compose_sampler,
@@ -66,7 +72,7 @@ void r_compose_update_descriptors(void)
         },
         {
             .sampler     = g_r.compose_sampler,
-            .imageView   = g_r.world_target.color_view,
+            .imageView   = bloom_view,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         }
     };

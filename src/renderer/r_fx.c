@@ -502,6 +502,21 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
     f32 inv_len = 1.0f / beam_len;
     f32 axis_n[3] = { axis[0] * inv_len, axis[1] * inv_len, axis[2] * inv_len };
 
+    /* Auto-emit dynamic light near beam endpoint, pulled back along beam
+       so the light isn't inside the surface the beam is hitting. */
+    {
+        const f32 LIGHT_OFFSET = 8.0f;
+        qk_dynamic_light_t light = {
+            .position  = { end_x - axis_n[0] * LIGHT_OFFSET,
+                           end_y - axis_n[1] * LIGHT_OFFSET,
+                           end_z - axis_n[2] * LIGHT_OFFSET },
+            .radius    = 100.0f,
+            .color     = { 0.6f, 0.8f, 1.0f },
+            .intensity = 1.2f
+        };
+        qk_renderer_submit_light(&light);
+    }
+
     /* Perpendicular vectors for displacement */
     f32 perp1[3], perp2[3];
     r_fx_build_perp_frame(axis_n, perp1, perp2);
@@ -582,10 +597,10 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
 
 /* ---- Rocket Smoke Trail ---- */
 
-#define ROCKET_TRAIL_PARTICLES  12
-#define ROCKET_TRAIL_LENGTH     70.0f
-#define ROCKET_TRAIL_BASE_SIZE  1.5f
-#define ROCKET_TRAIL_EXPAND     3.0f
+#define ROCKET_TRAIL_PARTICLES  8.0f
+#define ROCKET_TRAIL_LENGTH     20.0f
+#define ROCKET_TRAIL_BASE_SIZE  1.25f
+#define ROCKET_TRAIL_EXPAND     10.0f
 
 void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
                                     f32 vel_x, f32 vel_y, f32 vel_z,
@@ -593,6 +608,17 @@ void qk_renderer_draw_rocket_trail(f32 pos_x, f32 pos_y, f32 pos_z,
 {
     if (!g_r.fx.initialized) return;
     if (g_r.fx.draw_count >= R_FX_MAX_DRAWS) return;
+
+    /* Auto-emit dim dynamic light at rocket position */
+    {
+        qk_dynamic_light_t light = {
+            .position  = { pos_x, pos_y, pos_z },
+            .radius    = 80.0f,
+            .color     = { 1.0f, 0.6f, 0.2f },
+            .intensity = 0.6f
+        };
+        qk_renderer_submit_light(&light);
+    }
 
     /* Trail direction = opposite of velocity (smoke is behind the rocket) */
     f32 vel_len = sqrtf(vel_x * vel_x + vel_y * vel_y + vel_z * vel_z);
@@ -821,6 +847,18 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
     if (a <= 0.0f) return;
 
     f32 t = age_seconds / EXPLOSION_DURATION;
+
+    /* Auto-emit dynamic light (caller offsets position back along trajectory) */
+    {
+        f32 light_fade = (1.0f - t) * (1.0f - t);
+        qk_dynamic_light_t light = {
+            .position  = { x, y, z },
+            .radius    = radius * 3.0f,
+            .color     = { r, g, b },
+            .intensity = 2.0f * light_fade * a
+        };
+        qk_renderer_submit_light(&light);
+    }
     f32 fade = (1.0f - t);
     fade = fade * fade;   /* quadratic falloff */
 
@@ -983,6 +1021,24 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
 
     f32 t = age_seconds / RAIL_IMPACT_DURATION;
     f32 fade = (1.0f - t);
+
+    /* Auto-emit dynamic light (offset along surface normal so it's not coplanar) */
+    {
+        const f32 LIGHT_OFFSET = 8.0f;
+        f32 light_fade = fade * fade;
+        f32 cr = (f32)((color_rgba >> 24) & 0xFF) / 255.0f;
+        f32 cg = (f32)((color_rgba >> 16) & 0xFF) / 255.0f;
+        f32 cb = (f32)((color_rgba >>  8) & 0xFF) / 255.0f;
+        qk_dynamic_light_t light = {
+            .position  = { x + normal_x * LIGHT_OFFSET,
+                           y + normal_y * LIGHT_OFFSET,
+                           z + normal_z * LIGHT_OFFSET },
+            .radius    = 128.0f,
+            .color     = { cr, cg, cb },
+            .intensity = 1.5f * light_fade
+        };
+        qk_renderer_submit_light(&light);
+    }
     fade = fade * fade; /* quadratic falloff */
 
     /* Surface normal (normalized) */

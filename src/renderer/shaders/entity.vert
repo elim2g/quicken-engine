@@ -7,6 +7,10 @@ layout(set = 0, binding = 0) uniform ViewUniforms {
     mat4 view_projection;
     vec3 camera_pos;
     float time;
+    uint tile_count_x;
+    uint screen_width;
+    uint screen_height;
+    uint _pad;
 } view;
 
 layout(push_constant) uniform EntityPush {

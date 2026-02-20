@@ -38,7 +38,7 @@
 #define R_MEMORY_POOL_HOST_VISIBLE  1
 #define R_MEMORY_POOL_COUNT         2
 
-#define R_DEVICE_LOCAL_POOL_SIZE    (64u * 1024u * 1024u)
+#define R_DEVICE_LOCAL_POOL_SIZE    (256u * 1024u * 1024u)
 #define R_HOST_VISIBLE_POOL_SIZE    (16u * 1024u * 1024u)
 #define R_STAGING_BUFFER_SIZE       (32u * 1024u * 1024u)
 
@@ -159,8 +159,16 @@ typedef struct r_world_vertex {
     f32     position[3];
     f32     normal[3];
     f32     uv[2];
+    f32     lm_uv[2];
     u32     texture_id;
 } r_world_vertex_t;
+
+typedef struct r_world_push_constants {
+    u32     texture_index;
+    u32     lightmap_index;
+    f32     overbright;
+    f32     ambient;
+} r_world_push_constants_t;
 
 typedef struct r_draw_surface {
     u32     index_offset;
@@ -223,6 +231,10 @@ typedef struct r_view_uniforms {
     f32     view_projection[16];
     f32     camera_pos[3];
     f32     time;
+    u32     tile_count_x;
+    u32     screen_width;
+    u32     screen_height;
+    u32     _pad;
 } r_view_uniforms_t;
 
 /* ---- Entity Types ---- */
@@ -292,11 +304,93 @@ typedef struct r_fx_state {
     bool                initialized;
 } r_fx_state_t;
 
+/* ---- Bloom Types ---- */
+
+#define R_BLOOM_MIP_COUNT   5
+
+typedef struct r_bloom_push_constants {
+    f32     texel_size[2];
+    f32     threshold;
+    f32     intensity;
+} r_bloom_push_constants_t;
+
+typedef struct r_bloom_state {
+    VkImage         mip_images[R_BLOOM_MIP_COUNT];
+    VkImageView     mip_views[R_BLOOM_MIP_COUNT];
+    VkDeviceMemory  mip_memories[R_BLOOM_MIP_COUNT];
+    VkExtent2D      mip_extents[R_BLOOM_MIP_COUNT];
+    VkFramebuffer   down_framebuffers[R_BLOOM_MIP_COUNT];
+    VkFramebuffer   up_framebuffers[R_BLOOM_MIP_COUNT];
+    VkRenderPass    render_pass;
+    VkRenderPass    additive_render_pass;
+    VkDescriptorSet mip_descriptors[R_BLOOM_MIP_COUNT + 1];
+    r_pipeline_t    downsample_pipeline;
+    r_pipeline_t    upsample_pipeline;
+    bool            initialized;
+} r_bloom_state_t;
+
+/* ---- Forward+ Light Culling Types ---- */
+
+#define R_MAX_DYNAMIC_LIGHTS    256
+#define R_TILE_SIZE             16
+#define R_MAX_LIGHTS_PER_TILE   64
+
+typedef struct r_dynamic_light {
+    f32     position[3];
+    f32     radius;
+    f32     color[3];
+    f32     intensity;
+} r_dynamic_light_t;
+
+typedef struct r_light_cull_push_constants {
+    f32     inv_projection[16];
+    u32     screen_width;
+    u32     screen_height;
+    u32     tile_count_x;
+    u32     light_count;
+} r_light_cull_push_constants_t;
+
+typedef struct r_light_state {
+    r_dynamic_light_t   lights[R_MAX_DYNAMIC_LIGHTS];
+    u32                 light_count;
+
+    VkBuffer            light_ssbo;
+    VkDeviceMemory      light_memory;
+    void               *light_mapped;
+
+    VkBuffer            tile_ssbo;
+    VkDeviceMemory      tile_memory;
+
+    VkPipeline          cull_pipeline;
+    VkPipelineLayout    cull_layout;
+    VkDescriptorSetLayout cull_set_layout;
+    VkDescriptorSet     cull_descriptor_set;
+
+    /* Light SSBO readable by fragment shaders */
+    VkDescriptorSetLayout light_set_layout;
+    VkDescriptorSet       light_descriptor_set;
+
+    u32                 tile_count_x;
+    u32                 tile_count_y;
+    bool                initialized;
+} r_light_state_t;
+
+/* ---- Depth Pre-Pass ---- */
+
+typedef struct r_depth_prepass {
+    VkRenderPass    render_pass;
+    VkFramebuffer   framebuffer;
+    r_pipeline_t    pipeline;
+    bool            initialized;
+} r_depth_prepass_t;
+
 /* ---- Composition Push Constants ---- */
 
 typedef struct r_compose_push_constants {
     f32     viewport[4];
     u32     mode;
+    f32     exposure;
+    f32     bloom_strength;
 } r_compose_push_constants_t;
 
 /* ---- GPU Timers ---- */
@@ -335,7 +429,9 @@ typedef struct r_state {
     VkDescriptorSetLayout   view_set_layout;
     VkDescriptorSetLayout   texture_set_layout;
     VkDescriptorSetLayout   compose_set_layout;
+    VkDescriptorSetLayout   bindless_set_layout;
     VkDescriptorPool        descriptor_pool;
+    VkDescriptorSet         bindless_descriptor_set;
 
     VkDescriptorSet         compose_descriptor_set;
     VkSampler               compose_sampler;
@@ -349,6 +445,11 @@ typedef struct r_state {
     r_entity_state_t        entities;
 
     r_fx_state_t            fx;
+
+    r_bloom_state_t         bloom;
+
+    r_light_state_t         lights;
+    r_depth_prepass_t       depth_prepass;
 
     r_texture_manager_t     textures;
 
@@ -369,6 +470,14 @@ typedef struct r_state {
     u32                     stats_triangles;
     f32                     stats_fence_wait_ms;
     f32                     stats_acquire_ms;
+
+    /* Lightmap state (Phase 2) */
+    u32                     lightmap_texture_id;
+    bool                    has_lightmaps;
+    f32                     ambient;
+
+    /* Cached inverse VP for light culling compute */
+    f32                     inv_view_projection[16];
 
     bool                    initialized;
     bool                    swapchain_needs_recreate;
@@ -440,6 +549,18 @@ void        r_fx_record_commands(VkCommandBuffer cmd, u32 frame_index);
 qk_result_t r_ui_init(void);
 void        r_ui_shutdown(void);
 void        r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index);
+
+/* r_bloom.c */
+qk_result_t r_bloom_init(void);
+void        r_bloom_shutdown(void);
+void        r_bloom_record_commands(VkCommandBuffer cmd);
+
+/* r_compute.c */
+qk_result_t r_compute_init(void);
+void        r_compute_shutdown(void);
+void        r_compute_upload_lights(void);
+void        r_compute_record_cull(VkCommandBuffer cmd, const f32 *inv_projection);
+void        r_depth_prepass_record(VkCommandBuffer cmd, u32 frame_index);
 
 /* r_compose.c */
 qk_result_t r_compose_init(void);

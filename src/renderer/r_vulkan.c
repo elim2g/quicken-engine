@@ -128,6 +128,23 @@ static i32 score_physical_device(VkPhysicalDevice device, VkSurfaceKHR surface,
     /* Require Vulkan 1.2 */
     if (props.apiVersion < VK_API_VERSION_1_2) return -1;
 
+    /* Require descriptor indexing (bindless textures) */
+    VkPhysicalDeviceDescriptorIndexingFeatures idx_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES
+    };
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &idx_features
+    };
+    vkGetPhysicalDeviceFeatures2(device, &features2);
+
+    if (!idx_features.shaderSampledImageArrayNonUniformIndexing ||
+        !idx_features.descriptorBindingSampledImageUpdateAfterBind ||
+        !idx_features.descriptorBindingPartiallyBound ||
+        !idx_features.runtimeDescriptorArray) {
+        return -1;
+    }
+
     /* Check for swapchain extension */
     u32 ext_count = 0;
     vkEnumerateDeviceExtensionProperties(device, NULL, &ext_count, NULL);
@@ -277,15 +294,29 @@ qk_result_t r_vulkan_create_device(void)
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
-    VkPhysicalDeviceFeatures device_features = {0};
+    /* Enable descriptor indexing features via pNext chain */
+    VkPhysicalDeviceDescriptorIndexingFeatures idx_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+        .shaderSampledImageArrayNonUniformIndexing    = VK_TRUE,
+        .descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE,
+        .descriptorBindingPartiallyBound               = VK_TRUE,
+        .runtimeDescriptorArray                        = VK_TRUE
+    };
+
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext    = &idx_features,
+        .features = {0}
+    };
 
     VkDeviceCreateInfo create_info = {
         .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext                   = &features2,
         .queueCreateInfoCount    = queue_info_count,
         .pQueueCreateInfos       = queue_infos,
         .enabledExtensionCount   = 1,
         .ppEnabledExtensionNames = device_extensions,
-        .pEnabledFeatures        = &device_features
+        .pEnabledFeatures        = NULL
     };
 
     VkResult result = vkCreateDevice(g_r.device.physical, &create_info, NULL, &g_r.device.handle);
@@ -636,9 +667,9 @@ create_view:
 static qk_result_t create_render_pass_world(VkRenderPass *out_pass, VkFormat depth_format)
 {
     VkAttachmentDescription attachments[2] = {
-        /* Color */
+        /* Color (HDR float16 for overbright lightmaps + bloom) */
         {
-            .format         = VK_FORMAT_R8G8B8A8_SRGB,
+            .format         = VK_FORMAT_R16G16B16A16_SFLOAT,
             .samples        = VK_SAMPLE_COUNT_1_BIT,
             .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
@@ -647,15 +678,15 @@ static qk_result_t create_render_pass_world(VkRenderPass *out_pass, VkFormat dep
             .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
             .finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         },
-        /* Depth */
+        /* Depth (loaded from depth pre-pass, written by world geometry) */
         {
             .format         = depth_format,
             .samples        = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD,
             .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
             .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .initialLayout  = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
             .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
         }
     };
@@ -807,17 +838,17 @@ qk_result_t r_create_render_targets(void)
     qk_result_t res = create_render_pass_world(&g_r.world_target.render_pass, depth_format);
     if (res != QK_SUCCESS) return res;
 
-    /* World color */
-    res = create_image(rw, rh, VK_FORMAT_R8G8B8A8_SRGB,
+    /* World color (HDR float16) */
+    res = create_image(rw, rh, VK_FORMAT_R16G16B16A16_SFLOAT,
                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                        VK_IMAGE_ASPECT_COLOR_BIT,
                        &g_r.world_target.color_image, &g_r.world_target.color_memory,
                        &g_r.world_target.color_view);
     if (res != QK_SUCCESS) return res;
 
-    /* World depth */
+    /* World depth (sampled by light cull compute shader) */
     res = create_image(rw, rh, depth_format,
-                       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                        VK_IMAGE_ASPECT_DEPTH_BIT,
                        &g_r.world_target.depth_image, &g_r.world_target.depth_memory,
                        &g_r.world_target.depth_view);
@@ -935,6 +966,32 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.texture_set_layout);
     }
 
+    /* Bindless texture array set layout (set 1 for world pipeline) */
+    {
+        VkDescriptorSetLayoutBinding binding = {
+            .binding         = 0,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = R_MAX_TEXTURES,
+            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT
+        };
+        VkDescriptorBindingFlags bind_flags =
+            VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        VkDescriptorSetLayoutBindingFlagsCreateInfo flags_info = {
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            .bindingCount  = 1,
+            .pBindingFlags = &bind_flags
+        };
+        VkDescriptorSetLayoutCreateInfo info = {
+            .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .pNext        = &flags_info,
+            .flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+            .bindingCount = 1,
+            .pBindings    = &binding
+        };
+        vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.bindless_set_layout);
+    }
+
     /* Compose set layout */
     {
         VkDescriptorSetLayoutBinding bindings[2] = {
@@ -959,17 +1016,20 @@ qk_result_t r_descriptors_init(void)
         vkCreateDescriptorSetLayout(g_r.device.handle, &info, NULL, &g_r.compose_set_layout);
     }
 
-    /* Descriptor pool */
+    /* Descriptor pool (UPDATE_AFTER_BIND for bindless set) */
     {
         VkDescriptorPoolSize sizes[] = {
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         16 },
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, R_MAX_TEXTURES + 16 }
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, R_MAX_TEXTURES * 2 + 32 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         8 }
         };
+        /* Note: 3 pool sizes now (UBO, sampler, SSBO) */
         VkDescriptorPoolCreateInfo pool_info = {
             .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-            .maxSets       = R_MAX_TEXTURES + 32,
-            .poolSizeCount = 2,
+            .flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT |
+                             VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+            .maxSets       = R_MAX_TEXTURES + 48,
+            .poolSizeCount = 3,
             .pPoolSizes    = sizes
         };
         vkCreateDescriptorPool(g_r.device.handle, &pool_info, NULL, &g_r.descriptor_pool);
@@ -1001,6 +1061,17 @@ qk_result_t r_descriptors_init(void)
         vkAllocateDescriptorSets(g_r.device.handle, &alloc_info, &g_r.compose_descriptor_set);
     }
 
+    /* Allocate bindless texture array descriptor set */
+    {
+        VkDescriptorSetAllocateInfo alloc_info = {
+            .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool     = g_r.descriptor_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts        = &g_r.bindless_set_layout
+        };
+        vkAllocateDescriptorSets(g_r.device.handle, &alloc_info, &g_r.bindless_descriptor_set);
+    }
+
     /* Allocate per-frame view descriptor sets */
     for (u32 i = 0; i < R_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorSetAllocateInfo alloc_info = {
@@ -1022,5 +1093,6 @@ void r_descriptors_shutdown(void)
     if (g_r.descriptor_pool) vkDestroyDescriptorPool(dev, g_r.descriptor_pool, NULL);
     if (g_r.view_set_layout) vkDestroyDescriptorSetLayout(dev, g_r.view_set_layout, NULL);
     if (g_r.texture_set_layout) vkDestroyDescriptorSetLayout(dev, g_r.texture_set_layout, NULL);
+    if (g_r.bindless_set_layout) vkDestroyDescriptorSetLayout(dev, g_r.bindless_set_layout, NULL);
     if (g_r.compose_set_layout) vkDestroyDescriptorSetLayout(dev, g_r.compose_set_layout, NULL);
 }

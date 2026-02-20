@@ -910,6 +910,7 @@ void qk_map_free(qk_map_data_t *map) {
     free(map->vertices);
     free(map->indices);
     free(map->surfaces);
+    free(map->lightmap_atlas);
 
     /* Free spawn points */
     free(map->spawn_points);

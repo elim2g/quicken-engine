@@ -605,10 +605,14 @@ void r_entity_record_commands(VkCommandBuffer cmd, u32 frame_index)
     };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    /* Bind view UBO (set 0, same as world pipeline) */
+    /* Bind view UBO (set 0) and light SSBOs (set 1) */
+    VkDescriptorSet entity_sets[2] = {
+        frame->view_descriptor_set,
+        g_r.lights.light_descriptor_set
+    };
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            g_r.entity_pipeline.layout, 0, 1,
-                            &frame->view_descriptor_set, 0, NULL);
+                            g_r.entity_pipeline.layout, 0, 2,
+                            entity_sets, 0, NULL);
 
     r_entity_mesh_type_t current_mesh = (r_entity_mesh_type_t)-1;
 

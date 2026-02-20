@@ -33,6 +33,7 @@ typedef struct {
     f32     position[3];
     f32     normal[3];
     f32     uv[2];
+    f32     lm_uv[2];
     u32     texture_id;
 } qk_world_vertex_t;
 
@@ -86,6 +87,9 @@ qk_result_t qk_renderer_upload_world(
 qk_texture_id_t qk_renderer_upload_texture(
     const u8 *pixels, u32 width, u32 height, u32 channels);
 void qk_renderer_free_world(void);
+
+/* Lightmap atlas upload (call after upload_world, before rendering) */
+qk_result_t qk_renderer_upload_lightmap_atlas(const u8 *pixels, u32 w, u32 h);
 
 /* Frame rendering */
 void qk_renderer_begin_frame(const qk_camera_t *camera);
@@ -143,6 +147,19 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
                                    f32 normal_x, f32 normal_y, f32 normal_z,
                                    f32 in_dir_x, f32 in_dir_y, f32 in_dir_z,
                                    f32 age_seconds, u32 color_rgba);
+
+/* Dynamic lights (Forward+) */
+typedef struct {
+    f32 position[3];
+    f32 radius;
+    f32 color[3];
+    f32 intensity;
+} qk_dynamic_light_t;
+
+void qk_renderer_submit_light(const qk_dynamic_light_t *light);
+
+/* Ambient lighting level (HDR-space value, default 0.15) */
+void qk_renderer_set_ambient(f32 ambient);
 
 /* Debug */
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);

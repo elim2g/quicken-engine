@@ -50,6 +50,7 @@ typedef enum {
     GEVT_ROUND_START,
     GEVT_ROUND_END,
     GEVT_MATCH_END,
+    GEVT_EXPLOSION,
     GEVT_COUNT
 } game_event_type_t;
 
@@ -62,6 +63,7 @@ typedef struct {
         struct { u8 round_number; } round_start;
         struct { u8 winner_team; u8 score_a; u8 score_b; } round_end;
         struct { u8 winner_team; } match_end;
+        struct { f32 pos[3]; f32 dir[3]; f32 radius; } explosion;
     } data;
 } game_event_t;
 

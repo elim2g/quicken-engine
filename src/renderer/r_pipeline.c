@@ -225,7 +225,9 @@ qk_result_t r_pipeline_create_world(void)
           .offset = offsetof(r_world_vertex_t, normal) },
         { .location = 2, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,
           .offset = offsetof(r_world_vertex_t, uv) },
-        { .location = 3, .binding = 0, .format = VK_FORMAT_R32_UINT,
+        { .location = 3, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,
+          .offset = offsetof(r_world_vertex_t, lm_uv) },
+        { .location = 4, .binding = 0, .format = VK_FORMAT_R32_UINT,
           .offset = offsetof(r_world_vertex_t, texture_id) }
     };
 
@@ -233,7 +235,7 @@ qk_result_t r_pipeline_create_world(void)
         .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount   = 1,
         .pVertexBindingDescriptions      = &binding,
-        .vertexAttributeDescriptionCount = 4,
+        .vertexAttributeDescriptionCount = 5,
         .pVertexAttributeDescriptions    = attrs
     };
 
@@ -261,11 +263,13 @@ qk_result_t r_pipeline_create_world(void)
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
     };
 
+    /* LESS_OR_EQUAL: depth pre-pass already wrote exact depth for world geometry.
+     * Strict LESS would reject every fragment (depth == pre-pass depth). */
     VkPipelineDepthStencilStateCreateInfo depth_stencil = {
         .sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable  = VK_TRUE,
         .depthWriteEnable = VK_TRUE,
-        .depthCompareOp   = VK_COMPARE_OP_LESS
+        .depthCompareOp   = VK_COMPARE_OP_LESS_OR_EQUAL
     };
 
     VkPipelineColorBlendAttachmentState blend_attachment = {
@@ -290,13 +294,23 @@ qk_result_t r_pipeline_create_world(void)
         .pDynamicStates    = dynamic_states
     };
 
-    /* Pipeline layout: set 0 = view UBO, set 1 = texture */
-    VkDescriptorSetLayout set_layouts[] = { g_r.view_set_layout, g_r.texture_set_layout };
+    /* Pipeline layout: set 0 = view UBO, set 1 = bindless textures, set 2 = light SSBOs */
+    VkDescriptorSetLayout set_layouts[] = {
+        g_r.view_set_layout, g_r.bindless_set_layout, g_r.lights.light_set_layout
+    };
+
+    VkPushConstantRange push_range = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset     = 0,
+        .size       = sizeof(r_world_push_constants_t)
+    };
 
     VkPipelineLayoutCreateInfo layout_info = {
-        .sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 2,
-        .pSetLayouts    = set_layouts
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount         = 3,
+        .pSetLayouts            = set_layouts,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &push_range
     };
 
     vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL, &g_r.world_pipeline.layout);
@@ -443,10 +457,13 @@ qk_result_t r_pipeline_create_entity(void)
         .size       = sizeof(r_entity_push_constants_t)
     };
 
+    /* set 0 = view UBO, set 1 = light SSBOs */
+    VkDescriptorSetLayout entity_sets[] = { g_r.view_set_layout, g_r.lights.light_set_layout };
+
     VkPipelineLayoutCreateInfo layout_info = {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount         = 1,
-        .pSetLayouts            = &g_r.view_set_layout,
+        .setLayoutCount         = 2,
+        .pSetLayouts            = entity_sets,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges    = &push_range
     };

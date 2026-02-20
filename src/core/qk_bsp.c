@@ -28,6 +28,9 @@
 #define LUMP_VERTICES       10
 #define LUMP_MESHVERTS      11
 #define LUMP_FACES          13
+#define LUMP_LIGHTMAPS      14
+
+#define BSP_LM_PAGE_SIZE    128
 
 #define Q3_CONTENTS_SOLID       0x1
 #define Q3_CONTENTS_FOG         0x40
@@ -174,11 +177,12 @@ static void world_uv(const f32 *pos, const f32 *nrm, f32 *uv) {
 #define BSP_TESS_IDXS  (BSP_TESS_LEVEL * BSP_TESS_LEVEL * 6)
 
 static void bezier_eval(const bsp_vertex_t *cp, i32 stride,
-                         f32 u, f32 v, f32 *out_pos, f32 *out_nrm) {
+                         f32 u, f32 v, f32 *out_pos, f32 *out_nrm,
+                         f32 *out_lm_st) {
     f32 au = (1-u)*(1-u), bu = 2*(1-u)*u, cu = u*u;
     f32 av = (1-v)*(1-v), bv = 2*(1-v)*v, cv = v*v;
 
-    f32 tp[3][3], tn[3][3];
+    f32 tp[3][3], tn[3][3], tl[3][2];
     for (int r = 0; r < 3; r++) {
         const bsp_vertex_t *p0 = &cp[r * stride + 0];
         const bsp_vertex_t *p1 = &cp[r * stride + 1];
@@ -186,6 +190,9 @@ static void bezier_eval(const bsp_vertex_t *cp, i32 stride,
         for (int i = 0; i < 3; i++) {
             tp[r][i] = au * p0->position[i] + bu * p1->position[i] + cu * p2->position[i];
             tn[r][i] = au * p0->normal[i]   + bu * p1->normal[i]   + cu * p2->normal[i];
+        }
+        for (int i = 0; i < 2; i++) {
+            tl[r][i] = au * p0->lm_st[i] + bu * p1->lm_st[i] + cu * p2->lm_st[i];
         }
     }
 
@@ -197,6 +204,11 @@ static void bezier_eval(const bsp_vertex_t *cp, i32 stride,
     }
     len = sqrtf(len);
     if (len > 0.0001f) { out_nrm[0] /= len; out_nrm[1] /= len; out_nrm[2] /= len; }
+
+    if (out_lm_st) {
+        for (int i = 0; i < 2; i++)
+            out_lm_st[i] = av * tl[0][i] + bv * tl[1][i] + cv * tl[2][i];
+    }
 }
 
 /* ---- Build collision model from BSP brushes ---- */
@@ -358,7 +370,7 @@ static void build_patch_collision(
                         f32 u = (f32)tu / (f32)BSP_TESS_LEVEL;
                         f32 v = (f32)tv / (f32)BSP_TESS_LEVEL;
                         f32 nrm[3];
-                        bezier_eval(cp, cols, u, v, grid[tv * w + tu], nrm);
+                        bezier_eval(cp, cols, u, v, grid[tv * w + tu], nrm, NULL);
                     }
                 }
 
@@ -466,6 +478,7 @@ static qk_result_t build_bsp_render(
     const bsp_vertex_t *verts, u32 vert_count,
     const bsp_meshvert_t *meshverts, u32 mv_count,
     const bsp_face_t *faces, u32 face_count,
+    u32 lm_pages_per_row, u32 lm_atlas_w, u32 lm_atlas_h,
     qk_world_vertex_t **out_verts, u32 *out_vert_count,
     u32 **out_indices, u32 *out_idx_count,
     qk_draw_surface_t **out_surfaces, u32 *out_surf_count)
@@ -509,7 +522,8 @@ static qk_result_t build_bsp_render(
         return QK_ERROR_OUT_OF_MEMORY;
     }
 
-    /* Convert all BSP vertices: real normals + world-space planar UVs */
+    /* Convert all BSP vertices: real normals + world-space planar UVs.
+       lm_uv is initialized to {0,0} and overridden per-face below. */
     for (u32 i = 0; i < vert_count; i++) {
         rv[i].position[0] = verts[i].position[0];
         rv[i].position[1] = verts[i].position[1];
@@ -518,6 +532,8 @@ static qk_result_t build_bsp_render(
         rv[i].normal[1] = verts[i].normal[1];
         rv[i].normal[2] = verts[i].normal[2];
         world_uv(rv[i].position, rv[i].normal, rv[i].uv);
+        rv[i].lm_uv[0] = 0.0f;
+        rv[i].lm_uv[1] = 0.0f;
         rv[i].texture_id = 0;
     }
 
@@ -541,6 +557,22 @@ static qk_result_t build_bsp_render(
             u32 face_color = texture_name_to_color(textures[f->texture].name);
             for (i32 v = 0; v < f->n_verts; v++)
                 rv[f->vertex + v].texture_id = face_color;
+
+            /* Compute lightmap atlas UVs if lightmaps are present */
+            if (f->lm_index >= 0 && lm_pages_per_row > 0 && lm_atlas_w > 0) {
+                u32 page_col = (u32)f->lm_index % lm_pages_per_row;
+                u32 page_row = (u32)f->lm_index / lm_pages_per_row;
+                f32 inv_w = 1.0f / (f32)lm_atlas_w;
+                f32 inv_h = 1.0f / (f32)lm_atlas_h;
+                f32 page_u0 = (f32)(page_col * BSP_LM_PAGE_SIZE) * inv_w;
+                f32 page_v0 = (f32)(page_row * BSP_LM_PAGE_SIZE) * inv_h;
+                f32 page_scale_u = (f32)BSP_LM_PAGE_SIZE * inv_w;
+                f32 page_scale_v = (f32)BSP_LM_PAGE_SIZE * inv_h;
+                for (i32 v = 0; v < f->n_verts; v++) {
+                    rv[f->vertex + v].lm_uv[0] = page_u0 + verts[f->vertex + v].lm_st[0] * page_scale_u;
+                    rv[f->vertex + v].lm_uv[1] = page_v0 + verts[f->vertex + v].lm_st[1] * page_scale_v;
+                }
+            }
 
             u32 base_idx = idx_cursor;
             for (i32 m = 0; m < f->n_meshverts; m += 3) {
@@ -579,13 +611,34 @@ static qk_result_t build_bsp_render(
 
                     /* Tessellate: generate (N+1)x(N+1) grid of vertices */
                     u32 vbase = vert_cursor;
+
+                    /* Pre-compute lightmap atlas transform for this patch face */
+                    bool patch_has_lm = (f->lm_index >= 0 && lm_pages_per_row > 0 && lm_atlas_w > 0);
+                    f32 p_u0 = 0, p_v0 = 0, p_su = 0, p_sv = 0;
+                    if (patch_has_lm) {
+                        u32 pc2 = (u32)f->lm_index % lm_pages_per_row;
+                        u32 pr2 = (u32)f->lm_index / lm_pages_per_row;
+                        p_u0 = (f32)(pc2 * BSP_LM_PAGE_SIZE) / (f32)lm_atlas_w;
+                        p_v0 = (f32)(pr2 * BSP_LM_PAGE_SIZE) / (f32)lm_atlas_h;
+                        p_su = (f32)BSP_LM_PAGE_SIZE / (f32)lm_atlas_w;
+                        p_sv = (f32)BSP_LM_PAGE_SIZE / (f32)lm_atlas_h;
+                    }
+
                     for (i32 tv = 0; tv <= BSP_TESS_LEVEL; tv++) {
                         for (i32 tu = 0; tu <= BSP_TESS_LEVEL; tu++) {
                             f32 u = (f32)tu / (f32)BSP_TESS_LEVEL;
                             f32 v = (f32)tv / (f32)BSP_TESS_LEVEL;
+                            f32 lm_st[2];
                             qk_world_vertex_t *wv = &rv[vert_cursor++];
-                            bezier_eval(cp, cols, u, v, wv->position, wv->normal);
+                            bezier_eval(cp, cols, u, v, wv->position, wv->normal, lm_st);
                             world_uv(wv->position, wv->normal, wv->uv);
+                            if (patch_has_lm) {
+                                wv->lm_uv[0] = p_u0 + lm_st[0] * p_su;
+                                wv->lm_uv[1] = p_v0 + lm_st[1] * p_sv;
+                            } else {
+                                wv->lm_uv[0] = 0.0f;
+                                wv->lm_uv[1] = 0.0f;
+                            }
                             wv->texture_id = face_color;
                         }
                     }
@@ -879,12 +932,69 @@ qk_result_t qk_bsp_load(const u8 *data, u64 data_len, qk_map_data_t *out) {
             fprintf(stderr, "[BSP] Patch collision: %u slab brushes\n", patch_brushes);
     }
 
-    /* Build render geometry */
+    /* Read lightmap lump and build atlas */
+    u32 lm_pages_per_row = 0, lm_atlas_w = 0, lm_atlas_h = 0;
+    {
+        const bsp_lump_t *lm_lump = &hdr->lumps[LUMP_LIGHTMAPS];
+        u32 lm_data_len = (lm_lump->offset >= 0 && lm_lump->length > 0) ? (u32)lm_lump->length : 0;
+        const u8 *lm_data = (lm_data_len > 0 && (u64)lm_lump->offset + lm_data_len <= data_len)
+                             ? data + lm_lump->offset : NULL;
+        u32 page_bytes = BSP_LM_PAGE_SIZE * BSP_LM_PAGE_SIZE * 3;
+        u32 page_count = (lm_data && page_bytes > 0) ? lm_data_len / page_bytes : 0;
+
+        if (page_count > 0) {
+            /* Grid layout for atlas */
+            u32 cols = 1;
+            while (cols * cols < page_count) cols++;
+            u32 rows = (page_count + cols - 1) / cols;
+
+            lm_pages_per_row = cols;
+            lm_atlas_w = cols * BSP_LM_PAGE_SIZE;
+            lm_atlas_h = rows * BSP_LM_PAGE_SIZE;
+
+            /* Allocate RGBA8 atlas */
+            u32 atlas_bytes = lm_atlas_w * lm_atlas_h * 4;
+            u8 *atlas = (u8 *)calloc(atlas_bytes, 1);
+            if (atlas) {
+                for (u32 p = 0; p < page_count; p++) {
+                    u32 col = p % cols;
+                    u32 row = p / cols;
+                    const u8 *src = lm_data + p * page_bytes;
+
+                    for (u32 y = 0; y < BSP_LM_PAGE_SIZE; y++) {
+                        u32 dst_x = col * BSP_LM_PAGE_SIZE;
+                        u32 dst_y = row * BSP_LM_PAGE_SIZE + y;
+                        u8 *dst = atlas + (dst_y * lm_atlas_w + dst_x) * 4;
+                        const u8 *row_src = src + y * BSP_LM_PAGE_SIZE * 3;
+
+                        for (u32 x = 0; x < BSP_LM_PAGE_SIZE; x++) {
+                            dst[x * 4 + 0] = row_src[x * 3 + 0];
+                            dst[x * 4 + 1] = row_src[x * 3 + 1];
+                            dst[x * 4 + 2] = row_src[x * 3 + 2];
+                            dst[x * 4 + 3] = 255;
+                        }
+                    }
+                }
+
+                out->lightmap_atlas = atlas;
+                out->lightmap_atlas_width = lm_atlas_w;
+                out->lightmap_atlas_height = lm_atlas_h;
+                out->lightmap_page_count = page_count;
+                out->lightmap_pages_per_row = lm_pages_per_row;
+
+                fprintf(stderr, "[BSP] Lightmap atlas: %u pages -> %ux%u RGBA8\n",
+                        page_count, lm_atlas_w, lm_atlas_h);
+            }
+        }
+    }
+
+    /* Build render geometry (with lightmap UVs if atlas was built) */
     if (verts && meshverts && faces && textures) {
         qk_result_t res = build_bsp_render(textures, tex_count,
                                             verts, vert_count,
                                             meshverts, mv_count,
                                             faces, face_count,
+                                            lm_pages_per_row, lm_atlas_w, lm_atlas_h,
                                             &out->vertices, &out->vertex_count,
                                             &out->indices, &out->index_count,
                                             &out->surfaces, &out->surface_count);

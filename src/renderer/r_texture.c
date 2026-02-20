@@ -244,7 +244,7 @@ texture_create_view:
 
     r_commands_end_single(cmd);
 
-    /* Allocate descriptor set for this texture */
+    /* Allocate per-texture descriptor set (UI pipeline compatibility) */
     VkDescriptorSetAllocateInfo desc_alloc = {
         .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool     = g_r.descriptor_pool,
@@ -259,15 +259,27 @@ texture_create_view:
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
 
-    VkWriteDescriptorSet write = {
-        .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet          = tex->descriptor_set,
-        .dstBinding      = 0,
-        .descriptorCount = 1,
-        .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo      = &img_desc
+    /* Write into per-texture descriptor set AND bindless array */
+    VkWriteDescriptorSet writes[2] = {
+        {
+            .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet          = tex->descriptor_set,
+            .dstBinding      = 0,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo      = &img_desc
+        },
+        {
+            .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet           = g_r.bindless_descriptor_set,
+            .dstBinding       = 0,
+            .dstArrayElement  = id,
+            .descriptorCount  = 1,
+            .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo       = &img_desc
+        }
     };
-    vkUpdateDescriptorSets(g_r.device.handle, 1, &write, 0, NULL);
+    vkUpdateDescriptorSets(g_r.device.handle, 2, writes, 0, NULL);
 
     tex->width  = width;
     tex->height = height;

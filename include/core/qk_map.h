@@ -41,6 +41,13 @@ typedef struct {
     qk_draw_surface_t      *surfaces;
     u32                     surface_count;
 
+    /* Lightmap atlas (built from BSP lump 14) */
+    u8                     *lightmap_atlas;
+    u32                     lightmap_atlas_width;
+    u32                     lightmap_atlas_height;
+    u32                     lightmap_page_count;
+    u32                     lightmap_pages_per_row;
+
     /* Spawn points for gameplay */
     qk_spawn_point_t       *spawn_points;
     u32                     spawn_count;
