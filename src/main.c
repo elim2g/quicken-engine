@@ -230,7 +230,7 @@ static qk_texture_id_t create_grid_texture(void) {
         }
     }
 
-    qk_texture_id_t id = qk_renderer_upload_texture(pixels, GRID_SIZE, GRID_SIZE, 4);
+    qk_texture_id_t id = qk_renderer_upload_texture(pixels, GRID_SIZE, GRID_SIZE, 4, false);
 
     #undef GRID_SIZE
     #undef GRID_LINE

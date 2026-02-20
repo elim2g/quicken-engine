@@ -333,11 +333,11 @@ qk_result_t qk_renderer_upload_world(
 }
 
 qk_texture_id_t qk_renderer_upload_texture(
-    const u8 *pixels, u32 width, u32 height, u32 channels)
+    const u8 *pixels, u32 width, u32 height, u32 channels, bool nearest)
 {
     if (!g_r.initialized) return 0;
     r_staging_reset();
-    return r_texture_upload(pixels, width, height, channels);
+    return r_texture_upload(pixels, width, height, channels, nearest);
 }
 
 qk_result_t qk_renderer_upload_lightmap_atlas(const u8 *pixels, u32 w, u32 h)
@@ -346,7 +346,7 @@ qk_result_t qk_renderer_upload_lightmap_atlas(const u8 *pixels, u32 w, u32 h)
         return QK_ERROR_INVALID_PARAM;
 
     r_staging_reset();
-    u32 tex_id = r_texture_upload(pixels, w, h, 4);
+    u32 tex_id = r_texture_upload(pixels, w, h, 4, false);
     if (tex_id == 0) return QK_ERROR_OUT_OF_MEMORY;
 
     g_r.lightmap_texture_id = tex_id;

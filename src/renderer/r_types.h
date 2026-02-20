@@ -571,7 +571,7 @@ void        r_compose_record_commands(VkCommandBuffer cmd, u32 image_index);
 /* r_texture.c */
 qk_result_t r_texture_init(void);
 void        r_texture_shutdown(void);
-u32         r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels);
+u32         r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool nearest);
 VkDescriptorSet r_texture_get_descriptor(u32 texture_id);
 
 /* r_debug.c */

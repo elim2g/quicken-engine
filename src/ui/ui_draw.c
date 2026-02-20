@@ -163,7 +163,7 @@ static void ui_font_init(void) {
         }
     }
 
-    s_font_texture_id = qk_renderer_upload_texture(pixels, FONT_ATLAS_W, FONT_ATLAS_H, 4);
+    s_font_texture_id = qk_renderer_upload_texture(pixels, FONT_ATLAS_W, FONT_ATLAS_H, 4, true);
     s_font_initialized = true;
 }
 

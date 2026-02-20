@@ -85,7 +85,7 @@ qk_result_t qk_renderer_upload_world(
     const u32 *indices, u32 index_count,
     const qk_draw_surface_t *surfaces, u32 surface_count);
 qk_texture_id_t qk_renderer_upload_texture(
-    const u8 *pixels, u32 width, u32 height, u32 channels);
+    const u8 *pixels, u32 width, u32 height, u32 channels, bool nearest);
 void qk_renderer_free_world(void);
 
 /* Lightmap atlas upload (call after upload_world, before rendering) */

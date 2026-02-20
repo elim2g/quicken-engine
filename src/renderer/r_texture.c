@@ -78,7 +78,7 @@ qk_result_t r_texture_init(void)
 
     /* Create 1x1 white pixel default texture (texture 0) */
     u8 white_pixel[4] = { 255, 255, 255, 255 };
-    u32 tex_id = r_texture_upload(white_pixel, 1, 1, 4);
+    u32 tex_id = r_texture_upload(white_pixel, 1, 1, 4, false);
     if (tex_id != 0) {
         fprintf(stderr, "[Renderer] Warning: default texture got unexpected id %u\n", tex_id);
     }
@@ -105,7 +105,7 @@ void r_texture_shutdown(void)
     memset(&g_r.textures, 0, sizeof(g_r.textures));
 }
 
-u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels)
+u32 r_texture_upload(const u8 *pixels, u32 width, u32 height, u32 channels, bool nearest)
 {
     if (g_r.textures.next_free >= R_MAX_TEXTURES) {
         fprintf(stderr, "[Renderer] Texture limit reached\n");
@@ -254,7 +254,7 @@ texture_create_view:
     vkAllocateDescriptorSets(g_r.device.handle, &desc_alloc, &tex->descriptor_set);
 
     VkDescriptorImageInfo img_desc = {
-        .sampler     = g_r.textures.sampler_linear,
+        .sampler     = nearest ? g_r.textures.sampler_nearest : g_r.textures.sampler_linear,
         .imageView   = tex->view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
