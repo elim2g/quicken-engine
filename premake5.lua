@@ -177,6 +177,8 @@ project "quicken"
     files {
         "src/*.c",
         "src/core/**.c",
+        "src/client/**.c",
+        "src/client/**.h",
         "src/gameplay/**.c",
         "src/gameplay/**.h",
         "src/ui/**.c",
