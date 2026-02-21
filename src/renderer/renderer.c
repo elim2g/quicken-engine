@@ -237,6 +237,11 @@ void qk_renderer_set_ambient(f32 ambient)
     g_r.ambient = ambient;
 }
 
+void qk_renderer_set_bloom_strength(f32 strength)
+{
+    g_r.bloom_strength = strength;
+}
+
 void qk_renderer_set_vsync(bool vsync)
 {
     if (!g_r.initialized) return;

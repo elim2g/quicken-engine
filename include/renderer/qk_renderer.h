@@ -163,6 +163,9 @@ void qk_renderer_submit_light(const qk_dynamic_light_t *light);
 // Ambient lighting level (HDR-space value, default 0.15)
 void qk_renderer_set_ambient(f32 ambient);
 
+// Bloom strength (additive mix factor, default 0.3)
+void qk_renderer_set_bloom_strength(f32 strength);
+
 // Debug
 void qk_renderer_get_stats(qk_gpu_stats_t *out_stats);
 

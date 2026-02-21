@@ -485,6 +485,7 @@ typedef struct r_state {
     u32                     lightmap_texture_id;
     bool                    has_lightmaps;
     f32                     ambient;
+    f32                     bloom_strength;
 
     // Cached inverse VP for light culling compute
     f32                     inv_view_projection[16];

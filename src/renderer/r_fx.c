@@ -46,6 +46,7 @@ static const f32 PI = 3.14159265358979f;
 #define FX_CH_ELEV      41      // elevation / polar angle
 
 // Rail beam parameters
+#define RAIL_OVERBRIGHT         3.0f
 #define RAIL_CORE_HALF_WIDTH    0.8f
 #define RAIL_SPIRAL_PITCH       40.0f   // world units per full spiral revolution
 #define RAIL_SPIRAL_PTS_PER_TURN 28     // particles per revolution
@@ -57,6 +58,7 @@ static const f32 PI = 3.14159265358979f;
 #define RAIL_FIZZLE_AMPLITUDE   6.0f    // max displacement at end of life
 
 // LG beam parameters
+#define LG_OVERBRIGHT           2.5f
 #define LG_SEGMENTS             24
 #define LG_BEAM_LAYERS          3
 #define LG_CORE_HALF_WIDTH      0.6f
@@ -375,9 +377,9 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
     {
         u32 core_segments = 8;
         f32 core_color[4] = {
-            base_r * fade * 1.5f,
-            base_g * fade * 1.5f,
-            base_b * fade * 1.5f,
+            base_r * fade * 1.5f * RAIL_OVERBRIGHT,
+            base_g * fade * 1.5f * RAIL_OVERBRIGHT,
+            base_b * fade * 1.5f * RAIL_OVERBRIGHT,
             fade
         };
 
@@ -455,9 +457,9 @@ void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
             f32 sparkle = 0.7f + 0.3f * r_fx_hash(i * 7 + FX_CH_SPARKLE + (u32)(age_seconds * 60.0f));
             f32 wisp = 1.0f - fizzle * 0.4f * r_fx_hash(i * 31 + FX_CH_WISP);
             f32 particle_color[4] = {
-                base_r * fade * sparkle * wisp,
-                base_g * fade * sparkle * wisp,
-                base_b * fade * sparkle * wisp,
+                base_r * fade * sparkle * wisp * RAIL_OVERBRIGHT,
+                base_g * fade * sparkle * wisp * RAIL_OVERBRIGHT,
+                base_b * fade * sparkle * wisp * RAIL_OVERBRIGHT,
                 fade * sparkle * wisp
             };
 
@@ -510,7 +512,7 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
             .position  = { end_x - axis_n[0] * LIGHT_OFFSET,
                            end_y - axis_n[1] * LIGHT_OFFSET,
                            end_z - axis_n[2] * LIGHT_OFFSET },
-            .radius    = 100.0f,
+            .radius    = 70.0f,
             .color     = { 0.6f, 0.8f, 1.0f },
             .intensity = 1.2f
         };
@@ -546,9 +548,9 @@ void qk_renderer_draw_lg_beam(f32 start_x, f32 start_y, f32 start_z,
 
         // Electric blue-white core color
         f32 color[4] = {
-            0.6f * brightness,
-            0.8f * brightness,
-            1.0f * brightness,
+            0.6f * brightness * LG_OVERBRIGHT,
+            0.8f * brightness * LG_OVERBRIGHT,
+            1.0f * brightness * LG_OVERBRIGHT,
             brightness
         };
 
@@ -828,9 +830,10 @@ static u32 r_fx_emit_screen_facing_quad(r_fx_vertex_t *verts, u32 offset,
 
 // --- Explosion Effect ---
 
+#define EXPLOSION_OVERBRIGHT        4.0f
 #define EXPLOSION_OUTER_COUNT       60      // outer sphere particles
 #define EXPLOSION_CORE_COUNT        8       // large center billboards for heft
-#define EXPLOSION_CORE_OFFSET       16.0f   // offset multiplier to spread out center billboards
+#define EXPLOSION_CORE_OFFSET       32.0f   // offset multiplier to spread out center billboards
 #define EXPLOSION_DURATION          0.8f
 #define EXPLOSION_DRIFT_SPEED       0.6f    // fraction of radius per second
 #define EXPLOSION_OUTER_HALF_SIZE   5.0f    // outer particle base size
@@ -853,9 +856,9 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
         f32 light_fade = (1.0f - t) * (1.0f - t);
         qk_dynamic_light_t light = {
             .position  = { x, y, z },
-            .radius    = radius * 3.0f,
+            .radius    = radius * 6.0f,
             .color     = { r, g, b },
-            .intensity = 2.0f * light_fade * a
+            .intensity = 3.0f * light_fade * a
         };
         qk_renderer_submit_light(&light);
     }
@@ -910,9 +913,9 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
         f32 hue = r_fx_hash(i * 61 + FX_CH_HUE);
         f32 intensity = core_fade * a;
         f32 color[4] = {
-            (0.95f + 0.05f * hue) * intensity,
-            (0.7f + 0.25f * hue) * intensity,
-            (0.15f + 0.2f * (1.0f - hue)) * intensity,
+            (0.95f + 0.05f * hue) * intensity * EXPLOSION_OVERBRIGHT,
+            (0.7f + 0.25f * hue) * intensity * EXPLOSION_OVERBRIGHT,
+            (0.15f + 0.2f * (1.0f - hue)) * intensity * EXPLOSION_OVERBRIGHT,
             intensity
         };
 
@@ -963,9 +966,9 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
         f32 intensity = fade * sparkle * wisp * a;
 
         f32 color[4] = {
-            pr * intensity,
-            pg * intensity,
-            pb * intensity,
+            pr * intensity * EXPLOSION_OVERBRIGHT,
+            pg * intensity * EXPLOSION_OVERBRIGHT,
+            pb * intensity * EXPLOSION_OVERBRIGHT,
             intensity
         };
 
@@ -1001,6 +1004,7 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
 
 // --- Railgun Impact Sparks ---
 
+#define RAIL_IMPACT_OVERBRIGHT      3.0f
 #define RAIL_IMPACT_SPARK_COUNT     96      // number of spark particles
 #define RAIL_IMPACT_DURATION        1.5f    // seconds until fully faded
 #define RAIL_IMPACT_SPREAD          8.0f    // hemisphere spread radius
@@ -1035,7 +1039,7 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
                            z + normal_z * LIGHT_OFFSET },
             .radius    = 128.0f,
             .color     = { cr, cg, cb },
-            .intensity = 1.5f * light_fade
+            .intensity = 1.8f * light_fade
         };
         qk_renderer_submit_light(&light);
     }
@@ -1152,9 +1156,9 @@ void qk_renderer_draw_rail_impact(f32 x, f32 y, f32 z,
 
         f32 intensity = fade * flicker;
         f32 color[4] = {
-            pr * intensity,
-            pg * intensity,
-            pb * intensity,
+            pr * intensity * RAIL_IMPACT_OVERBRIGHT,
+            pg * intensity * RAIL_IMPACT_OVERBRIGHT,
+            pb * intensity * RAIL_IMPACT_OVERBRIGHT,
             intensity
         };
 

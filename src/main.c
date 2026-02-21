@@ -72,6 +72,7 @@ static qk_cvar_t *s_cvar_r_windowheight;
 static qk_cvar_t *s_cvar_r_fullscreen;
 static qk_cvar_t *s_cvar_r_perflog;
 static qk_cvar_t *s_cvar_r_ambient;
+static qk_cvar_t *s_cvar_r_bloom_strength;
 
 // Window pointer for cvar callbacks
 static qk_window_t *s_window;
@@ -84,6 +85,10 @@ static void cb_perflog_changed(qk_cvar_t *cvar) {
 
 static void cb_ambient_changed(qk_cvar_t *cvar) {
     qk_renderer_set_ambient(cvar->value.f);
+}
+
+static void cb_bloom_strength_changed(qk_cvar_t *cvar) {
+    qk_renderer_set_bloom_strength(cvar->value.f);
 }
 
 // --- vid_restart callback ---
@@ -477,6 +482,10 @@ int main(int argc, char *argv[]) {
     s_cvar_r_ambient = qk_cvar_register_float("r_ambient", 0.0125f, 0.0f, 2.0f,
                                                 QK_CVAR_ARCHIVE,
                                                 cb_ambient_changed);
+    s_cvar_r_bloom_strength = qk_cvar_register_float("r_bloom_strength", 0.3f,
+                                                       0.0f, 2.0f,
+                                                       QK_CVAR_ARCHIVE,
+                                                       cb_bloom_strength_changed);
 
     qk_perf_init();
     qk_demo_init();
@@ -501,8 +510,9 @@ int main(int argc, char *argv[]) {
     qk_console_register_cmd("disconnect", cmd_disconnect,
                              "Disconnect from remote server");
 
-    // Manually fire off the r_ambient callback since the renderer is already init
+    // Manually fire off callbacks since the renderer is already init
     cb_ambient_changed(s_cvar_r_ambient);
+    cb_bloom_strength_changed(s_cvar_r_bloom_strength);
 
     // --- Initial world (test room as baseline) ---
     qk_map_data_t map_data = {0};

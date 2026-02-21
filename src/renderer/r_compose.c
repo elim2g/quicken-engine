@@ -17,7 +17,7 @@ static r_compose_push_constants_t compute_viewport(
     memset(&pc, 0, sizeof(pc));
     pc.mode = aspect_fit ? 1 : 0;
     pc.exposure = 1.0f;
-    pc.bloom_strength = 0.04f;
+    pc.bloom_strength = g_r.bloom_strength;
 
     if (!aspect_fit) {
         pc.viewport[0] = 0.0f;
