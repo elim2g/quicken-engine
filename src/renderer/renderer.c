@@ -101,6 +101,9 @@ qk_result_t qk_renderer_init(const qk_renderer_config_t *config)
     res = r_pipeline_create_compose();
     if (res != QK_SUCCESS) return res;
 
+    res = r_pipeline_create_overlay_ui();
+    if (res != QK_SUCCESS) return res;
+
     // UI index buffer
     res = r_ui_init();
     if (res != QK_SUCCESS) return res;
@@ -212,9 +215,16 @@ void qk_renderer_set_render_resolution(u32 width, u32 height)
     r_pipeline_create_fx();
     r_pipeline_create_ui();
     r_pipeline_create_compose();
+    r_pipeline_create_overlay_ui();
 
     r_bloom_init();
     r_compose_update_descriptors();
+}
+
+void qk_renderer_get_render_resolution(u32 *out_width, u32 *out_height)
+{
+    if (out_width)  *out_width  = g_r.config.render_width;
+    if (out_height) *out_height = g_r.config.render_height;
 }
 
 void qk_renderer_set_aspect_mode(bool aspect_fit)
@@ -463,6 +473,8 @@ void qk_renderer_begin_frame(const qk_camera_t *camera)
 
     // Reset per-frame draw lists
     g_r.ui_quad_count = 0;
+    g_r.overlay_quad_count = 0;
+    g_r.ui_overlay_active = false;
     g_r.entities.draw_count = 0;
     g_r.fx.draw_count = 0;
     g_r.fx.vertex_count = 0;
@@ -476,21 +488,33 @@ void qk_renderer_draw_world(void)
     // World drawing is deferred to end_frame where we record all commands
 }
 
+void qk_renderer_set_ui_layer(bool overlay)
+{
+    g_r.ui_overlay_active = overlay;
+}
+
 void qk_renderer_push_ui_quad(const qk_ui_quad_t *quad)
 {
-    if (g_r.ui_quad_count >= R_UI_MAX_QUADS) return;
+    r_ui_quad_t *dst;
 
-    r_ui_quad_t *q = &g_r.ui_quads[g_r.ui_quad_count++];
-    q->x  = quad->x;
-    q->y  = quad->y;
-    q->w  = quad->w;
-    q->h  = quad->h;
-    q->u0 = quad->u0;
-    q->v0 = quad->v0;
-    q->u1 = quad->u1;
-    q->v1 = quad->v1;
-    q->color      = quad->color;
-    q->texture_id = quad->texture_id;
+    if (g_r.ui_overlay_active) {
+        if (g_r.overlay_quad_count >= R_UI_MAX_QUADS) return;
+        dst = &g_r.overlay_quads[g_r.overlay_quad_count++];
+    } else {
+        if (g_r.ui_quad_count >= R_UI_MAX_QUADS) return;
+        dst = &g_r.ui_quads[g_r.ui_quad_count++];
+    }
+
+    dst->x  = quad->x;
+    dst->y  = quad->y;
+    dst->w  = quad->w;
+    dst->h  = quad->h;
+    dst->u0 = quad->u0;
+    dst->v0 = quad->v0;
+    dst->u1 = quad->u1;
+    dst->v1 = quad->v1;
+    dst->color      = quad->color;
+    dst->texture_id = quad->texture_id;
 }
 
 void qk_renderer_end_frame(void)
@@ -564,7 +588,7 @@ void qk_renderer_end_frame(void)
 
     // --- Pass 2: Composition ---
     r_debug_begin_label(cmd, "Compose Pass", 0.2f, 0.2f, 0.8f);
-    r_compose_record_commands(cmd, g_r.current_image_index);
+    r_compose_record_commands(cmd, g_r.current_image_index, fi);
     r_debug_end_label(cmd);
 
     // Timestamp: after compose

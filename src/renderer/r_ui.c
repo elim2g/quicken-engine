@@ -177,3 +177,101 @@ void r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index)
         }
     }
 }
+
+void r_ui_record_overlay_commands(VkCommandBuffer cmd, u32 frame_index)
+{
+    if (!g_r.overlay_ui_pipeline.handle || g_r.overlay_quad_count == 0) return;
+
+    r_frame_data_t *frame = &g_r.frames[frame_index];
+
+    // Sort overlay quads by texture_id for batching
+    for (u32 i = 1; i < g_r.overlay_quad_count; i++) {
+        r_ui_quad_t key = g_r.overlay_quads[i];
+        u32 j = i;
+        while (j > 0 && g_r.overlay_quads[j - 1].texture_id > key.texture_id) {
+            g_r.overlay_quads[j] = g_r.overlay_quads[j - 1];
+            j--;
+        }
+        g_r.overlay_quads[j] = key;
+    }
+
+    // Write overlay vertices into the second half of the mapped buffer
+    u32 overlay_vertex_base = R_UI_MAX_QUADS * 4;
+    r_ui_vertex_t *verts = (r_ui_vertex_t *)frame->ui_vertex_mapped;
+    verts += overlay_vertex_base;
+
+    for (u32 i = 0; i < g_r.overlay_quad_count; i++) {
+        r_ui_quad_t *q = &g_r.overlay_quads[i];
+        f32 x0 = q->x, y0 = q->y;
+        f32 x1 = q->x + q->w, y1 = q->y + q->h;
+
+        verts[i * 4 + 0] = (r_ui_vertex_t){
+            .position = { x0, y0 }, .uv = { q->u0, q->v0 }, .color = q->color };
+        verts[i * 4 + 1] = (r_ui_vertex_t){
+            .position = { x1, y0 }, .uv = { q->u1, q->v0 }, .color = q->color };
+        verts[i * 4 + 2] = (r_ui_vertex_t){
+            .position = { x1, y1 }, .uv = { q->u1, q->v1 }, .color = q->color };
+        verts[i * 4 + 3] = (r_ui_vertex_t){
+            .position = { x0, y1 }, .uv = { q->u0, q->v1 }, .color = q->color };
+    }
+
+    // Bind overlay pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      g_r.overlay_ui_pipeline.handle);
+
+    VkViewport viewport = {
+        .x = 0.0f, .y = 0.0f,
+        .width  = (f32)g_r.swapchain.extent.width,
+        .height = (f32)g_r.swapchain.extent.height,
+        .minDepth = 0.0f, .maxDepth = 1.0f
+    };
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = { .offset = { 0, 0 }, .extent = g_r.swapchain.extent };
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    // Push swapchain dimensions as screen size
+    f32 screen_size[2] = {
+        (f32)g_r.swapchain.extent.width,
+        (f32)g_r.swapchain.extent.height
+    };
+    vkCmdPushConstants(cmd, g_r.overlay_ui_pipeline.layout,
+                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(screen_size),
+                       screen_size);
+
+    // Bind vertex/index buffers
+    VkDeviceSize vb_offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &frame->ui_vertex_buffer, &vb_offset);
+    vkCmdBindIndexBuffer(cmd, g_r.ui_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+    // Draw batched by texture (vertexOffset shifts into overlay region)
+    u32 batch_start = 0;
+    u32 current_texture = g_r.overlay_quads[0].texture_id;
+
+    for (u32 i = 0; i <= g_r.overlay_quad_count; i++) {
+        bool flush = (i == g_r.overlay_quad_count) ||
+                     (g_r.overlay_quads[i].texture_id != current_texture);
+
+        if (flush && i > batch_start) {
+            VkDescriptorSet tex_desc = r_texture_get_descriptor(current_texture);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    g_r.overlay_ui_pipeline.layout, 0, 1,
+                                    &tex_desc, 0, NULL);
+
+            u32 quad_count = i - batch_start;
+            u32 first_index = batch_start * 6;
+            u32 index_count = quad_count * 6;
+
+            vkCmdDrawIndexed(cmd, index_count, 1, first_index,
+                             (i32)overlay_vertex_base, 0);
+
+            g_r.stats_draw_calls++;
+            g_r.stats_triangles += quad_count * 2;
+
+            if (i < g_r.overlay_quad_count) {
+                batch_start = i;
+                current_texture = g_r.overlay_quads[i].texture_id;
+            }
+        }
+    }
+}

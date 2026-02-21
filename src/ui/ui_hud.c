@@ -165,42 +165,88 @@ void qk_ui_draw_hud(const qk_player_state_t *ps,
                      f32 screen_w, f32 screen_h) {
     if (!ps || !ca) return;
 
-    // --- Bottom bar ---
+    // --- Top bar: [ red_score | 1-char gap | timer (5 chars) | 1-char gap | blue_score ] ---
+    {
+        f32 font_size = 32.0f;
+        f32 glyph_w = font_size; // 8px base * (32/8) scale = 32px per char
+        f32 top_y = 16.0f;
 
-    // Health: bottom-left
-    u32 hp_color = (ps->health <= 25) ? COLOR_RED :
-                   (ps->health <= 50) ? COLOR_ORANGE : COLOR_WHITE;
-    qk_ui_draw_number(20.0f, screen_h - 60.0f, ps->health, 48.0f, hp_color);
+        // Timer: 5-character bounding box, text centered within it
+        f32 timer_box_w = 5.0f * glyph_w;
+        f32 timer_box_x = screen_w * 0.5f - timer_box_w * 0.5f;
 
-    // Armor: next to health
-    u32 ap_color = (ps->armor <= 25) ? COLOR_RED :
-                   (ps->armor <= 50) ? COLOR_YELLOW : COLOR_GREEN;
-    qk_ui_draw_number(160.0f, screen_h - 60.0f, ps->armor, 48.0f, ap_color);
+        u32 time_sec = ca->state_timer_ms / 1000;
+        char timer_buf[12];
+        snprintf(timer_buf, sizeof(timer_buf), "%u:%02u", time_sec / 60, time_sec % 60);
+        f32 timer_text_w = qk_ui_text_width(timer_buf, font_size);
+        f32 timer_x = timer_box_x + (timer_box_w - timer_text_w) * 0.5f;
+        qk_ui_draw_text(timer_x, top_y, timer_buf, font_size, COLOR_WHITE);
 
-    // Ammo: bottom-right
-    if (ps->weapon > QK_WEAPON_NONE && ps->weapon < QK_WEAPON_COUNT) {
-        u32 ammo_color = (ps->ammo[ps->weapon] <= 5) ? COLOR_RED : COLOR_YELLOW;
-        qk_ui_draw_number(screen_w - 120.0f, screen_h - 60.0f,
-                           ps->ammo[ps->weapon], 48.0f, ammo_color);
-        const char *wname = weapon_name(ps->weapon);
-        qk_ui_draw_text(screen_w - 120.0f, screen_h - 24.0f, wname, 14.0f, COLOR_GRAY);
+        // Team scores: 1-char gap from timer box edges
+        f32 gap = glyph_w;
+
+        // Alpha (red) score: right-aligned, ending at timer_box_x - gap
+        char score_a[8];
+        snprintf(score_a, sizeof(score_a), "%u", ca->score_alpha);
+        f32 score_a_w = qk_ui_text_width(score_a, font_size);
+        f32 score_a_x = timer_box_x - gap - score_a_w;
+        qk_ui_draw_text(score_a_x, top_y, score_a, font_size, COLOR_TEAM_ALPHA);
+
+        // Beta (blue) score: left-aligned, starting at timer_box_x + timer_box_w + gap
+        char score_b[8];
+        snprintf(score_b, sizeof(score_b), "%u", ca->score_beta);
+        f32 score_b_x = timer_box_x + timer_box_w + gap;
+        qk_ui_draw_text(score_b_x, top_y, score_b, font_size, COLOR_TEAM_BETA);
     }
 
-    // --- Top bar ---
+    // --- Bottom bar: centered stack ---
+    // Layer 1 (bottom): Health + Armor side by side, centered
+    // Layer 2: Weapon name, centered above
+    // Layer 3 (top): Ammo count, centered above weapon name
+    {
+        f32 stat_size = 48.0f;
+        f32 label_size = 14.0f;
+        f32 bottom_margin = 8.0f;
+        f32 row_gap = 4.0f;
 
-    // Round timer: top-center
-    u32 time_sec = ca->state_timer_ms / 1000;
-    char timer_buf[12];
-    snprintf(timer_buf, sizeof(timer_buf), "%u:%02u", time_sec / 60, time_sec % 60);
-    f32 tw = qk_ui_text_width(timer_buf, 32.0f);
-    qk_ui_draw_text(screen_w * 0.5f - tw * 0.5f, 16.0f, timer_buf, 32.0f, COLOR_WHITE);
+        // Vertical positions (y = top of text, drawn upward from bottom)
+        f32 stat_y = screen_h - bottom_margin - stat_size;
+        f32 weapon_y = stat_y - row_gap - label_size;
+        f32 ammo_y = weapon_y - row_gap - stat_size;
 
-    // Team scores
-    char score_a[4], score_b[4];
-    snprintf(score_a, sizeof(score_a), "%u", ca->score_alpha);
-    snprintf(score_b, sizeof(score_b), "%u", ca->score_beta);
-    qk_ui_draw_text(screen_w * 0.5f - 80.0f, 16.0f, score_a, 32.0f, COLOR_TEAM_ALPHA);
-    qk_ui_draw_text(screen_w * 0.5f + 60.0f, 16.0f, score_b, 32.0f, COLOR_TEAM_BETA);
+        // Health + Armor: centered as "[hp]  [armor]" with 1-char gap
+        char hp_buf[8], ap_buf[8];
+        snprintf(hp_buf, sizeof(hp_buf), "%d", ps->health);
+        snprintf(ap_buf, sizeof(ap_buf), "%d", ps->armor);
+        f32 hp_w = qk_ui_text_width(hp_buf, stat_size);
+        f32 ap_w = qk_ui_text_width(ap_buf, stat_size);
+        f32 stat_gap = stat_size; // 1 character at stat_size
+        f32 total_w = hp_w + stat_gap + ap_w;
+        f32 base_x = screen_w * 0.5f - total_w * 0.5f;
+
+        u32 hp_color = (ps->health <= 25) ? COLOR_RED :
+                       (ps->health <= 50) ? COLOR_ORANGE : COLOR_WHITE;
+        qk_ui_draw_text(base_x, stat_y, hp_buf, stat_size, hp_color);
+
+        u32 ap_color = (ps->armor <= 25) ? COLOR_RED :
+                       (ps->armor <= 50) ? COLOR_YELLOW : COLOR_GREEN;
+        qk_ui_draw_text(base_x + hp_w + stat_gap, stat_y, ap_buf, stat_size, ap_color);
+
+        // Weapon name + ammo (only if weapon equipped)
+        if (ps->weapon > QK_WEAPON_NONE && ps->weapon < QK_WEAPON_COUNT) {
+            const char *wname = weapon_name(ps->weapon);
+            f32 wname_w = qk_ui_text_width(wname, label_size);
+            qk_ui_draw_text(screen_w * 0.5f - wname_w * 0.5f, weapon_y,
+                             wname, label_size, COLOR_GRAY);
+
+            char ammo_buf[8];
+            snprintf(ammo_buf, sizeof(ammo_buf), "%d", ps->ammo[ps->weapon]);
+            f32 ammo_w = qk_ui_text_width(ammo_buf, stat_size);
+            u32 ammo_color = (ps->ammo[ps->weapon] <= 5) ? COLOR_RED : COLOR_YELLOW;
+            qk_ui_draw_text(screen_w * 0.5f - ammo_w * 0.5f, ammo_y,
+                             ammo_buf, stat_size, ammo_color);
+        }
+    }
 
     // --- Crosshair ---
     ui_draw_crosshair(screen_w, screen_h);

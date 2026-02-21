@@ -99,7 +99,7 @@ void r_compose_update_descriptors(void)
     vkUpdateDescriptorSets(g_r.device.handle, 2, writes, 0, NULL);
 }
 
-void r_compose_record_commands(VkCommandBuffer cmd, u32 image_index)
+void r_compose_record_commands(VkCommandBuffer cmd, u32 image_index, u32 frame_index)
 {
     if (!g_r.compose_pipeline.handle) return;
 
@@ -152,6 +152,9 @@ void r_compose_record_commands(VkCommandBuffer cmd, u32 image_index)
 
     g_r.stats_draw_calls++;
     g_r.stats_triangles += 1;
+
+    // Overlay UI (console etc.) drawn on top of composed frame
+    r_ui_record_overlay_commands(cmd, frame_index);
 
     vkCmdEndRenderPass(cmd);
 }

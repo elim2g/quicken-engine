@@ -812,6 +812,138 @@ qk_result_t r_pipeline_create_ui(void)
     return QK_SUCCESS;
 }
 
+// --- Overlay UI Pipeline (drawn on swapchain after compose) ---
+
+qk_result_t r_pipeline_create_overlay_ui(void)
+{
+    VkShaderModule vert = r_pipeline_load_shader("src/renderer/shaders/compiled/ui.vert.spv");
+    VkShaderModule frag = r_pipeline_load_shader("src/renderer/shaders/compiled/ui.frag.spv");
+
+    if (!vert || !frag) {
+        if (vert) vkDestroyShaderModule(g_r.device.handle, vert, NULL);
+        if (frag) vkDestroyShaderModule(g_r.device.handle, frag, NULL);
+        return QK_SUCCESS;
+    }
+
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vert, .pName = "main" },
+        { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = frag, .pName = "main" }
+    };
+
+    VkVertexInputBindingDescription binding = {
+        .binding = 0, .stride = sizeof(r_ui_vertex_t),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+    };
+
+    VkVertexInputAttributeDescription attrs[] = {
+        { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,
+          .offset = offsetof(r_ui_vertex_t, position) },
+        { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,
+          .offset = offsetof(r_ui_vertex_t, uv) },
+        { .location = 2, .binding = 0, .format = VK_FORMAT_R32_UINT,
+          .offset = offsetof(r_ui_vertex_t, color) }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1, .pVertexBindingDescriptions = &binding,
+        .vertexAttributeDescriptionCount = 3, .pVertexAttributeDescriptions = attrs
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    };
+
+    VkPipelineViewportStateCreateInfo viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1, .scissorCount = 1
+    };
+
+    VkPipelineRasterizationStateCreateInfo rasterizer = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE, .lineWidth = 1.0f
+    };
+
+    VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+    };
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO
+    };
+
+    VkPipelineColorBlendAttachmentState blend_attachment = {
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+
+    VkPipelineColorBlendStateCreateInfo color_blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1, .pAttachments = &blend_attachment
+    };
+
+    VkDynamicState dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamic_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2, .pDynamicStates = dynamic_states
+    };
+
+    VkPushConstantRange push_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(f32) * 2
+    };
+
+    VkPipelineLayoutCreateInfo layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1, .pSetLayouts = &g_r.texture_set_layout,
+        .pushConstantRangeCount = 1, .pPushConstantRanges = &push_range
+    };
+
+    vkCreatePipelineLayout(g_r.device.handle, &layout_info, NULL,
+                           &g_r.overlay_ui_pipeline.layout);
+
+    VkGraphicsPipelineCreateInfo pipeline_info = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2, .pStages = stages,
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisample,
+        .pDepthStencilState = &depth_stencil,
+        .pColorBlendState = &color_blend,
+        .pDynamicState = &dynamic_state,
+        .layout = g_r.overlay_ui_pipeline.layout,
+        .renderPass = g_r.compose_render_pass,
+        .subpass = 0
+    };
+
+    VkResult vr = vkCreateGraphicsPipelines(g_r.device.handle, g_r.pipeline_cache_handle,
+                                             1, &pipeline_info, NULL,
+                                             &g_r.overlay_ui_pipeline.handle);
+
+    vkDestroyShaderModule(g_r.device.handle, vert, NULL);
+    vkDestroyShaderModule(g_r.device.handle, frag, NULL);
+
+    if (vr != VK_SUCCESS) {
+        fprintf(stderr, "[Renderer] Failed to create overlay UI pipeline\n");
+        return QK_ERROR_PIPELINE;
+    }
+
+    return QK_SUCCESS;
+}
+
 // --- Composition Pipeline ---
 
 qk_result_t r_pipeline_create_compose(void)
@@ -965,6 +1097,10 @@ void r_pipeline_destroy_all(void)
     if (g_r.ui_pipeline.handle) vkDestroyPipeline(dev, g_r.ui_pipeline.handle, NULL);
     if (g_r.ui_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.ui_pipeline.layout, NULL);
     memset(&g_r.ui_pipeline, 0, sizeof(g_r.ui_pipeline));
+
+    if (g_r.overlay_ui_pipeline.handle) vkDestroyPipeline(dev, g_r.overlay_ui_pipeline.handle, NULL);
+    if (g_r.overlay_ui_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.overlay_ui_pipeline.layout, NULL);
+    memset(&g_r.overlay_ui_pipeline, 0, sizeof(g_r.overlay_ui_pipeline));
 
     if (g_r.compose_pipeline.handle) vkDestroyPipeline(dev, g_r.compose_pipeline.handle, NULL);
     if (g_r.compose_pipeline.layout) vkDestroyPipelineLayout(dev, g_r.compose_pipeline.layout, NULL);

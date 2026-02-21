@@ -99,7 +99,8 @@ qk_result_t r_commands_init(void)
         vkUpdateDescriptorSets(dev, 1, &write, 0, NULL);
 
         // UI vertex buffer (host-visible, persistently mapped)
-        VkDeviceSize ui_vb_size = R_UI_MAX_QUADS * 4 * sizeof(r_ui_vertex_t);
+        // 2x capacity: first half for normal UI, second half for overlay quads
+        VkDeviceSize ui_vb_size = R_UI_MAX_QUADS * 4 * sizeof(r_ui_vertex_t) * 2;
         res = r_memory_create_buffer(
             ui_vb_size,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,

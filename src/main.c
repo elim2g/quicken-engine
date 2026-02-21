@@ -896,9 +896,13 @@ int main(int argc, char *argv[]) {
             qk_renderer_handle_window_resize(win_w, win_h);
         }
 
+        // Query current render resolution (may change after vid_restart)
+        u32 render_w, render_h;
+        qk_renderer_get_render_resolution(&render_w, &render_h);
+
         f32 fov = (s_cvar_fov ? s_cvar_fov->value.f : 90.0f);
-        f32 aspect = (win_w > 0 && win_h > 0) ?
-            (f32)rc.render_width / (f32)rc.render_height : 16.0f / 9.0f;
+        f32 aspect = (render_w > 0 && render_h > 0) ?
+            (f32)render_w / (f32)render_h : 16.0f / 9.0f;
         qk_camera_t camera = cl_camera_build(cam_x, cam_y, cam_z,
                                                cam_pitch, cam_yaw,
                                                fov, aspect);
@@ -936,7 +940,7 @@ int main(int argc, char *argv[]) {
         if (local_ps) {
             const qk_ca_state_t *ca = qk_game_get_ca_state();
             qk_ui_draw_hud(local_ps, ca,
-                            (f32)rc.render_width, (f32)rc.render_height);
+                            (f32)render_w, (f32)render_h);
         }
 
         // FPS display
@@ -960,8 +964,11 @@ int main(int argc, char *argv[]) {
             qk_ui_draw_text(10.0f, 48.0f, vz_buf, 16.0f, 0x00FFFFFF);
         }
 
-        // --- Console overlay ---
-        qk_console_draw((f32)rc.render_width, (f32)rc.render_height, real_dt);
+        // Console renders in the overlay layer (compose pass at swapchain resolution),
+        // so it uses window dimensions, not render resolution.
+        qk_renderer_set_ui_layer(true);
+        qk_console_draw((f32)win_w, (f32)win_h, real_dt);
+        qk_renderer_set_ui_layer(false);
 
         // --- UI tick (fade timers) ---
         qk_ui_tick((u32)(real_dt * 1000.0f));

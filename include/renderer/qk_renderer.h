@@ -75,6 +75,7 @@ void        qk_renderer_shutdown(void);
 
 // Resolution / display
 void qk_renderer_set_render_resolution(u32 width, u32 height);
+void qk_renderer_get_render_resolution(u32 *out_width, u32 *out_height);
 void qk_renderer_set_aspect_mode(bool aspect_fit);
 void qk_renderer_set_vsync(bool vsync);
 void qk_renderer_handle_window_resize(u32 new_width, u32 new_height);
@@ -95,6 +96,7 @@ qk_result_t qk_renderer_upload_lightmap_atlas(const u8 *pixels, u32 w, u32 h);
 void qk_renderer_begin_frame(const qk_camera_t *camera);
 void qk_renderer_draw_world(void);
 void qk_renderer_push_ui_quad(const qk_ui_quad_t *quad);
+void qk_renderer_set_ui_layer(bool overlay);
 void qk_renderer_end_frame(void);
 
 // Entity rendering (debug visuals for vertical slice)

@@ -429,6 +429,7 @@ typedef struct r_state {
     r_pipeline_t            entity_pipeline;
     r_pipeline_t            fx_pipeline;
     r_pipeline_t            ui_pipeline;
+    r_pipeline_t            overlay_ui_pipeline;
     r_pipeline_t            compose_pipeline;
 
     VkDescriptorSetLayout   view_set_layout;
@@ -464,6 +465,10 @@ typedef struct r_state {
 
     r_ui_quad_t             ui_quads[R_UI_MAX_QUADS];
     u32                     ui_quad_count;
+
+    r_ui_quad_t             overlay_quads[R_UI_MAX_QUADS];
+    u32                     overlay_quad_count;
+    bool                    ui_overlay_active;
 
     VkBuffer                ui_index_buffer;
     VkDeviceMemory          ui_index_memory;
@@ -532,6 +537,7 @@ qk_result_t r_pipeline_create_world(void);
 qk_result_t r_pipeline_create_entity(void);
 qk_result_t r_pipeline_create_fx(void);
 qk_result_t r_pipeline_create_ui(void);
+qk_result_t r_pipeline_create_overlay_ui(void);
 qk_result_t r_pipeline_create_compose(void);
 void        r_pipeline_destroy_all(void);
 
@@ -554,6 +560,7 @@ void        r_fx_record_commands(VkCommandBuffer cmd, u32 frame_index);
 qk_result_t r_ui_init(void);
 void        r_ui_shutdown(void);
 void        r_ui_record_commands(VkCommandBuffer cmd, u32 frame_index);
+void        r_ui_record_overlay_commands(VkCommandBuffer cmd, u32 frame_index);
 
 // r_bloom.c
 qk_result_t r_bloom_init(void);
@@ -571,7 +578,7 @@ void        r_depth_prepass_record(VkCommandBuffer cmd, u32 frame_index);
 qk_result_t r_compose_init(void);
 void        r_compose_shutdown(void);
 void        r_compose_update_descriptors(void);
-void        r_compose_record_commands(VkCommandBuffer cmd, u32 image_index);
+void        r_compose_record_commands(VkCommandBuffer cmd, u32 image_index, u32 frame_index);
 
 // r_texture.c
 qk_result_t r_texture_init(void);
