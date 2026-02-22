@@ -54,6 +54,7 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
     if (!want_jump) {
         ps->jump_held = false;
         ps->jump_buffer_ticks = 0;
+        ps->autohop_cooldown = 0;   // releasing jump resets cooldown
         return;
     }
 
@@ -69,6 +70,12 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
     // The buffer handles the air-press-then-land case automatically
     // since want_jump is still true when we land.
     if (ps->on_ground && want_jump) {
+        // Autohop cooldown: held jump (not a fresh press) must wait.
+        // Fresh presses always fire immediately (spam-to-bypass is fine).
+        if (!fresh_press && ps->autohop_cooldown > 0) {
+            return;
+        }
+
         ps->jump_buffer_ticks = 0;
         // Q3 behavior: setting on_ground = false here means friction
         // is skipped on the jump frame, which is essential for consistent
@@ -93,6 +100,7 @@ void p_check_jump(qk_player_state_t *ps, const qk_usercmd_t *cmd) {
 
         // Timer starts/restarts on every valid jump (enables chaining)
         ps->last_jump_tick = ps->command_time;
+        ps->autohop_cooldown = QK_PM_AUTOHOP_COOLDOWN_TICKS;
     }
 }
 
@@ -244,8 +252,13 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
         ps->jump_buffer_ticks--;
     }
 
-    // 4. Apply friction (ground only, skip during rocket-jump slick)
-    if (ps->on_ground && ps->splash_slick_ticks == 0) {
+    // 4. Apply friction (ground only, skip during rocket-jump slick
+    // and skim).  Q3 disables friction during pm_time/PMF_TIME_KNOCKBACK;
+    // skim is our equivalent.  Without this gate, stair treads that
+    // briefly re-ground the player during autohop cooldown would bleed
+    // horizontal speed through friction.
+    if (ps->on_ground && ps->splash_slick_ticks == 0 &&
+        ps->skim_ticks == 0) {
         p_apply_friction(ps, dt);
     }
 
@@ -322,7 +335,8 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     // fall speed (old step 2b missed fast landings where the player
     // passed through the 0.25-unit ground-trace window in one tick).
     // Uses pre-collision velocity since floor collision clips z to 0.
-    if (was_airborne && ps->on_ground && pre_collision_vz < -50.0f) {
+    if (was_airborne && ps->on_ground && pre_collision_vz < -50.0f &&
+        ps->ground_normal.z > 0.99f) {
         ps->skim_ticks = QK_PM_SKIM_TICKS;
     }
 
@@ -341,5 +355,10 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     // and skims wall corners while AIRBORNE during the skim window.
     if (ps->skim_ticks > 0) {
         ps->skim_ticks--;
+    }
+
+    // 11. Decrement autohop cooldown
+    if (ps->autohop_cooldown > 0) {
+        ps->autohop_cooldown--;
     }
 }

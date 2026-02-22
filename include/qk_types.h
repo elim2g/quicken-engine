@@ -45,6 +45,7 @@ static const f32 QK_PM_CPM_GROUND_ACCEL      = 15.0f;   // CPM ground accelerati
 static const f32 QK_PM_CPM_GROUND_SPEED      = 320.0f;  // CPM ground speed
 static const u32 QK_PM_CPM_DOUBLE_JUMP_WINDOW = 400;    // ms window for double-jump after last jump
 static const u32 QK_PM_CPM_DOUBLE_JUMP_BOOST  = 100;    // additive impulse for double jumps
+static const u32 QK_PM_AUTOHOP_COOLDOWN_TICKS = 13;     // ~100ms at 128Hz: min ticks between held-jump autohops
 
 // --- Player Bounding Box ---
 static const f32 QK_PLAYER_MINS_X = -15.0f;
@@ -123,6 +124,7 @@ typedef struct {
     u8          splash_slick_ticks;
     u8          skim_ticks;         // ground skim: slide along walls without velocity penalty
     u32         last_jump_tick;     // tick when player last jumped (for CPM double-jump timing)
+    u8          autohop_cooldown;   // ticks remaining before held-jump can autohop again
     f32         max_speed;
     f32         gravity;
     u32         command_time;

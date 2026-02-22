@@ -132,8 +132,8 @@ void cl_diag_frame(f64 now, f32 real_dt, f32 server_accumulator,
         fprintf(s_diag_file,
             "  PHYS pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) "
             "hspeed=%.1f vz=%.1f ground=%d gnorm=(%.3f,%.3f,%.3f) "
-            "skim=%u jump_held=%d last_jump=%u since_jump=%u djwin=%u "
-            "cmd_time=%u\n",
+            "skim=%u hop_cd=%u jump_held=%d last_jump=%u since_jump=%u "
+            "djwin=%u cmd_time=%u\n",
             (double)predicted_ps->origin.x,
             (double)predicted_ps->origin.y,
             (double)predicted_ps->origin.z,
@@ -147,6 +147,7 @@ void cl_diag_frame(f64 now, f32 real_dt, f32 server_accumulator,
             (double)predicted_ps->ground_normal.y,
             (double)predicted_ps->ground_normal.z,
             predicted_ps->skim_ticks,
+            predicted_ps->autohop_cooldown,
             predicted_ps->jump_held,
             predicted_ps->last_jump_tick,
             since_jump,
