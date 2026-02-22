@@ -2,7 +2,11 @@
  * QUICKEN Engine - Jump Pad Launch Velocity
  *
  * Calculates the initial velocity to arc a player from a jump pad
- * origin to a target_position entity, similar to Q3's jump pad behavior.
+ * origin to a target_position entity.
+ *
+ * Matches Q3's AimAtTarget: the target_position marks the APEX of the
+ * arc, not a pass-through point.  The player arrives at the target
+ * height with zero vertical velocity, then falls to the landing spot.
  */
 
 #include "p_internal.h"
@@ -11,38 +15,27 @@
 vec3_t p_calc_launch_velocity(vec3_t start, vec3_t target, f32 gravity) {
     vec3_t delta = vec3_sub(target, start);
 
-    f32 dx = delta.x;
-    f32 dy = delta.y;
-    f32 dz = delta.z;
-    f32 horiz_dist = sqrtf(dx * dx + dy * dy);
+    // Height to the apex (target).  Clamp to a small positive value so
+    // degenerate pads (target at or below the pad) don't produce NaN.
+    f32 height = delta.z;
+    if (height < 1.0f) height = 1.0f;
 
-    // Choose flight time based on horizontal distance, clamped to
-    // a reasonable range. Q3 uses a fixed time of ~1s for short pads
-    // and scales up for long distances. We use:
-    //   t = sqrt(2 * horiz_dist / gravity)
-    // clamped to [0.5, 2.5] seconds. This gives a natural parabolic
-    // arc that scales with distance.
-    f32 t;
-    if (horiz_dist < 1.0f) {
-        // Vertical jump pad (straight up)
-        t = 1.0f;
-    } else {
-        t = sqrtf(2.0f * horiz_dist / gravity);
-        if (t < 0.5f) t = 0.5f;
-        if (t > 2.5f) t = 2.5f;
-    }
+    // Time to reach apex under gravity: h = 0.5*g*t^2  =>  t = sqrt(2h/g)
+    // (Q3 writes this as sqrt(height / (0.5 * gravity)), same thing.)
+    f32 time = sqrtf(2.0f * height / gravity);
 
-    // Kinematic equation: dz = vz*t - 0.5*g*t^2
-    // Solve for vz: vz = dz/t + 0.5*g*t
-    f32 vz = dz / t + 0.5f * gravity * t;
+    // Vertical impulse: player reaches zero vz exactly at apex height
+    f32 vz = time * gravity;
 
-    // Horizontal velocity: constant speed to cover horiz_dist in time t
+    // Horizontal velocity: constant speed to cover XY distance by apex time
+    f32 horiz_dist = sqrtf(delta.x * delta.x + delta.y * delta.y);
+
     vec3_t result;
     if (horiz_dist > 1.0f) {
-        f32 horiz_speed = horiz_dist / t;
+        f32 horiz_speed = horiz_dist / time;
         f32 inv_dist = 1.0f / horiz_dist;
-        result.x = dx * inv_dist * horiz_speed;
-        result.y = dy * inv_dist * horiz_speed;
+        result.x = delta.x * inv_dist * horiz_speed;
+        result.y = delta.y * inv_dist * horiz_speed;
     } else {
         result.x = 0.0f;
         result.y = 0.0f;
