@@ -16,7 +16,7 @@ const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT] = {
         .name               = "Rocket Launcher",
         .fire_mode          = FIRE_PROJECTILE,
         .fire_interval_ms   = 800,
-        .switch_time_ms     = 50,
+        .switch_time_ms     = 0,
         .damage             = 100.0f,
         .splash_radius      = 120.0f,
         .splash_damage      = 100.0f,
@@ -35,7 +35,7 @@ const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT] = {
         .name               = "Railgun",
         .fire_mode          = FIRE_HITSCAN,
         .fire_interval_ms   = 1500,
-        .switch_time_ms     = 50,
+        .switch_time_ms     = 0,
         .damage             = 80.0f,
         .splash_radius      = 0.0f,
         .splash_damage      = 0.0f,
@@ -54,7 +54,7 @@ const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT] = {
         .name               = "Lightning Gun",
         .fire_mode          = FIRE_BEAM,
         .fire_interval_ms   = 50,
-        .switch_time_ms     = 50,
+        .switch_time_ms     = 0,
         .damage             = 7.0f,
         .splash_radius      = 0.0f,
         .splash_damage      = 0.0f,
@@ -72,13 +72,23 @@ const g_weapon_def_t g_weapon_defs[QK_WEAPON_COUNT] = {
 // --- Weapon Switch ---
 void g_weapon_switch(entity_t *player_ent, qk_weapon_id_t new_weapon) {
     qk_player_state_t *ps = &player_ent->data.player;
-    if (new_weapon == ps->weapon) return;
+    if (new_weapon == ps->weapon) {
+        ps->queued_weapon = QK_WEAPON_NONE;
+        return;
+    }
     if (new_weapon <= QK_WEAPON_NONE || new_weapon >= QK_WEAPON_COUNT) return;
     if (ps->pending_weapon != QK_WEAPON_NONE) return; // already switching
+
+    // weapon on cooldown — queue the switch for when cooldown expires
+    if (ps->weapon_time > 0) {
+        ps->queued_weapon = new_weapon;
+        return;
+    }
 
     const g_weapon_def_t *wdef = &g_weapon_defs[new_weapon];
     ps->pending_weapon = new_weapon;
     ps->switch_time = wdef->switch_time_ms;
+    ps->queued_weapon = QK_WEAPON_NONE;
 }
 
 // --- Weapon Fire ---
@@ -122,7 +132,7 @@ void g_weapon_tick(qk_game_state_t *gs, entity_t *player_ent, u32 tick_dt_ms) {
     qk_player_state_t *ps = &player_ent->data.player;
 
     // handle weapon switch
-    if (ps->switch_time > 0) {
+    if (ps->switch_time > 0 || ps->pending_weapon != QK_WEAPON_NONE) {
         if (tick_dt_ms >= ps->switch_time) {
             ps->switch_time = 0;
             ps->weapon = ps->pending_weapon;
@@ -140,7 +150,19 @@ void g_weapon_tick(qk_game_state_t *gs, entity_t *player_ent, u32 tick_dt_ms) {
             ps->weapon_time = 0;
         } else {
             ps->weapon_time -= tick_dt_ms;
+            return;
         }
+        // cooldown just expired — process queued weapon switch before +attack
+        if (ps->queued_weapon != QK_WEAPON_NONE &&
+            ps->queued_weapon != ps->weapon &&
+            ps->ammo[ps->queued_weapon] > 0) {
+            const g_weapon_def_t *wdef = &g_weapon_defs[ps->queued_weapon];
+            ps->pending_weapon = ps->queued_weapon;
+            ps->switch_time = wdef->switch_time_ms;
+            ps->queued_weapon = QK_WEAPON_NONE;
+            return;
+        }
+        ps->queued_weapon = QK_WEAPON_NONE;
         return;
     }
 

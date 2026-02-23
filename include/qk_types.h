@@ -139,6 +139,7 @@ typedef struct {
 
     qk_weapon_id_t  weapon;
     qk_weapon_id_t  pending_weapon;
+    qk_weapon_id_t  queued_weapon;      // weapon to switch to after cooldown expires
     u32             weapon_time;
     u32             switch_time;
     u16             ammo[QK_WEAPON_COUNT];
