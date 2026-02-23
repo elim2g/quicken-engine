@@ -6,6 +6,7 @@
  */
 
 #include "n_internal.h"
+#include "core/qk_prof.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -171,6 +172,8 @@ void n_server_send_to_client(n_server_t *srv, u32 slot, const u8 *data, u32 len)
 
     srv->stats.packets_sent++;
     srv->stats.bytes_sent += len;
+    QK_PROF_COUNTER("sv_packets_sent", 1);
+    QK_PROF_COUNTER("sv_bytes_sent", len);
 }
 
 // --- Snapshot broadcast ---

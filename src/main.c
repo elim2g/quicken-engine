@@ -27,6 +27,7 @@
 #include "ui/qk_ui.h"
 #include "core/qk_cvar.h"
 #include "core/qk_perf.h"
+#include "core/qk_prof.h"
 #include "core/qk_demo.h"
 #include "ui/qk_console.h"
 
@@ -492,6 +493,7 @@ int main(int argc, char *argv[]) {
     cl_diag_init();
     cl_fx_init();
     cl_predict_init();
+    QK_PROF_INIT();
 
     qk_console_register_cmd("map", cmd_map,
                              "Load a map by name (e.g. map asylum)");
@@ -604,6 +606,7 @@ int main(int argc, char *argv[]) {
 
     while (running) {
         qk_perf_begin_frame();
+        QK_PROF_FRAME_BEGIN();
 
         f64 now = qk_platform_time_now();
         f32 real_dt = (f32)(now - prev_time);
@@ -623,7 +626,9 @@ int main(int argc, char *argv[]) {
         }
 
         // --- 1. Poll input FIRST for minimum latency ---
+        QK_PROF_ZONE_BEGIN("input");
         qk_input_poll(&input_state);
+        QK_PROF_ZONE_END("input");
         if (input_state.quit_requested) {
             running = false;
             break;
@@ -634,6 +639,7 @@ int main(int argc, char *argv[]) {
 
         // --- Handle deferred map change (local mode only) ---
         if (s_pending_map[0] != '\0' && s_conn_mode == CONN_MODE_LOCAL) {
+            QK_PROF_EVENT_BEGIN("map_load");
             char path[512];
             if (!cl_map_resolve(s_pending_map, path, sizeof(path))) {
                 qk_console_printf("Map not found: %s", s_pending_map);
@@ -705,6 +711,7 @@ int main(int argc, char *argv[]) {
                     qk_console_printf("Loaded: %s", path);
                 }
             }
+            QK_PROF_EVENT_END("map_load");
             s_pending_map[0] = '\0';
         }
 
@@ -837,11 +844,18 @@ int main(int argc, char *argv[]) {
             cam_yaw = qk_input_get_yaw();
         } else if (s_conn_mode == CONN_MODE_REMOTE) {
             // --- Remote play path ---
+            QK_PROF_ZONE_BEGIN("predict");
             cl_predict_tick(&input_state, phys_world, real_dt, true);
+            QK_PROF_ZONE_END("predict");
 
+            QK_PROF_ZONE_BEGIN("net_client");
             qk_net_client_tick();
+            QK_PROF_ZONE_END("net_client");
+            QK_PROF_ZONE_BEGIN("reconcile");
             cl_predict_reconcile(phys_world);
+            QK_PROF_ZONE_END("reconcile");
 
+            QK_PROF_ZONE_BEGIN("interp");
             {
                 f64 input_tick = (f64)qk_net_client_get_input_sequence();
                 f64 render_tick = input_tick - 2.0;
@@ -849,6 +863,7 @@ int main(int argc, char *argv[]) {
                 f64 render_time = render_tick * QK_TICK_DT_F64;
                 qk_net_client_interpolate(render_time);
             }
+            QK_PROF_ZONE_END("interp");
 
             if (cl_predict_has_state()) {
                 const qk_player_state_t *pred = cl_predict_get_state();
@@ -869,17 +884,26 @@ int main(int argc, char *argv[]) {
             }
         } else {
             // --- Normal local game path ---
+            QK_PROF_ZONE_BEGIN("predict");
             cl_predict_tick(&input_state, phys_world, real_dt, false);
+            QK_PROF_ZONE_END("predict");
 
+            QK_PROF_ZONE_BEGIN("server_tick");
             server_accumulator += real_dt;
             while (server_accumulator >= QK_TICK_DT) {
                 server_tick(phys_world);
                 server_accumulator -= QK_TICK_DT;
             }
+            QK_PROF_ZONE_END("server_tick");
 
+            QK_PROF_ZONE_BEGIN("net_client");
             qk_net_client_tick();
+            QK_PROF_ZONE_END("net_client");
+            QK_PROF_ZONE_BEGIN("reconcile");
             cl_predict_reconcile(phys_world);
+            QK_PROF_ZONE_END("reconcile");
 
+            QK_PROF_ZONE_BEGIN("interp");
             {
                 f64 srv_tick = (f64)qk_net_server_get_tick();
                 f64 frac = (f64)server_accumulator / (f64)QK_TICK_DT;
@@ -888,6 +912,7 @@ int main(int argc, char *argv[]) {
                 f64 render_time = render_tick * QK_TICK_DT_F64;
                 qk_net_client_interpolate(render_time);
             }
+            QK_PROF_ZONE_END("interp");
 
             if (cl_predict_has_state()) {
                 const qk_player_state_t *pred = cl_predict_get_state();
@@ -913,15 +938,22 @@ int main(int argc, char *argv[]) {
         f32 fov = (s_cvar_fov ? s_cvar_fov->value.f : 90.0f);
         f32 aspect = (render_w > 0 && render_h > 0) ?
             (f32)render_w / (f32)render_h : 16.0f / 9.0f;
+        QK_PROF_ZONE_BEGIN("camera");
         qk_camera_t camera = cl_camera_build(cam_x, cam_y, cam_z,
                                                cam_pitch, cam_yaw,
                                                fov, aspect);
+        QK_PROF_ZONE_END("camera");
 
         // --- Render ---
+        QK_PROF_ZONE_BEGIN("render_begin");
         qk_renderer_begin_frame(&camera);
+        QK_PROF_ZONE_END("render_begin");
+        QK_PROF_ZONE_BEGIN("render_world");
         qk_renderer_draw_world();
+        QK_PROF_ZONE_END("render_world");
 
         // --- VFX (entities, smoke, explosions, viewmodel, beams) ---
+        QK_PROF_ZONE_BEGIN("render_vfx");
         {
             const qk_player_state_t *pred = cl_predict_get_state();
             cl_fx_frame_t fx_frame = {
@@ -938,6 +970,7 @@ int main(int argc, char *argv[]) {
             };
             cl_fx_draw(&fx_frame);
         }
+        QK_PROF_ZONE_END("render_vfx");
 
         // --- Diagnostic trace ---
         cl_diag_frame(now, real_dt, server_accumulator,
@@ -946,6 +979,7 @@ int main(int argc, char *argv[]) {
                        cl_predict_has_state(), cl_predict_get_state());
 
         // --- HUD ---
+        QK_PROF_ZONE_BEGIN("render_hud");
         const qk_player_state_t *local_ps = qk_game_get_player_state(local_client_id);
         if (local_ps) {
             const qk_ca_state_t *ca = qk_game_get_ca_state();
@@ -974,17 +1008,23 @@ int main(int argc, char *argv[]) {
             qk_ui_draw_text(10.0f, 48.0f, vz_buf, 16.0f, 0x00FFFFFF);
         }
 
+        QK_PROF_ZONE_END("render_hud");
+
         // Console renders in the overlay layer (compose pass at swapchain resolution),
         // so it uses window dimensions, not render resolution.
+        QK_PROF_ZONE_BEGIN("render_console");
         qk_renderer_set_ui_layer(true);
         qk_console_draw((f32)win_w, (f32)win_h, real_dt);
         qk_renderer_set_ui_layer(false);
+        QK_PROF_ZONE_END("render_console");
 
         // --- UI tick (fade timers) ---
         qk_ui_tick((u32)(real_dt * 1000.0f));
 
         // --- Present ---
+        QK_PROF_ZONE_BEGIN("render_end");
         qk_renderer_end_frame();
+        QK_PROF_ZONE_END("render_end");
 
         // --- Profiler data ---
         {
@@ -1001,12 +1041,15 @@ int main(int argc, char *argv[]) {
                 stats.fence_wait_ms,
                 stats.acquire_ms);
         }
+
+        QK_PROF_FRAME_END();
     }
 
     printf("Exiting main loop.\n");
 
     // --- Shutdown ---
 shutdown:
+    QK_PROF_SHUTDOWN();
     cl_diag_shutdown();
     qk_demo_shutdown();
     qk_perf_shutdown();

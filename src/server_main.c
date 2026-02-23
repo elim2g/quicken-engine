@@ -18,6 +18,7 @@
 #include "physics/qk_physics.h"
 #include "netcode/qk_netcode.h"
 #include "gameplay/qk_gameplay.h"
+#include "core/qk_prof.h"
 
 // --- Shutdown signal ---
 
@@ -204,6 +205,8 @@ int main(int argc, char *argv[]) {
     qk_net_server_set_map(path);
     printf("Server listening on port %u (max %u clients)\n", (u32)port, max_clients);
 
+    QK_PROF_INIT();
+
     // --- Tick loop ---
     printf("\nServer running. Press Ctrl+C to stop.\n\n");
 
@@ -212,6 +215,8 @@ int main(int argc, char *argv[]) {
     f32 accumulator = 0.0f;
 
     while (s_running) {
+        QK_PROF_FRAME_BEGIN();
+
         f64 now = qk_platform_time_now();
         f32 dt = (f32)(now - prev_time);
         prev_time = now;
@@ -221,11 +226,15 @@ int main(int argc, char *argv[]) {
 
         accumulator += dt;
 
+        QK_PROF_ZONE_BEGIN("server_tick");
         while (accumulator >= QK_TICK_DT) {
             detect_remote_players();
             server_tick(phys_world);
             accumulator -= QK_TICK_DT;
         }
+        QK_PROF_ZONE_END("server_tick");
+
+        QK_PROF_FRAME_END();
 
         /* Sleep to avoid burning CPU. Target slightly under tick interval
          * so we don't overshoot and miss ticks. */
@@ -239,6 +248,7 @@ int main(int argc, char *argv[]) {
 
     // --- Shutdown ---
 shutdown:
+    QK_PROF_SHUTDOWN();
     qk_net_server_shutdown();
     qk_game_shutdown();
     qk_physics_world_destroy(phys_world);

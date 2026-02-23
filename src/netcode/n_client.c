@@ -7,6 +7,7 @@
 
 #include "n_internal.h"
 #include "core/qk_demo.h"
+#include "core/qk_prof.h"
 #include <math.h>
 #include <stdio.h>
 
@@ -498,6 +499,8 @@ void n_client_process_packet(n_client_t *client, const u8 *data, u32 len, f64 no
 
     client->stats.packets_received++;
     client->stats.bytes_received += len;
+    QK_PROF_COUNTER("cl_packets_recv", 1);
+    QK_PROF_COUNTER("cl_bytes_recv", len);
 }
 
 // --- Client tick ---

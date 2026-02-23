@@ -40,6 +40,14 @@ workspace "QUICKEN"
 
     filter {}
 
+newoption {
+    trigger     = "profile",
+    description = "Enable compile-time profiler (QK_PROFILE)"
+}
+if _OPTIONS["profile"] then
+    defines { "QK_PROFILE" }
+end
+
 --------------------------------------------------------------
 -- Physics (precise float, cross-platform determinism)
 -- Include path: include/ only (no SDL3, no Vulkan)
@@ -370,6 +378,8 @@ project "test-netcode"
     targetdir ("build/bin/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/test-netcode")
 
+    defines { "QK_HEADLESS" }
+
     files {
         "tests/test_netcode_loopback.c"
     }
@@ -389,7 +399,9 @@ project "test-netcode"
     files {
         "src/gameplay/**.c",
         "src/gameplay/**.h",
-        "src/core/qk_demo.c"
+        "src/core/qk_demo.c",
+        "src/core/qk_prof.c",
+        "src/core/qk_platform.c"
     }
 
     filter "system:windows"

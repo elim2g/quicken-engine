@@ -13,6 +13,7 @@
 
 #include "p_internal.h"
 #include "p_simd.h"
+#include "core/qk_prof.h"
 
 // --- Trace against a single brush (Minkowski expansion) ---
 
@@ -158,6 +159,7 @@ qk_trace_result_t p_trace_brush(const qk_brush_t *brush,
 qk_trace_result_t p_trace_world(const qk_phys_world_t *world,
                                 vec3_t start, vec3_t end,
                                 vec3_t mins, vec3_t maxs) {
+    QK_PROF_COUNTER("physics_traces", 1);
     qk_trace_result_t best = {
         .fraction = 1.0f,
         .end_pos = end,

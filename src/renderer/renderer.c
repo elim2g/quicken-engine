@@ -10,6 +10,7 @@
 
 #include "renderer/qk_renderer.h"
 #include "r_types.h"
+#include "core/qk_prof.h"
 #include <SDL3/SDL_timer.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -632,6 +633,9 @@ void qk_renderer_end_frame(void)
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         g_r.swapchain_needs_recreate = true;
     }
+
+    QK_PROF_COUNTER("draw_calls", g_r.stats_draw_calls);
+    QK_PROF_COUNTER("triangles", g_r.stats_triangles);
 
     g_r.frame_index++;
 }
