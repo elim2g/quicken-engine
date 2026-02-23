@@ -171,7 +171,7 @@ qk_result_t qk_net_client_connect_local(void) {
     n_client_connect_local(s_client, s_server);
 
     if (s_client->conn_state == N_CONN_DISCONNECTED) {
-        N_DBG("connect_local: FAILED (server full or no slot)");
+        N_DBG("connect_local: %s", "FAILED (server full or no slot)");
         return QK_ERROR_FULL;
     }
 

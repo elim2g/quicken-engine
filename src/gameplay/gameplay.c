@@ -238,7 +238,6 @@ u32 qk_game_get_entity_count(void) {
 }
 
 bool qk_game_get_entity_origin(u8 entity_id, f32 *x, f32 *y, f32 *z) {
-    if (entity_id >= QK_MAX_ENTITIES) return false;
     entity_t *ent = &s_gs.entities.entities[entity_id];
     if (!ent->active) return false;
     if (ent->type == ENTITY_PLAYER) {

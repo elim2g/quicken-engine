@@ -139,7 +139,7 @@ static void ui_draw_killfeed(f32 screen_w) {
 
         // "attacker > victim" right-aligned
         char line[80];
-        snprintf(line, sizeof(line), "%s > %s",
+        snprintf(line, sizeof(line), "%.31s > %.31s",
                  s_killfeed[i].attacker_name, s_killfeed[i].victim_name);
 
         f32 tw = qk_ui_text_width(line, 14.0f);

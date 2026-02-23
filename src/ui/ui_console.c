@@ -310,7 +310,7 @@ static void con_execute(const char *text) {
 
     // Echo command in green
     char echo_buf[CON_LINE_LEN];
-    snprintf(echo_buf, sizeof(echo_buf), "] %s", text);
+    snprintf(echo_buf, sizeof(echo_buf), "] %.253s", text);
     con_push_line(echo_buf, CON_ECHO_COLOR);
 
     // Push to history

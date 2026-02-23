@@ -466,3 +466,5 @@ void qk_prof_event_end(const char *name) {
 }
 
 #endif /* QK_PROFILE */
+
+typedef int qk_prof_empty_tu_;

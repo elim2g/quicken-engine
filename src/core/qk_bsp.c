@@ -742,15 +742,15 @@ static u32 parse_bsp_entity_lump(const char *text, u32 text_len,
             while (p < end && *p != '"' && vi < 255) val[vi++] = *p++;
             if (p < end && *p == '"') p++;
 
-            if (strcmp(key, "classname") == 0) strncpy(ent->classname, val, 63);
-            else if (strcmp(key, "targetname") == 0) strncpy(ent->targetname, val, 63);
-            else if (strcmp(key, "target") == 0) strncpy(ent->target, val, 63);
+            if (strcmp(key, "classname") == 0) snprintf(ent->classname, sizeof(ent->classname), "%s", val);
+            else if (strcmp(key, "targetname") == 0) snprintf(ent->targetname, sizeof(ent->targetname), "%s", val);
+            else if (strcmp(key, "target") == 0) snprintf(ent->target, sizeof(ent->target), "%s", val);
             else if (strcmp(key, "origin") == 0) {
                 sscanf(val, "%f %f %f", &ent->origin.x, &ent->origin.y, &ent->origin.z);
                 ent->has_origin = true;
             }
             else if (strcmp(key, "angle") == 0) ent->angle = (f32)atof(val);
-            else if (strcmp(key, "model") == 0) strncpy(ent->model, val, 15);
+            else if (strcmp(key, "model") == 0) snprintf(ent->model, sizeof(ent->model), "%s", val);
         }
 
         if (p < end && *p == '}') p++;

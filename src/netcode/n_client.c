@@ -29,6 +29,7 @@
 
 // --- Helpers ---
 
+#if 0 // TODO: enable when client interpolation/prediction lands
 static f64 client_server_time(const n_client_t *client) {
     return n_platform_time() + client->clock.smoothed_offset;
 }
@@ -42,6 +43,7 @@ static u32 client_server_tick(const n_client_t *client) {
 static f64 client_render_time(const n_client_t *client) {
     return client_server_time(client) - client->interp_delay;
 }
+#endif
 
 // --- Lifecycle ---
 
@@ -118,7 +120,7 @@ void n_client_connect_local(n_client_t *client, n_server_t *srv) {
     // Allocate a loopback slot on the server
     i32 slot = n_server_allocate_slot(srv);
     if (slot < 0) {
-        N_DBG("connect_local: no free slot on server");
+        N_DBG("connect_local: %s", "no free slot on server");
         return;
     }
 

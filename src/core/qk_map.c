@@ -288,13 +288,13 @@ static qk_result_t parse_map_text(const char *data, parsed_map_t *map) {
                     p = read_token(p, value, sizeof(value));
 
                     if (ent->kv_count < 32) {
-                        strncpy(ent->kvs[ent->kv_count].key, key, 63);
-                        strncpy(ent->kvs[ent->kv_count].value, value, 255);
+                        snprintf(ent->kvs[ent->kv_count].key, sizeof(ent->kvs[ent->kv_count].key), "%s", key);
+                        snprintf(ent->kvs[ent->kv_count].value, sizeof(ent->kvs[ent->kv_count].value), "%s", value);
                         ent->kv_count++;
                     }
 
                     if (strcmp(key, "classname") == 0) {
-                        strncpy(ent->classname, value, 63);
+                        snprintf(ent->classname, sizeof(ent->classname), "%.63s", value);
                     }
                 }
                 else {

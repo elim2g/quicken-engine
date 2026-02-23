@@ -733,6 +733,7 @@ static qk_result_t create_render_pass_world(VkRenderPass *out_pass, VkFormat dep
     return (vr == VK_SUCCESS) ? QK_SUCCESS : QK_ERROR_PIPELINE;
 }
 
+#if 0 // TODO: enable when dedicated UI render pass is needed
 static qk_result_t create_render_pass_ui(VkRenderPass *out_pass)
 {
     VkAttachmentDescription attachment = {
@@ -779,6 +780,7 @@ static qk_result_t create_render_pass_ui(VkRenderPass *out_pass)
     VkResult vr = vkCreateRenderPass(g_r.device.handle, &rp_info, NULL, out_pass);
     return (vr == VK_SUCCESS) ? QK_SUCCESS : QK_ERROR_PIPELINE;
 }
+#endif
 
 static qk_result_t create_render_pass_compose(VkRenderPass *out_pass)
 {
