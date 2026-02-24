@@ -252,10 +252,15 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
         ps->jump_buffer_ticks--;
     }
 
-    // 4. Apply friction (ground only, skip during rocket-jump slick).
-    // Q3 disables friction during pm_time/PMF_TIME_KNOCKBACK;
-    // splash_slick_ticks is our equivalent for knockback launches.
-    if (ps->on_ground && ps->splash_slick_ticks == 0) {
+    // 4. Apply friction (ground only, skip during rocket-jump slick
+    // and stair-skim).  Stair-skim: during skim, if the player is
+    // holding jump but autohop cooldown prevents it, they're stuck
+    // on a stair tread for 1-2 ticks.  Suppress friction in that
+    // exact case so stair traversal doesn't bleed speed.
+    bool stair_skim = ps->skim_ticks > 0 &&
+                      ps->jump_held &&
+                      ps->autohop_cooldown > 0;
+    if (ps->on_ground && ps->splash_slick_ticks == 0 && !stair_skim) {
         p_apply_friction(ps, dt);
     }
 
