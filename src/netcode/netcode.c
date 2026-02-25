@@ -284,7 +284,43 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
         return true;
     }
 
-    // Remote: extract from latest snapshot
+    // Remote: prefer full-precision player state from server
+    if (s_client->has_server_player_state) {
+        const n_player_state_t *ps = &s_client->server_player_state;
+        memset(out, 0, sizeof(*out));
+        out->origin.x = ps->pos_x;
+        out->origin.y = ps->pos_y;
+        out->origin.z = ps->pos_z;
+        out->velocity.x = ps->vel_x;
+        out->velocity.y = ps->vel_y;
+        out->velocity.z = ps->vel_z;
+        out->yaw = ps->yaw;
+        out->pitch = ps->pitch;
+        out->command_time = ps->command_time;
+        out->last_jump_tick = ps->last_jump_tick;
+        out->weapon_time = ps->weapon_time;
+        out->switch_time = ps->switch_time;
+        out->splash_slick_ticks = ps->splash_slick_ticks;
+        out->skim_ticks = ps->skim_ticks;
+        out->autohop_cooldown = ps->autohop_cooldown;
+        out->jump_buffer_ticks = ps->jump_buffer_ticks;
+        out->on_ground = (ps->flags & QK_ENT_FLAG_ON_GROUND) != 0;
+        out->jump_held = (ps->flags & QK_ENT_FLAG_JUMP_HELD) != 0;
+        out->teleport_bit = (ps->flags & QK_ENT_FLAG_TELEPORTED) ? 1 : 0;
+        out->weapon = (qk_weapon_id_t)ps->weapon;
+        out->pending_weapon = (qk_weapon_id_t)ps->pending_weapon;
+        out->queued_weapon = (qk_weapon_id_t)ps->queued_weapon;
+        out->health = ps->health;
+        out->armor = ps->armor;
+        memcpy(out->ammo, ps->ammo, sizeof(out->ammo));
+        out->mins = QK_PLAYER_MINS;
+        out->maxs = QK_PLAYER_MAXS;
+        out->max_speed = QK_PM_MAX_SPEED;
+        out->gravity = QK_PM_GRAVITY;
+        return true;
+    }
+
+    // Fallback: dequantize from entity state (backward compat)
     if (s_client->interp_count == 0) return false;
 
     u32 idx = (s_client->interp_write - 1 + N_INTERP_BUFFER_SIZE) % N_INTERP_BUFFER_SIZE;
@@ -295,12 +331,6 @@ bool qk_net_client_get_server_player_state(qk_player_state_t *out) {
 
     const n_entity_state_t *entity = &snap->entities[entity_id];
 
-    // Zero-init sets physics-internal fields (last_jump_tick, skim_ticks,
-    // jump_buffer_ticks, etc.) to 0.  These are not transmitted on the wire;
-    // the physics engine reconstructs them during prediction input replay.
-    // For CPM double-jump: last_jump_tick=0 means "no recent jump",
-    // which is the safe default -- a brief misprediction is corrected on the
-    // next server snapshot.
     memset(out, 0, sizeof(*out));
     out->origin.x = (f32)entity->pos_x * 0.5f;
     out->origin.y = (f32)entity->pos_y * 0.5f;

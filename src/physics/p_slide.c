@@ -10,6 +10,9 @@
 #include "p_internal.h"
 #include "p_simd.h"
 
+// Global debug trace — written here, read by cl_diag
+qk_phys_dbg_t g_phys_dbg;
+
 // --- Clip velocity off a collision plane ---
 
 vec3_t p_clip_velocity(vec3_t velocity, vec3_t normal, f32 overbounce) {
@@ -63,8 +66,17 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
                                                  ps->mins, ps->maxs);
 
         if (trace.all_solid) {
-            // Stuck in solid -- kill velocity
-            ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
+            // Q3: don't build falling damage, but allow lateral escape
+            g_phys_dbg.all_solid_hit = true;
+            if (g_phys_dbg.bump_count < QK_PHYS_DBG_MAX_BUMPS) {
+                qk_phys_dbg_bump_t *db = &g_phys_dbg.bumps[g_phys_dbg.bump_count];
+                db->hit_normal = trace.hit_normal;
+                db->fraction = trace.fraction;
+                db->all_solid = true;
+                db->duplicate = false;
+                g_phys_dbg.bump_count++;
+            }
+            ps->velocity.z = 0.0f;
             return true;
         }
 
@@ -90,23 +102,33 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
 #if P_USE_SSE2
             __m128 v_hit = p_simd_load_vec3(trace.hit_normal);
             for (i32 k = 0; k < num_planes; k++) {
-                if (p_simd_dot3(v_hit, simd_planes[k]) > 0.99f) {
+                if (p_simd_dot3(v_hit, simd_planes[k]) > 0.96f) {
                     duplicate = true;
                     break;
                 }
             }
 #else
             for (i32 k = 0; k < num_planes; k++) {
-                if (vec3_dot(trace.hit_normal, planes[k]) > 0.99f) {
+                if (vec3_dot(trace.hit_normal, planes[k]) > 0.96f) {
                     duplicate = true;
                     break;
                 }
             }
 #endif
             if (duplicate) {
-                ps->velocity = p_clip_velocity(ps->velocity,
-                                                trace.hit_normal,
-                                                QK_PM_OVERCLIP);
+                if (g_phys_dbg.bump_count < QK_PHYS_DBG_MAX_BUMPS) {
+                    qk_phys_dbg_bump_t *db = &g_phys_dbg.bumps[g_phys_dbg.bump_count];
+                    db->hit_normal = trace.hit_normal;
+                    db->fraction = trace.fraction;
+                    db->all_solid = false;
+                    db->duplicate = true;
+                    g_phys_dbg.bump_count++;
+                }
+                // Nudge velocity away from the wall by adding the hit normal to vel,
+                // preventing frac=0 deadlock
+                ps->velocity.x += trace.hit_normal.x;
+                ps->velocity.y += trace.hit_normal.y;
+                ps->velocity.z += trace.hit_normal.z;
                 continue;
             }
         }
@@ -114,6 +136,16 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
         if (num_planes >= P_MAX_CLIP_PLANES) {
             ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
             return true;
+        }
+
+        // Record non-duplicate bump
+        if (g_phys_dbg.bump_count < QK_PHYS_DBG_MAX_BUMPS) {
+            qk_phys_dbg_bump_t *db = &g_phys_dbg.bumps[g_phys_dbg.bump_count];
+            db->hit_normal = trace.hit_normal;
+            db->fraction = trace.fraction;
+            db->all_solid = false;
+            db->duplicate = false;
+            g_phys_dbg.bump_count++;
         }
         planes[num_planes] = trace.hit_normal;
 #if P_USE_SSE2
@@ -163,6 +195,8 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
                 ps->velocity = vec3_scale(dir, d);
             } else {
                 // Cornered by 3+ planes -- stop
+                g_phys_dbg.cornered = true;
+                g_phys_dbg.plane_count = (u32)num_planes;
                 ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
                 return true;
             }
@@ -171,11 +205,13 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
         // Don't accelerate past original speed (no speed gain from
         // bouncing off walls)
         if (vec3_dot(ps->velocity, primal_velocity) <= 0.0f) {
+            g_phys_dbg.primal_reject = true;
             ps->velocity = (vec3_t){0.0f, 0.0f, 0.0f};
             return true;
         }
     }
 
+    g_phys_dbg.plane_count = (u32)num_planes;
     return (num_planes > 0);
 }
 
@@ -275,5 +311,22 @@ void p_step_slide_move(qk_player_state_t *ps,
     if (trace.fraction < 1.0f) {
         ps->velocity = p_clip_velocity(ps->velocity, trace.hit_normal,
                                         QK_PM_OVERCLIP);
+    }
+
+    // Q3-style comparison: use step result only if it moved further horizontally
+    f32 normal_dist_sq = (normal_origin.x - start_origin.x) * (normal_origin.x - start_origin.x)
+                       + (normal_origin.y - start_origin.y) * (normal_origin.y - start_origin.y);
+    f32 step_dist_sq   = (ps->origin.x - start_origin.x) * (ps->origin.x - start_origin.x)
+                       + (ps->origin.y - start_origin.y) * (ps->origin.y - start_origin.y);
+
+    g_phys_dbg.step_attempted = true;
+    g_phys_dbg.step_normal_dist_sq = normal_dist_sq;
+    g_phys_dbg.step_step_dist_sq = step_dist_sq;
+
+    if (step_dist_sq < normal_dist_sq) {
+        // Step-up didn't help -- use the normal slide result
+        g_phys_dbg.step_used_normal = true;
+        ps->origin = normal_origin;
+        ps->velocity = normal_velocity;
     }
 }

@@ -11,6 +11,7 @@
 #include "qk_types.h"
 #include "netcode/qk_netcode.h"
 #include "gameplay/qk_gameplay.h"
+#include "physics/qk_physics.h"
 #include "client/cl_fx.h"
 #include "ui/qk_console.h"
 
@@ -153,6 +154,43 @@ void cl_diag_frame(f64 now, f32 real_dt, f32 server_accumulator,
             since_jump,
             (u32)((u32)(QK_PM_CPM_DOUBLE_JUMP_WINDOW * QK_TICK_RATE / 1000)),
             predicted_ps->command_time);
+    }
+
+    // Physics collision debug trace (per tick, only when something happened)
+    if (has_prediction && predicted_ps &&
+        predicted_ps->command_time == s_diag_last_phys_tick) {
+        const qk_phys_dbg_t *pdbg = &g_phys_dbg;
+        if (pdbg->bump_count > 0 || pdbg->all_solid_hit ||
+            pdbg->cornered || pdbg->primal_reject ||
+            pdbg->step_attempted || pdbg->depenetrate_fired) {
+            fprintf(s_diag_file,
+                "  SLIDE bumps=%u planes=%u all_solid=%d cornered=%d "
+                "primal_rej=%d step=[%s ndist=%.3f sdist=%.3f used_normal=%d] "
+                "depenetrate=[%d off=(%.3f,%.3f,%.3f)]\n",
+                pdbg->bump_count, pdbg->plane_count,
+                pdbg->all_solid_hit, pdbg->cornered,
+                pdbg->primal_reject,
+                pdbg->step_attempted ? "Y" : "N",
+                (double)pdbg->step_normal_dist_sq,
+                (double)pdbg->step_step_dist_sq,
+                pdbg->step_used_normal,
+                pdbg->depenetrate_fired,
+                (double)pdbg->depenetrate_offset.x,
+                (double)pdbg->depenetrate_offset.y,
+                (double)pdbg->depenetrate_offset.z);
+            for (u32 bi = 0; bi < pdbg->bump_count; bi++) {
+                const qk_phys_dbg_bump_t *b = &pdbg->bumps[bi];
+                fprintf(s_diag_file,
+                    "    BUMP[%u] n=(%.4f,%.4f,%.4f) frac=%.6f "
+                    "all_solid=%d dup=%d\n",
+                    bi,
+                    (double)b->hit_normal.x,
+                    (double)b->hit_normal.y,
+                    (double)b->hit_normal.z,
+                    (double)b->fraction,
+                    b->all_solid, b->duplicate);
+            }
+        }
     }
 
     s_diag_frame++;

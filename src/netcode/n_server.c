@@ -6,6 +6,7 @@
  */
 
 #include "n_internal.h"
+#include "gameplay/qk_gameplay.h"
 #include "core/qk_prof.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -176,6 +177,37 @@ void n_server_send_to_client(n_server_t *srv, u32 slot, const u8 *data, u32 len)
     QK_PROF_COUNTER("sv_bytes_sent", len);
 }
 
+// --- Full-precision player state packing ---
+
+static void n_pack_player_state(const qk_player_state_t *ps, n_player_state_t *out) {
+    out->pos_x = ps->origin.x;
+    out->pos_y = ps->origin.y;
+    out->pos_z = ps->origin.z;
+    out->vel_x = ps->velocity.x;
+    out->vel_y = ps->velocity.y;
+    out->vel_z = ps->velocity.z;
+    out->yaw = ps->yaw;
+    out->pitch = ps->pitch;
+    out->command_time = ps->command_time;
+    out->last_jump_tick = ps->last_jump_tick;
+    out->weapon_time = ps->weapon_time;
+    out->switch_time = ps->switch_time;
+    out->splash_slick_ticks = ps->splash_slick_ticks;
+    out->skim_ticks = ps->skim_ticks;
+    out->autohop_cooldown = ps->autohop_cooldown;
+    out->jump_buffer_ticks = ps->jump_buffer_ticks;
+    out->flags = 0;
+    if (ps->on_ground)  out->flags |= QK_ENT_FLAG_ON_GROUND;
+    if (ps->jump_held)  out->flags |= QK_ENT_FLAG_JUMP_HELD;
+    if (ps->teleport_bit) out->flags |= QK_ENT_FLAG_TELEPORTED;
+    out->weapon = (u8)ps->weapon;
+    out->pending_weapon = (u8)ps->pending_weapon;
+    out->queued_weapon = (u8)ps->queued_weapon;
+    out->health = ps->health;
+    out->armor = ps->armor;
+    memcpy(out->ammo, ps->ammo, sizeof(out->ammo));
+}
+
 // --- Snapshot broadcast ---
 
 void n_server_broadcast_snapshots(n_server_t *srv) {
@@ -230,14 +262,33 @@ void n_server_broadcast_snapshots(n_server_t *srv) {
         n_bitwriter_init(&writer, pkt + N_PACKET_HEADER_SIZE,
                          N_TRANSPORT_MTU - N_PACKET_HEADER_SIZE);
 
-        // Snapshot message: header (base_tick + current_tick + cmd_ack = 12 bytes) + delta
-        u16 msg_payload_len = (u16)(12 + delta_len);
+        // Pack full-precision player state for this client (if available)
+        n_player_state_t ps_wire;
+        u8 has_player_state = 0;
+        const qk_player_state_t *auth_ps = qk_game_get_player_state(client->client_id);
+        if (auth_ps) {
+            n_pack_player_state(auth_ps, &ps_wire);
+            has_player_state = 1;
+        }
+
+        // Snapshot message: header (12) + player_state_flag (1) + [player_state] + delta
+        u16 ps_size = has_player_state ? (u16)sizeof(n_player_state_t) : 0;
+        u16 msg_payload_len = (u16)(12 + 1 + ps_size + delta_len);
         n_msg_header_write(&writer, N_MSG_SNAPSHOT, msg_payload_len);
 
         u32 base_tick = baseline ? baseline->tick : 0;
         n_write_u32(&writer, base_tick);
         n_write_u32(&writer, srv->tick);
         n_write_u32(&writer, client->last_input_tick);
+
+        // Write player state flag + data (before delta, so client can parse deterministically)
+        n_write_u8(&writer, has_player_state);
+        if (has_player_state) {
+            const u8 *ps_bytes = (const u8 *)&ps_wire;
+            for (u16 b = 0; b < sizeof(n_player_state_t); b++) {
+                n_write_u8(&writer, ps_bytes[b]);
+            }
+        }
 
         // Write delta data raw
         for (u32 b = 0; b < delta_len; b++) {

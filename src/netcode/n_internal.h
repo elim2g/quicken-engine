@@ -406,6 +406,10 @@ typedef struct {
     bool                initialized;
     bool                is_loopback;
 
+    // Full-precision player state from server (for reconciliation)
+    bool                has_server_player_state;
+    n_player_state_t    server_player_state;
+
     // Reference to server for loopback
     n_server_t          *loopback_server;
 

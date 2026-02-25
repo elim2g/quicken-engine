@@ -79,6 +79,42 @@ bool qk_physics_validate_strafejump(void);
 // Returns true if all trace/movement tests pass.
 bool qk_physics_validate_map(const char *map_path);
 
+// --- Per-tick collision debug trace ---
+// Populated by p_slide_move / p_step_slide_move / p_correct_all_solid each tick.
+// Read by cl_diag.  Zero-cost when nobody reads it (just struct writes).
+
+#define QK_PHYS_DBG_MAX_BUMPS   8
+
+typedef struct {
+    vec3_t  hit_normal;
+    f32     fraction;
+    bool    all_solid;
+    bool    duplicate;      // merged with existing plane (threshold hit)
+} qk_phys_dbg_bump_t;
+
+typedef struct {
+    // slide_move internals
+    u32     bump_count;
+    u32     plane_count;            // unique clip planes accumulated
+    bool    cornered;               // hit 3+ plane corner trap (velocity zeroed)
+    bool    primal_reject;          // velocity reversed vs primal (zeroed)
+    bool    all_solid_hit;          // all_solid triggered in slide_move
+    qk_phys_dbg_bump_t bumps[QK_PHYS_DBG_MAX_BUMPS];
+
+    // step_slide_move internals
+    bool    step_attempted;         // step-up path was tried
+    bool    step_used_normal;       // chose normal slide over step result
+    f32     step_normal_dist_sq;    // horizontal dist^2 of normal slide
+    f32     step_step_dist_sq;      // horizontal dist^2 of step slide
+
+    // depenetration
+    bool    depenetrate_fired;      // p_correct_all_solid nudged the player
+    vec3_t  depenetrate_offset;     // direction nudged
+} qk_phys_dbg_t;
+
+// Global debug trace (written by physics, read by diag)
+extern qk_phys_dbg_t g_phys_dbg;
+
 // Constants
 #define QK_PHYSICS_TICK_RATE    128
 #define QK_PHYSICS_TICK_DT      (1.0f / 128.0f)

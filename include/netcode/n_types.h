@@ -28,6 +28,32 @@ typedef struct {
 _Static_assert(sizeof(n_entity_state_t) == 22,
                "entity state must be exactly 22 bytes for wire format");
 
+// Full-precision player state for local client reconciliation.
+// Sent only to the owning client, NOT to other players.
+typedef struct {
+    f32     pos_x, pos_y, pos_z;        // full float precision
+    f32     vel_x, vel_y, vel_z;        // full float precision
+    f32     yaw, pitch;                 // full float precision
+    u32     command_time;               // tick counter for replay
+    u32     last_jump_tick;             // double-jump timing
+    u32     weapon_time;                // weapon cooldown
+    u32     switch_time;                // weapon switch cooldown
+    u8      splash_slick_ticks;         // rocket jump slick
+    u8      skim_ticks;                 // ground skim
+    u8      autohop_cooldown;           // autohop gating
+    u8      jump_buffer_ticks;          // jump input buffer
+    u8      flags;                      // on_ground, jump_held, teleport_bit
+    u8      weapon;                     // current weapon
+    u8      pending_weapon;             // weapon being switched to
+    u8      queued_weapon;              // weapon queued after switch
+    i16     health;
+    i16     armor;
+    u16     ammo[QK_WEAPON_COUNT];      // QK_WEAPON_COUNT = 4
+} n_player_state_t;
+
+_Static_assert(sizeof(n_player_state_t) == 68,
+               "n_player_state_t size changed — update wire format");
+
 // Input for network transmission (compact)
 typedef struct {
     i8      forward_move;            // -127..127

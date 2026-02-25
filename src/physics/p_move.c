@@ -14,6 +14,7 @@
 
 #include "p_internal.h"
 #include <math.h>
+#include <string.h>
 
 // Convert the double-jump window from ms to ticks at compile time
 #define P_CPM_DOUBLE_JUMP_TICKS \
@@ -208,12 +209,48 @@ static void p_cpm_air_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
     }
 }
 
+// --- Depenetration nudge (PM_CorrectAllSolid) ---
+
+static bool p_correct_all_solid(qk_player_state_t *ps,
+                                 const qk_phys_world_t *world) {
+    qk_trace_result_t trace = p_trace_world(world, ps->origin, ps->origin,
+                                             ps->mins, ps->maxs);
+    if (!trace.all_solid) return false;  // not stuck
+
+    // Try offsets in 26 directions (6 cardinal + 12 edge + 8 corner)
+    // at 1/8 unit increments up to 1 unit
+    for (i32 i = -1; i <= 1; i++) {
+        for (i32 j = -1; j <= 1; j++) {
+            for (i32 k = -1; k <= 1; k++) {
+                if (i == 0 && j == 0 && k == 0) continue;
+                vec3_t test = ps->origin;
+                test.x += (f32)i * 0.125f;
+                test.y += (f32)j * 0.125f;
+                test.z += (f32)k * 0.125f;
+                trace = p_trace_world(world, test, test, ps->mins, ps->maxs);
+                if (!trace.all_solid) {
+                    g_phys_dbg.depenetrate_fired = true;
+                    g_phys_dbg.depenetrate_offset = (vec3_t){
+                        (f32)i * 0.125f, (f32)j * 0.125f, (f32)k * 0.125f
+                    };
+                    ps->origin = test;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;  // couldn't unstick
+}
+
 // --- PM_Move: one physics tick ---
 
 void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
             const qk_phys_world_t *world) {
 
     f32 dt = QK_TICK_DT;
+
+    // Clear debug trace for this tick
+    memset(&g_phys_dbg, 0, sizeof(g_phys_dbg));
 
     // Advance the tick counter (used for double-jump timing)
     ps->command_time++;
@@ -239,6 +276,9 @@ void p_move(qk_player_state_t *ps, const qk_usercmd_t *cmd,
         wish_dir = (vec3_t){0.0f, 0.0f, 0.0f};
     }
     f32 wish_speed = (wish_len > 0.0001f) ? ps->max_speed : 0.0f;
+
+    // 1b. Depenetration: try to nudge out of solid before ground check
+    p_correct_all_solid(ps, world);
 
     // 2. Check ground
     bool was_airborne = !ps->on_ground;

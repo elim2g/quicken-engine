@@ -180,7 +180,7 @@ static void world_uv(const f32 *pos, const f32 *nrm, f32 *uv) {
 
 // --- Bezier patch tessellation ---
 
-#define BSP_TESS_LEVEL 4
+#define BSP_TESS_LEVEL 8
 #define BSP_TESS_VERTS ((BSP_TESS_LEVEL + 1) * (BSP_TESS_LEVEL + 1))
 #define BSP_TESS_IDXS  (BSP_TESS_LEVEL * BSP_TESS_LEVEL * 6)
 

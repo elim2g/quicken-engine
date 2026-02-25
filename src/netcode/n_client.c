@@ -291,11 +291,28 @@ static void handle_snapshot_message(n_client_t *client, const u8 *payload, u32 l
 
     client->last_server_cmd_ack = cmd_ack;
 
-    N_DBG("snapshot: tick=%u base=%u cmd_ack=%u bytes=%u interp_count=%u",
-          current_tick, base_tick, cmd_ack, len, client->interp_count);
+    // Read full-precision player state (if present)
+    u8 has_ps = n_read_u8(&reader);
+    if (n_bitreader_overflowed(&reader)) return;
+
+    u32 header_consumed = 13; // 12 + 1 flag byte
+    if (has_ps) {
+        if (len < header_consumed + sizeof(n_player_state_t)) return;
+        u8 *ps_bytes = (u8 *)&client->server_player_state;
+        for (u32 b = 0; b < sizeof(n_player_state_t); b++) {
+            ps_bytes[b] = n_read_u8(&reader);
+        }
+        client->has_server_player_state = true;
+        header_consumed += (u32)sizeof(n_player_state_t);
+    } else {
+        client->has_server_player_state = false;
+    }
+
+    N_DBG("snapshot: tick=%u base=%u cmd_ack=%u bytes=%u interp_count=%u ps=%u",
+          current_tick, base_tick, cmd_ack, len, client->interp_count, has_ps);
 
     // Extract remaining delta data
-    u32 delta_bytes = len - 12;
+    u32 delta_bytes = len - header_consumed;
     u8 delta_buf[N_TRANSPORT_MTU];
     for (u32 i = 0; i < delta_bytes; i++) {
         delta_buf[i] = n_read_u8(&reader);
