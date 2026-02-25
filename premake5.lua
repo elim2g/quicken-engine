@@ -9,6 +9,10 @@
 --
 -- IMPORTANT: Different modules use different floating-point settings.
 -- See docs/ARCHITECTURE.md and docs/plans/INTEGRATION.md Section 4.6.
+--
+-- SIMD: No global /arch:AVX2 or -march=native. SSE2 is baseline (guaranteed
+-- on all x64). AVX2 is compiled per-file for renderer hot paths and dispatched
+-- at runtime via qk_cpuid. See include/core/qk_cpuid.h.
 
 workspace "QUICKEN"
     architecture "x86_64"
@@ -56,6 +60,7 @@ project "quicken-physics"
     kind "StaticLib"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/lib/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/physics")
@@ -70,19 +75,14 @@ project "quicken-physics"
         "include"
     }
 
-    filter "toolset:gcc or toolset:clang"
+    -- MSVC default is /fp:precise (no flag needed). GCC needs -ffp-contract=off.
+
+    filter "system:linux"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-std=c11",
             "-ffp-contract=off"     -- REQUIRED: prevent FMA for determinism
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"
         }
 
     filter {}
@@ -95,6 +95,7 @@ project "quicken-renderer"
     kind "StaticLib"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/lib/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/renderer")
@@ -111,22 +112,24 @@ project "quicken-renderer"
         "external/SDL3/include"
     }
 
+    floatingpoint "Fast"        -- /fp:fast (MSVC), -ffast-math (GCC)
+
     filter "system:windows"
         includedirs { "$(VULKAN_SDK)/Include" }
 
-    filter "toolset:gcc or toolset:clang"
+    -- Per-file AVX2 flags for SIMD-dispatched renderer hot paths
+    filter "files:src/renderer/r_fx_avx2.c"
+        vectorextensions "AVX2"
+
+    filter { "files:src/renderer/r_fx_avx2.c", "system:linux" }
+        buildoptions { "-mfma" }
+
+    filter "system:linux"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-ffast-math",
             "-std=c11"
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:fast"
         }
 
     filter {}
@@ -139,6 +142,7 @@ project "quicken-netcode"
     kind "StaticLib"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/lib/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/netcode")
@@ -153,19 +157,12 @@ project "quicken-netcode"
         "include"
     }
 
-    filter "toolset:gcc or toolset:clang"
+    filter "system:linux"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-std=c11",
             "-ffp-contract=off"
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"
         }
 
     filter {}
@@ -178,6 +175,7 @@ project "quicken"
     kind "ConsoleApp"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/bin/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/main")
@@ -227,20 +225,11 @@ project "quicken"
         links { "SDL3", "vulkan", "m", "pthread" }
         libdirs { "external/SDL3/build-linux" }
         runpathdirs { "external/SDL3/build-linux" }
-
-    filter "toolset:gcc or toolset:clang"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-std=c11",
             "-ffp-contract=off"
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"
         }
 
     filter {}
@@ -252,6 +241,7 @@ project "quicken-server"
     kind "ConsoleApp"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/bin/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/server")
@@ -288,20 +278,11 @@ project "quicken-server"
     filter "system:linux"
         system "linux"
         links { "m", "pthread" }
-
-    filter "toolset:gcc or toolset:clang"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-std=c11",
             "-ffp-contract=off"
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"
         }
 
     filter {}
@@ -313,6 +294,7 @@ project "quicken-test"
     kind "ConsoleApp"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/bin/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/quicken-test")
@@ -349,20 +331,11 @@ project "quicken-test"
     filter "system:linux"
         system "linux"
         links { "m", "pthread" }
-
-    filter "toolset:gcc or toolset:clang"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-std=c11",
             "-ffp-contract=off"
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"
         }
 
     filter {}
@@ -374,6 +347,7 @@ project "test-netcode"
     kind "ConsoleApp"
     language "C"
     cdialect "C11"
+    warnings "Extra"
 
     targetdir ("build/bin/" .. outputdir)
     objdir ("build/obj/" .. outputdir .. "/test-netcode")
@@ -411,20 +385,11 @@ project "test-netcode"
     filter "system:linux"
         system "linux"
         links { "m", "pthread" }
-
-    filter "toolset:gcc or toolset:clang"
         buildoptions {
             "-Wall", "-Wextra", "-Wpedantic",
-            "-march=native",
+            "-msse2",
             "-std=c11",
             "-ffp-contract=off"
-        }
-
-    filter "toolset:msc"
-        buildoptions {
-            "/W4",
-            "/arch:AVX2",
-            "/fp:precise"
         }
 
     filter {}

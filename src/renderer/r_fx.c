@@ -10,6 +10,7 @@
  */
 
 #include "r_types.h"
+#include "r_simd_dispatch.h"
 #include "renderer/qk_renderer.h"
 #include <math.h>
 #include <stdio.h>
@@ -311,6 +312,9 @@ qk_result_t r_fx_init(void)
     }
 
     g_r.fx.initialized = true;
+
+    r_simd_dispatch_init();
+
     fprintf(stderr, "[Renderer] FX effects initialized\n");
 
     return QK_SUCCESS;
@@ -333,9 +337,9 @@ void r_fx_shutdown(void)
 
 // --- Rail Beam ---
 
-void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
-                                 f32 end_x, f32 end_y, f32 end_z,
-                                 f32 age_seconds, u32 color_rgba)
+void r_fx_draw_rail_beam_baseline(f32 start_x, f32 start_y, f32 start_z,
+                                   f32 end_x, f32 end_y, f32 end_z,
+                                   f32 age_seconds, u32 color_rgba)
 {
     if (!g_r.fx.initialized) return;
     if (g_r.fx.draw_count >= R_FX_MAX_DRAWS) return;
@@ -840,9 +844,9 @@ static u32 r_fx_emit_screen_facing_quad(r_fx_vertex_t *verts, u32 offset,
 #define EXPLOSION_CORE_HALF_SIZE    18.0f   // center glow base size
 #define EXPLOSION_GOLDEN_ANGLE      2.399963f  // PI * (3 - sqrt(5))
 
-void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
-                                 f32 radius, f32 age_seconds,
-                                 f32 r, f32 g, f32 b, f32 a)
+void r_fx_draw_explosion_baseline(f32 x, f32 y, f32 z,
+                                   f32 radius, f32 age_seconds,
+                                   f32 r, f32 g, f32 b, f32 a)
 {
     if (!g_r.fx.initialized) return;
     if (g_r.fx.draw_count >= R_FX_MAX_DRAWS) return;
@@ -1000,6 +1004,24 @@ void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
     draw->vertex_offset = v_start;
     draw->vertex_count = v_count;
     g_r.fx.vertex_count = v_start + v_count;
+}
+
+// --- Dispatch Wrappers (public API, calls through g_r_dispatch) ---
+
+void qk_renderer_draw_rail_beam(f32 start_x, f32 start_y, f32 start_z,
+                                 f32 end_x, f32 end_y, f32 end_z,
+                                 f32 age_seconds, u32 color_rgba)
+{
+    g_r_dispatch.draw_rail_beam(start_x, start_y, start_z,
+                                end_x, end_y, end_z,
+                                age_seconds, color_rgba);
+}
+
+void qk_renderer_draw_explosion(f32 x, f32 y, f32 z,
+                                 f32 radius, f32 age_seconds,
+                                 f32 r, f32 g, f32 b, f32 a)
+{
+    g_r_dispatch.draw_explosion(x, y, z, radius, age_seconds, r, g, b, a);
 }
 
 // --- Railgun Impact Sparks ---

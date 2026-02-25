@@ -8,6 +8,7 @@
 #define P_INTERNAL_H
 
 #include "physics/qk_physics.h"
+#include "p_simd_dispatch.h"
 
 // --- Opaque world definition ---
 

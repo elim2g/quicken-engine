@@ -1,9 +1,11 @@
 /*
  * QUICKEN Engine - Physics SIMD Helpers
  *
- * SSE2/SSE4.1 helpers for the physics hot paths. These produce
- * bit-identical results to the scalar code because only IEEE-754
- * compliant SSE operations are used (no rsqrt, rcp, or FMA).
+ * SSE2 helpers for the physics hot paths. SSE2 is guaranteed on all
+ * x86_64 targets, so no compile-time feature detection is needed.
+ *
+ * These produce bit-identical results to scalar code because only
+ * IEEE-754 compliant SSE operations are used (no rsqrt, rcp, or FMA).
  *
  * Usage rules:
  *   - SAFE:   _mm_add_ps, _mm_sub_ps, _mm_mul_ps, _mm_div_ps, _mm_sqrt_ps
@@ -17,39 +19,7 @@
 
 #include "quicken.h"
 #include "qk_math.h"
-
-#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
-#define P_USE_SSE2 1
-#include <emmintrin.h>  // SSE2
-#else
-#define P_USE_SSE2 0
-#endif
-
-#if defined(__SSE4_1__) || (defined(_M_X64) && defined(__AVX__)) || defined(__AVX2__)
-#define P_USE_SSE41 1
-#include <smmintrin.h>  // SSE4.1
-#else
-#define P_USE_SSE41 0
-#endif
-
-// MSVC with /arch:AVX2 defines __AVX2__ but not __SSE4_1__ explicitly.
-// However <smmintrin.h> is available. Detect via _M_X64 + /arch:AVX2.
-#if defined(_MSC_VER) && defined(_M_X64) && !defined(P_USE_SSE41)
-#undef P_USE_SSE41
-#define P_USE_SSE41 1
-#include <smmintrin.h>
-#endif
-
-// On MSVC with /arch:AVX2, all SSE headers are available via immintrin.h
-#if defined(_MSC_VER) && defined(__AVX2__)
-#include <immintrin.h>
-#undef P_USE_SSE2
-#define P_USE_SSE2 1
-#undef P_USE_SSE41
-#define P_USE_SSE41 1
-#endif
-
-#if P_USE_SSE2
+#include <emmintrin.h>  /* SSE2 -- guaranteed on x64 */
 
 // --- Load/Store: vec3_t <-> __m128 ---
 
@@ -71,15 +41,7 @@ static inline vec3_t p_simd_store_vec3(__m128 v) {
 
 // --- Dot product (vec3 only, ignores w) ---
 
-#if P_USE_SSE41
-// SSE4.1 dpps: dot product of first 3 elements, result in all lanes
-static inline f32 p_simd_dot3(__m128 a, __m128 b) {
-    // 0x71 = multiply x,y,z (bits 4,5,6) and store in lowest lane (bit 0)
-    __m128 dp = _mm_dp_ps(a, b, 0x71);
-    return _mm_cvtss_f32(dp);
-}
-#else
-// SSE2 fallback: mul + horizontal add
+// SSE2: mul + horizontal add
 static inline f32 p_simd_dot3(__m128 a, __m128 b) {
     __m128 mul = _mm_mul_ps(a, b);
     // mul = [x*x, y*y, z*z, 0]
@@ -89,16 +51,9 @@ static inline f32 p_simd_dot3(__m128 a, __m128 b) {
     sum = _mm_add_ss(sum, shuf2);
     return _mm_cvtss_f32(sum);
 }
-#endif
 
 // --- Dot product returning __m128 broadcast (for further SIMD ops) ---
 
-#if P_USE_SSE41
-static inline __m128 p_simd_dot3_broadcast(__m128 a, __m128 b) {
-    // 0x7F = multiply x,y,z, store result in all 4 lanes
-    return _mm_dp_ps(a, b, 0x7F);
-}
-#else
 static inline __m128 p_simd_dot3_broadcast(__m128 a, __m128 b) {
     __m128 mul = _mm_mul_ps(a, b);
     __m128 shuf1 = _mm_shuffle_ps(mul, mul, _MM_SHUFFLE(0, 0, 0, 1));
@@ -107,7 +62,6 @@ static inline __m128 p_simd_dot3_broadcast(__m128 a, __m128 b) {
     sum = _mm_add_ss(sum, shuf2);
     return _mm_shuffle_ps(sum, sum, _MM_SHUFFLE(0, 0, 0, 0));
 }
-#endif
 
 // --- AABB overlap test (all 6 separating axis comparisons) ---
 
@@ -168,15 +122,8 @@ static inline __m128 p_simd_support_point(__m128 normal, __m128 mins, __m128 max
     __m128 zero = _mm_setzero_ps();
     // mask = (normal >= 0) ? 0xFFFFFFFF : 0
     __m128 mask = _mm_cmpge_ps(normal, zero);
-    // result = mask ? mins : maxs
-    // blendvps (SSE4.1) or manual and/andnot/or
-#if P_USE_SSE41
-    return _mm_blendv_ps(maxs, mins, mask);
-#else
+    // result = mask ? mins : maxs  (SSE2 and/andnot/or blend)
     return _mm_or_ps(_mm_and_ps(mask, mins), _mm_andnot_ps(mask, maxs));
-#endif
 }
-
-#endif // P_USE_SSE2
 
 #endif // P_SIMD_H

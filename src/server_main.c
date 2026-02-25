@@ -19,6 +19,8 @@
 #include "netcode/qk_netcode.h"
 #include "gameplay/qk_gameplay.h"
 #include "core/qk_prof.h"
+#include "core/qk_cpuid.h"
+#include "core/qk_simd_dispatch.h"
 
 // --- Shutdown signal ---
 
@@ -96,13 +98,19 @@ static void server_tick(qk_phys_world_t *phys_world) {
 // --- Main ---
 
 int main(int argc, char *argv[]) {
+    /* Detect CPU features before anything else */
+    qk_cpuid_detect();
+
     printf("QUICKEN Dedicated Server v%d.%d.%d\n",
            QUICKEN_VERSION_MAJOR, QUICKEN_VERSION_MINOR, QUICKEN_VERSION_PATCH);
 #ifdef QUICKEN_DEBUG
-    printf("Build: Debug\n\n");
+    printf("Build: Debug\n");
 #else
-    printf("Build: Release\n\n");
+    printf("Build: Release\n");
 #endif
+    qk_cpuid_print();
+    printf("SIMD tier: %s\n", qk_simd_tier_name(qk_simd_get_tier()));
+    printf("\n");
 
     // --- Parse arguments ---
     const char *map_name = NULL;

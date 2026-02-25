@@ -29,6 +29,8 @@
 #include "core/qk_perf.h"
 #include "core/qk_prof.h"
 #include "core/qk_demo.h"
+#include "core/qk_cpuid.h"
+#include "core/qk_simd_dispatch.h"
 #include "ui/qk_console.h"
 
 #include "client/cl_camera.h"
@@ -395,6 +397,9 @@ static void setup_player_for_map(u8 client_id, const qk_map_data_t *map) {
 int main(int argc, char *argv[]) {
     QK_UNUSED(argc);
 
+    /* Detect CPU features before anything else */
+    qk_cpuid_detect();
+
     printf("QUICKEN Engine v%d.%d.%d\n",
            QUICKEN_VERSION_MAJOR, QUICKEN_VERSION_MINOR, QUICKEN_VERSION_PATCH);
 #ifdef QUICKEN_DEBUG
@@ -402,6 +407,8 @@ int main(int argc, char *argv[]) {
 #else
     printf("Build: Release\n");
 #endif
+    qk_cpuid_print();
+    printf("SIMD tier: %s\n", qk_simd_tier_name(qk_simd_get_tier()));
     printf("\n");
 
     // --- Parse arguments ---

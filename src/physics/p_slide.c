@@ -4,41 +4,22 @@
  * Collision response: clip velocity against planes, slide along surfaces,
  * step up stairs/ledges.
  *
- * SIMD used for: clip velocity (dot + scale + subtract), plane dot checks.
+ * SSE2 used for: clip velocity (dot + scale + subtract), plane dot checks.
  */
 
 #include "p_internal.h"
 #include "p_simd.h"
 
-// Global debug trace — written here, read by cl_diag
+// Global debug trace -- written here, read by cl_diag
 qk_phys_dbg_t g_phys_dbg;
 
 // --- Clip velocity off a collision plane ---
 
 vec3_t p_clip_velocity(vec3_t velocity, vec3_t normal, f32 overbounce) {
-#if P_USE_SSE2
     __m128 v_vel = p_simd_load_vec3(velocity);
     __m128 v_norm = p_simd_load_vec3(normal);
     __m128 v_result = p_simd_clip_velocity(v_vel, v_norm, overbounce);
     return p_simd_store_vec3(v_result);
-#else
-    f32 backoff = vec3_dot(velocity, normal) * overbounce;
-
-    vec3_t result;
-    result.x = velocity.x - normal.x * backoff;
-    result.y = velocity.y - normal.y * backoff;
-    result.z = velocity.z - normal.z * backoff;
-
-    // Ensure no tiny residual into-plane velocity (numerical cleanup)
-    f32 adjust = vec3_dot(result, normal);
-    if (adjust < 0.0f) {
-        result.x -= normal.x * adjust;
-        result.y -= normal.y * adjust;
-        result.z -= normal.z * adjust;
-    }
-
-    return result;
-#endif
 }
 
 // --- SlideMove: move and clip against collision planes ---
@@ -50,10 +31,8 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
     vec3_t primal_velocity = ps->velocity;
     f32 time_left = dt;
 
-#if P_USE_SSE2
     // Keep SIMD versions of planes for fast dot products in inner loops
     __m128 simd_planes[P_MAX_CLIP_PLANES];
-#endif
 
     for (i32 bump = 0; bump < max_bumps; bump++) {
         // Where we want to go this sub-step
@@ -99,7 +78,6 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
         // (classic "corner trap" between two nearly-parallel planes).
         {
             bool duplicate = false;
-#if P_USE_SSE2
             __m128 v_hit = p_simd_load_vec3(trace.hit_normal);
             for (i32 k = 0; k < num_planes; k++) {
                 if (p_simd_dot3(v_hit, simd_planes[k]) > 0.96f) {
@@ -107,14 +85,6 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
                     break;
                 }
             }
-#else
-            for (i32 k = 0; k < num_planes; k++) {
-                if (vec3_dot(trace.hit_normal, planes[k]) > 0.96f) {
-                    duplicate = true;
-                    break;
-                }
-            }
-#endif
             if (duplicate) {
                 if (g_phys_dbg.bump_count < QK_PHYS_DBG_MAX_BUMPS) {
                     qk_phys_dbg_bump_t *db = &g_phys_dbg.bumps[g_phys_dbg.bump_count];
@@ -148,9 +118,7 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
             g_phys_dbg.bump_count++;
         }
         planes[num_planes] = trace.hit_normal;
-#if P_USE_SSE2
         simd_planes[num_planes] = p_simd_load_vec3(trace.hit_normal);
-#endif
         num_planes++;
 
         // Try to clip velocity against all accumulated planes
@@ -161,7 +129,6 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
 
             // Check that the clipped velocity doesn't re-enter any
             // previously recorded plane
-#if P_USE_SSE2
             __m128 v_clipped = p_simd_load_vec3(clipped);
             for (j = 0; j < num_planes; j++) {
                 if (j == i) continue;
@@ -169,14 +136,6 @@ bool p_slide_move(qk_player_state_t *ps, const qk_phys_world_t *world,
                     break; // clips into another plane
                 }
             }
-#else
-            for (j = 0; j < num_planes; j++) {
-                if (j == i) continue;
-                if (vec3_dot(clipped, planes[j]) < 0.0f) {
-                    break;
-                }
-            }
-#endif
 
             if (j == num_planes) {
                 // This clip works against all planes
